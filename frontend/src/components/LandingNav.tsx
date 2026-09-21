@@ -3,27 +3,18 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Search, MapPin, SlidersHorizontal, Bell, TrendingUp } from 'lucide-react';
+import { Search, MapPin, SlidersHorizontal, Bell } from 'lucide-react';
 import DarkModeToggle from './DarkModeToggle';
 
+// Different thresholds per breakpoint handled in JS via the hero height CSS var
 const SCROLL_THRESHOLD = 220;
 
-// Popular quartiers with property counts (can be made dynamic later)
-const QUARTIERS = [
-  { emoji: '🏙️', label: 'Ivandry',           count: 48 },
-  { emoji: '🌿', label: 'Ankadindramamy',    count: 34 },
-  { emoji: '🏛️', label: 'Ankorondrano',      count: 27 },
-  { emoji: '🎓', label: 'Ambohimanarina',    count: 19 },
-  { emoji: '🌄', label: 'Faravohitra',       count: 15 },
-  { emoji: '🏘️', label: 'Ampefiloha',        count: 22 },
-  { emoji: '🌇', label: 'Antanimena',        count: 31 },
-  { emoji: '🏞️', label: 'Ambohidratrimo',    count: 11 },
-];
+const FILTERS = ['Tous', 'Location', 'Vente', 'Appartement', 'Villa', 'Bureau'];
 
 export default function LandingNav() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
-  const [activeQuartier, setActiveQuartier] = useState<string | null>(null);
+  const [activeFilter, setActiveFilter] = useState('Tous');
   const [searchFocused, setSearchFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -221,55 +212,26 @@ export default function LandingNav() {
               </button>
             </div>
 
-            {/* ── Quartier shortcut chips ── */}
-            <div className="flex gap-2 overflow-x-auto scrollbar-hide -mx-1 px-1 pb-0.5">
-              {/* Trending label — solid pill so it reads on both dark hero and light page bg */}
-              <div
-                className="flex-shrink-0 flex items-center gap-1 rounded-full px-2.5 py-1.5 whitespace-nowrap"
-                style={{
-                  background: 'rgba(124,189,30,0.18)',
-                  border: '1px solid rgba(124,189,30,0.35)',
-                }}
-              >
-                <TrendingUp className="h-3 w-3 text-brand-green" />
-                <span className="text-[10px] font-bold uppercase tracking-widest text-brand-green">
-                  Populaires
-                </span>
-              </div>
-
-              {QUARTIERS.map((q) => {
-                const isActive = activeQuartier === q.label;
-                return (
-                  <button
-                    key={q.label}
-                    onClick={() => setActiveQuartier(isActive ? null : q.label)}
-                    className="flex-shrink-0 flex items-center gap-1.5 rounded-full pl-2.5 pr-3 py-1.5
-                      text-xs font-semibold transition-all active:scale-95
-                      md:pl-3 md:pr-3.5 md:py-2 md:text-sm"
-                    style={{
-                      background: isActive
-                        ? '#7cbd1e'
-                        : 'rgba(255,255,255,0.85)',
-                      color: isActive ? 'white' : '#3f3f46',
-                      boxShadow: isActive
-                        ? '0 2px 10px rgba(124,189,30,0.45)'
-                        : '0 1px 4px rgba(0,0,0,0.08)',
-                    }}
-                  >
-                    <span className="text-sm leading-none">{q.emoji}</span>
-                    <span className="whitespace-nowrap">{q.label}</span>
-                    <span
-                      className="ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none"
-                      style={{
-                        background: isActive ? 'rgba(255,255,255,0.25)' : 'rgba(124,189,30,0.15)',
-                        color: isActive ? 'white' : '#5a9a10',
-                      }}
-                    >
-                      {q.count}
-                    </span>
-                  </button>
-                );
-              })}
+            {/* Filter chips */}
+            <div className="flex gap-2 overflow-x-auto scrollbar-hide -mx-1 px-1">
+              {FILTERS.map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setActiveFilter(f)}
+                  className="flex-shrink-0 rounded-full px-4 py-1.5 text-xs font-semibold transition-all active:scale-95 md:px-5 md:py-2 md:text-sm"
+                  style={{
+                    background: activeFilter === f
+                      ? '#7cbd1e'
+                      : 'rgba(255,255,255,0.82)',
+                    color: activeFilter === f ? 'white' : '#3f3f46',
+                    boxShadow: activeFilter === f
+                      ? '0 2px 8px rgba(124,189,30,0.4)'
+                      : 'none',
+                  }}
+                >
+                  {f}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -312,6 +274,12 @@ export default function LandingNav() {
 
       {/* ── Spacer matching the hero height — responsive via CSS var ── */}
       <div
+        style={{ height: 'var(--hero-h, 260px)' }}
+        aria-hidden="true"
+      />
+    </>
+  );
+}
         style={{ height: 'var(--hero-h, 260px)' }}
         aria-hidden="true"
       />
