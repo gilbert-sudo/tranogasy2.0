@@ -1,4 +1,5 @@
 import Image from 'next/image';
+import { BedDouble, Bath, Maximize, MapPin, Heart } from 'lucide-react';
 
 interface PropertyProps {
   property: {
@@ -7,12 +8,21 @@ interface PropertyProps {
     price?: number;
     rent?: number;
     rooms: number;
+    bathrooms: number;
+    area: number;
     type: string;
+    houseType: string;
     city?: {
       district: string;
       commune: string;
+      fokontany: string;
     };
     images?: string[];
+    features?: {
+      parkingSpaceAvailable: boolean;
+      garage: boolean;
+    };
+    created_at: string;
   };
 }
 
@@ -23,35 +33,62 @@ export default function PropertyCard({ property }: PropertyProps) {
     : 'https://via.placeholder.com/400x300?text=TranoGasy';
 
   return (
-    <div className="flex flex-col overflow-hidden rounded-2xl bg-white shadow-lg transition-transform hover:-translate-y-1 hover:shadow-xl dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800">
-      <div className="relative h-48 w-full overflow-hidden bg-zinc-200 dark:bg-zinc-800">
-        <Image
-          src={imageSrc}
-          alt={property.title}
-          fill
-          className="object-cover"
-        />
-        <div className="absolute top-4 left-4 rounded-full bg-brand-green px-3 py-1 text-xs font-bold text-white uppercase tracking-wider">
-          {property.type === 'rent' ? 'A Louer' : 'A Vendre'}
+    <div className="flex flex-col overflow-hidden rounded-2xl bg-white shadow-sm border border-zinc-200 transition-transform hover:-translate-y-1 hover:shadow-lg dark:bg-zinc-900 dark:border-zinc-800 relative">
+      <div className="relative h-56 w-full overflow-hidden bg-zinc-200 dark:bg-zinc-800">
+        <Image src={imageSrc} alt={property.title} fill className="object-cover" />
+        
+        {/* Badges */}
+        <div className="absolute top-3 left-3 rounded bg-brand-green px-2 py-1 text-xs font-bold text-white uppercase tracking-wide shadow-sm">
+          {property.type === 'rent' ? 'Location' : 'Vente'}
         </div>
+        <div className="absolute top-3 right-3 rounded-full bg-black/60 px-3 py-1 text-xs font-medium text-white backdrop-blur-sm">
+          Nouveau
+        </div>
+
+        {/* Favorite Button */}
+        <button className="absolute bottom-3 right-3 flex h-10 w-10 items-center justify-center rounded-full bg-white text-zinc-400 shadow-md transition hover:text-brand-red dark:bg-zinc-800">
+          <Heart className="h-5 w-5" />
+        </button>
       </div>
-      <div className="flex flex-col flex-1 p-5">
-        <div className="flex items-center justify-between">
-          <p className="text-sm font-medium text-brand-red">
-            {property.city?.commune || 'Antananarivo'}
-          </p>
-          <p className="text-lg font-bold text-brand-green">
-            {displayPrice ? `${displayPrice.toLocaleString()} Ar` : 'Prix à débattre'}
-          </p>
-        </div>
-        <h3 className="mt-2 text-xl font-semibold text-zinc-900 dark:text-white line-clamp-2">
+
+      <div className="flex flex-col flex-1 p-4">
+        <p className="text-sm font-semibold text-zinc-500 dark:text-zinc-400">
+          {property.houseType ? property.houseType.charAt(0).toUpperCase() + property.houseType.slice(1) : 'Propriété'} {property.type === 'rent' ? 'en location' : 'en vente'}
+        </p>
+        
+        <h3 className="mt-1 text-lg font-bold text-zinc-900 dark:text-white line-clamp-2">
           {property.title}
         </h3>
-        <div className="mt-4 flex items-center gap-4 text-sm text-zinc-500 dark:text-zinc-400">
-          <span className="flex items-center gap-1">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
-            {property.rooms} Pièces
+
+        <div className="mt-2 flex items-center gap-1 text-sm text-zinc-500 dark:text-zinc-400">
+          <MapPin className="h-4 w-4 text-brand-red" />
+          <span className="truncate">
+            {property.city?.fokontany}, {property.city?.commune}
           </span>
+        </div>
+
+        <div className="mt-4 flex items-center justify-between border-t border-zinc-100 pt-4 dark:border-zinc-800">
+          <div className="flex items-center gap-3 text-zinc-600 dark:text-zinc-300">
+            <span className="flex items-center gap-1 text-sm" title="Pièces">
+              <BedDouble className="h-4 w-4" />
+              {property.rooms || 0}
+            </span>
+            <span className="flex items-center gap-1 text-sm" title="Salles de bain">
+              <Bath className="h-4 w-4" />
+              {property.bathrooms || 0}
+            </span>
+            <span className="flex items-center gap-1 text-sm" title="Surface">
+              <Maximize className="h-4 w-4" />
+              {property.area ? `${property.area}m²` : '-'}
+            </span>
+          </div>
+          
+          <div className="text-right">
+            <p className="text-lg font-bold text-brand-green">
+              {displayPrice ? `${displayPrice.toLocaleString()} Ar` : 'Sur demande'}
+              {property.type === 'rent' && <span className="text-xs font-normal text-zinc-500">/mois</span>}
+            </p>
+          </div>
         </div>
       </div>
     </div>
