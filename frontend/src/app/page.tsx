@@ -1,4 +1,4 @@
-import Hero from '@/components/Hero';
+import LandingNav from '@/components/LandingNav';
 import PropertyCard from '@/components/PropertyCard';
 
 async function getProperties() {
@@ -20,7 +20,7 @@ export default async function Home() {
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-black">
-      <Hero />
+      <LandingNav />
       
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         

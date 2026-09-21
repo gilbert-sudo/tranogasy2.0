@@ -1,3 +1,4 @@
+import Header from '@/components/Header';
 import PropertyCard from '@/components/PropertyCard';
 
 async function getProperties() {
@@ -19,7 +20,8 @@ export default async function ExplorePage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
+      <Header />
+      <div className="mx-auto max-w-7xl px-4 pt-24 pb-16 sm:px-6 lg:px-8">
         <div className="flex items-baseline justify-between border-b border-zinc-200 dark:border-zinc-800 pb-6">
           <h1 className="text-4xl font-bold tracking-tight text-foreground">Découvrir les Propriétés</h1>
         </div>

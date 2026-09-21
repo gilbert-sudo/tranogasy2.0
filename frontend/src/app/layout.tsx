@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import Header from "@/components/Header";
 import BottomNavigation from "@/components/BottomNavigation";
 import { ThemeProvider } from "@/components/ThemeProvider";
 
@@ -45,7 +44,6 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <div className="flex min-h-screen flex-col bg-background pb-16 md:pb-0">
-            <Header />
             <main className="flex-1">{children}</main>
             <BottomNavigation />
           </div>
