@@ -3,7 +3,8 @@ import PropertyCard from '@/components/PropertyCard';
 
 async function getProperties() {
   try {
-    const res = await fetch('http://localhost:3001/api/properties?limit=12', { next: { revalidate: 60 } });
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+    const res = await fetch(`${apiUrl}/properties?limit=12`, { next: { revalidate: 60 } });
     if (!res.ok) {
       throw new Error('Failed to fetch data');
     }
