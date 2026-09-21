@@ -33,8 +33,8 @@ export default function PropertyCard({ property }: PropertyProps) {
     : 'https://via.placeholder.com/400x300?text=TranoGasy';
 
   return (
-    <div className="flex flex-col overflow-hidden rounded-2xl bg-white shadow-sm border border-zinc-200 transition-transform hover:-translate-y-1 hover:shadow-lg dark:bg-zinc-900 dark:border-zinc-800 relative">
-      <div className="relative h-56 w-full overflow-hidden bg-zinc-200 dark:bg-zinc-800">
+    <div className="flex flex-col overflow-hidden rounded-2xl bg-zinc-50 shadow-sm border border-zinc-200 transition-transform hover:-translate-y-1 hover:shadow-lg dark:bg-zinc-800 dark:border-zinc-700 relative">
+      <div className="relative h-56 w-full overflow-hidden bg-zinc-200 dark:bg-zinc-700">
         <Image src={imageSrc} alt={property.title} fill className="object-cover" />
         
         {/* Badges */}
@@ -46,7 +46,7 @@ export default function PropertyCard({ property }: PropertyProps) {
         </div>
 
         {/* Favorite Button */}
-        <button className="absolute bottom-3 right-3 flex h-10 w-10 items-center justify-center rounded-full bg-white text-zinc-400 shadow-md transition hover:text-brand-red dark:bg-zinc-800">
+        <button className="absolute bottom-3 right-3 flex h-10 w-10 items-center justify-center rounded-full bg-zinc-50 text-zinc-400 shadow-md transition hover:text-brand-red dark:bg-zinc-700">
           <Heart className="h-5 w-5" />
         </button>
       </div>
@@ -67,7 +67,7 @@ export default function PropertyCard({ property }: PropertyProps) {
           </span>
         </div>
 
-        <div className="mt-4 flex items-center justify-between border-t border-zinc-100 pt-4 dark:border-zinc-800">
+        <div className="mt-4 flex items-center justify-between border-t border-zinc-100 pt-4 dark:border-zinc-700">
           <div className="flex items-center gap-3 text-zinc-600 dark:text-zinc-300">
             <span className="flex items-center gap-1 text-sm" title="Pièces">
               <BedDouble className="h-4 w-4" />

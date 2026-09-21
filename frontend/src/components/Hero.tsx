@@ -3,7 +3,7 @@ import Image from 'next/image';
 
 export default function Hero() {
   return (
-    <div className="relative flex flex-col items-center justify-center bg-white py-12 dark:bg-zinc-900/50">
+    <div className="relative flex flex-col items-center justify-center bg-zinc-50 py-12 dark:bg-zinc-800/50">
       {/* Hand with keys image */}
       <div className="relative h-48 w-48 md:h-64 md:w-64">
         <Image src="/hero-keys.png" alt="Remise de clés" fill className="object-contain" priority />
