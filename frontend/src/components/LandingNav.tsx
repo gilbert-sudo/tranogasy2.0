@@ -3,18 +3,27 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Search, MapPin, SlidersHorizontal, Bell } from 'lucide-react';
+import { Search, MapPin, SlidersHorizontal, Bell, TrendingUp } from 'lucide-react';
 import DarkModeToggle from './DarkModeToggle';
 
-// Different thresholds per breakpoint handled in JS via the hero height CSS var
 const SCROLL_THRESHOLD = 220;
 
-const FILTERS = ['Tous', 'Location', 'Vente', 'Appartement', 'Villa', 'Bureau'];
+// Popular quartiers with property counts (can be made dynamic later)
+const QUARTIERS = [
+  { emoji: '🏙️', label: 'Ivandry',           count: 48 },
+  { emoji: '🌿', label: 'Ankadindramamy',    count: 34 },
+  { emoji: '🏛️', label: 'Ankorondrano',      count: 27 },
+  { emoji: '🎓', label: 'Ambohimanarina',    count: 19 },
+  { emoji: '🌄', label: 'Faravohitra',       count: 15 },
+  { emoji: '🏘️', label: 'Ampefiloha',        count: 22 },
+  { emoji: '🌇', label: 'Antanimena',        count: 31 },
+  { emoji: '🏞️', label: 'Ambohidratrimo',    count: 11 },
+];
 
 export default function LandingNav() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
-  const [activeFilter, setActiveFilter] = useState('Tous');
+  const [activeQuartier, setActiveQuartier] = useState<string | null>(null);
   const [searchFocused, setSearchFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -212,26 +221,49 @@ export default function LandingNav() {
               </button>
             </div>
 
-            {/* Filter chips */}
-            <div className="flex gap-2 overflow-x-auto scrollbar-hide -mx-1 px-1">
-              {FILTERS.map((f) => (
-                <button
-                  key={f}
-                  onClick={() => setActiveFilter(f)}
-                  className="flex-shrink-0 rounded-full px-4 py-1.5 text-xs font-semibold transition-all active:scale-95 md:px-5 md:py-2 md:text-sm"
-                  style={{
-                    background: activeFilter === f
-                      ? '#7cbd1e'
-                      : 'rgba(255,255,255,0.82)',
-                    color: activeFilter === f ? 'white' : '#3f3f46',
-                    boxShadow: activeFilter === f
-                      ? '0 2px 8px rgba(124,189,30,0.4)'
-                      : 'none',
-                  }}
-                >
-                  {f}
-                </button>
-              ))}
+            {/* ── Quartier shortcut chips ── */}
+            <div className="flex gap-2 overflow-x-auto scrollbar-hide -mx-1 px-1 pb-0.5">
+              {/* Trending label */}
+              <div className="flex-shrink-0 flex items-center gap-1 pr-1 text-white/60">
+                <TrendingUp className="h-3 w-3" />
+                <span className="text-[10px] font-semibold uppercase tracking-widest whitespace-nowrap">
+                  Populaires
+                </span>
+              </div>
+
+              {QUARTIERS.map((q) => {
+                const isActive = activeQuartier === q.label;
+                return (
+                  <button
+                    key={q.label}
+                    onClick={() => setActiveQuartier(isActive ? null : q.label)}
+                    className="flex-shrink-0 flex items-center gap-1.5 rounded-full pl-2.5 pr-3 py-1.5
+                      text-xs font-semibold transition-all active:scale-95
+                      md:pl-3 md:pr-3.5 md:py-2 md:text-sm"
+                    style={{
+                      background: isActive
+                        ? '#7cbd1e'
+                        : 'rgba(255,255,255,0.85)',
+                      color: isActive ? 'white' : '#3f3f46',
+                      boxShadow: isActive
+                        ? '0 2px 10px rgba(124,189,30,0.45)'
+                        : '0 1px 4px rgba(0,0,0,0.08)',
+                    }}
+                  >
+                    <span className="text-sm leading-none">{q.emoji}</span>
+                    <span className="whitespace-nowrap">{q.label}</span>
+                    <span
+                      className="ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none"
+                      style={{
+                        background: isActive ? 'rgba(255,255,255,0.25)' : 'rgba(124,189,30,0.15)',
+                        color: isActive ? 'white' : '#5a9a10',
+                      }}
+                    >
+                      {q.count}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
