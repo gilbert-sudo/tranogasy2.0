@@ -3,18 +3,28 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Search, MapPin, SlidersHorizontal, Bell } from 'lucide-react';
+import { Search, MapPin, SlidersHorizontal, Bell, Building2, TreePine, Landmark, Waves, Globe } from 'lucide-react';
 import DarkModeToggle from './DarkModeToggle';
 
 // Different thresholds per breakpoint handled in JS via the hero height CSS var
 const SCROLL_THRESHOLD = 220;
 
-const FILTERS = ['Tous', 'Location', 'Vente', 'Appartement', 'Villa', 'Bureau'];
+// Popular Madagascar places with icons and listing counts
+const PLACES = [
+  { name: 'Tous', icon: Globe,      count: 248 },
+  { name: 'Antananarivo', icon: Landmark,   count: 142 },
+  { name: 'Toamasina',   icon: Waves,       count:  38 },
+  { name: 'Antsirabe',   icon: TreePine,    count:  27 },
+  { name: 'Mahajanga',   icon: Waves,       count:  21 },
+  { name: 'Fianarantsoa',icon: TreePine,    count:  12 },
+  { name: 'Toliara',     icon: Waves,       count:   8 },
+  { name: 'Antsiranana', icon: Building2,   count:   5 },
+];
 
 export default function LandingNav() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
-  const [activeFilter, setActiveFilter] = useState('Tous');
+  const [activePlace, setActivePlace] = useState('Tous');
   const [searchFocused, setSearchFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -41,8 +51,6 @@ export default function LandingNav() {
           height: isScrolled
             ? 'var(--nav-h, 68px)'
             : 'var(--hero-h, 260px)',
-          // CSS vars let us override per breakpoint without JS
-          // (set via inline style below)
           transition: 'height 0.45s cubic-bezier(0.4, 0, 0.2, 1)',
         } as React.CSSProperties}
       >
@@ -66,6 +74,15 @@ export default function LandingNav() {
           }
           .scrollbar-hide::-webkit-scrollbar { display: none; }
           .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
+          /* Place chip hover glow */
+          .place-chip:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 14px rgba(124,189,30,0.35) !important;
+          }
+          .place-chip.active {
+            box-shadow: 0 4px 14px rgba(124,189,30,0.5) !important;
+          }
         `}</style>
 
         {/* ── Background image — fades out on scroll ── */}
@@ -96,10 +113,16 @@ export default function LandingNav() {
         ══════════════════════════════════════════════════════ */}
         <div className="relative z-10 h-full flex flex-col max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8 xl:px-12">
 
-          {/* ── TOP ROW: logo + actions ── */}
+          {/* ── TOP ROW: logo | [scrolled: search] | actions ── */}
           <div
-            className="flex items-center justify-between"
-            style={{ paddingTop: isScrolled ? '0' : '14px', transition: 'padding-top 0.45s' }}
+            className="flex items-center"
+            style={{
+              paddingTop: isScrolled ? '0' : '14px',
+              height: isScrolled ? '100%' : 'auto',
+              justifyContent: isScrolled ? 'flex-start' : 'space-between',
+              gap: isScrolled ? '12px' : '0',
+              transition: 'padding-top 0.45s',
+            }}
           >
             {/* Logo */}
             <Link href="/" className="flex items-center gap-2 flex-shrink-0">
@@ -127,8 +150,44 @@ export default function LandingNav() {
               </span>
             </Link>
 
+            {/* ── CENTER: collapsed search bar (scrolled only) ── */}
+            <div
+              className="flex justify-center min-w-0"
+              style={{
+                flex: isScrolled ? '1 1 0%' : '0 0 0px',
+                width: isScrolled ? undefined : 0,
+                overflow: 'hidden',
+                opacity: isScrolled ? 1 : 0,
+                transition: 'flex 0.4s, opacity 0.3s, width 0.4s',
+                pointerEvents: isScrolled ? 'auto' : 'none',
+              }}
+            >
+              <div
+                className={`flex items-center gap-2 rounded-full px-4 py-2 w-full
+                  bg-zinc-100 dark:bg-zinc-800
+                  max-w-xs sm:max-w-sm md:max-w-md lg:max-w-lg
+                  shadow-sm min-w-0
+                  ${searchFocused ? 'ring-2 ring-brand-green' : 'ring-1 ring-zinc-200/70 dark:ring-zinc-700'}`}
+              >
+                <Search className="h-4 w-4 flex-shrink-0 text-zinc-400" />
+                <input
+                  type="text"
+                  placeholder="Rechercher une ville, quartier…"
+                  onFocus={() => setSearchFocused(true)}
+                  onBlur={() => setSearchFocused(false)}
+                  className="flex-1 bg-transparent text-sm text-zinc-700 dark:text-zinc-100 placeholder:text-zinc-400 outline-none min-w-0"
+                />
+                <button
+                  aria-label="Filtres"
+                  className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-brand-green text-white transition-transform active:scale-90 hover:brightness-110"
+                >
+                  <SlidersHorizontal className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+
             {/* Right actions */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-shrink-0">
               <DarkModeToggle />
               <button
                 id="notif-btn"
@@ -145,7 +204,7 @@ export default function LandingNav() {
             </div>
           </div>
 
-          {/* ── HERO TEXT + SEARCH + CHIPS
+          {/* ── HERO TEXT + SEARCH + PLACE CHIPS
               All collapse to 0 height + opacity 0 when scrolled
           ── */}
           <div
@@ -188,7 +247,7 @@ export default function LandingNav() {
 
             {/* Search bar */}
             <div
-              className={`flex items-center gap-2 rounded-2xl px-4 py-3 mb-3
+              className={`flex items-center gap-2 rounded-full px-4 py-3 mb-3
                 bg-white shadow-[0_8px_32px_rgba(0,0,0,0.18)]
                 ${searchFocused ? 'ring-2 ring-brand-green' : ''}
                 md:py-3.5`}
@@ -212,74 +271,54 @@ export default function LandingNav() {
               </button>
             </div>
 
-            {/* Filter chips */}
+            {/* ── Place chips ── */}
             <div className="flex gap-2 overflow-x-auto scrollbar-hide -mx-1 px-1">
-              {FILTERS.map((f) => (
-                <button
-                  key={f}
-                  onClick={() => setActiveFilter(f)}
-                  className="flex-shrink-0 rounded-full px-4 py-1.5 text-xs font-semibold transition-all active:scale-95 md:px-5 md:py-2 md:text-sm"
-                  style={{
-                    background: activeFilter === f
-                      ? '#7cbd1e'
-                      : 'rgba(255,255,255,0.82)',
-                    color: activeFilter === f ? 'white' : '#3f3f46',
-                    boxShadow: activeFilter === f
-                      ? '0 2px 8px rgba(124,189,30,0.4)'
-                      : 'none',
-                  }}
-                >
-                  {f}
-                </button>
-              ))}
+              {PLACES.map(({ name, icon: Icon, count }) => {
+                const isActive = activePlace === name;
+                return (
+                  <button
+                    key={name}
+                    id={`place-chip-${name.toLowerCase()}`}
+                    onClick={() => setActivePlace(name)}
+                    className={`place-chip${isActive ? ' active' : ''} flex-shrink-0 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-all active:scale-95 md:px-4 md:py-2 md:text-sm`}
+                    style={{
+                      background: isActive
+                        ? '#7cbd1e'
+                        : 'rgba(255,255,255,0.82)',
+                      color: isActive ? 'white' : '#3f3f46',
+                      boxShadow: isActive
+                        ? '0 2px 8px rgba(124,189,30,0.4)'
+                        : 'none',
+                    }}
+                  >
+                    {/* place icon */}
+                    <Icon className="h-3 w-3 flex-shrink-0" />
+                    {/* place name */}
+                    <span>{name}</span>
+                    {/* listing count badge */}
+                    <span
+                      className="inline-flex items-center justify-center rounded-full px-1.5 py-0 text-[10px] font-bold leading-4 min-w-[18px]"
+                      style={{
+                        background: isActive ? 'rgba(255,255,255,0.28)' : 'rgba(124,189,30,0.15)',
+                        color: isActive ? 'white' : '#5a9a10',
+                      }}
+                    >
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
-          {/* ── COLLAPSED SEARCH BAR (scrolled mode only) ── */}
-          <div
-            className="flex-1 flex items-center"
-            style={{
-              opacity: scrollProgress,
-              pointerEvents: isScrolled ? 'auto' : 'none',
-              transition: 'opacity 0.2s',
-              maxHeight: isScrolled ? '9999px' : 0,
-              overflow: 'hidden',
-            }}
-          >
-            <div
-              className={`flex flex-1 items-center gap-2 rounded-2xl px-4 py-2.5
-                bg-zinc-100 dark:bg-zinc-800
-                max-w-xl md:max-w-2xl
-                ${searchFocused ? 'ring-2 ring-brand-green' : ''}`}
-            >
-              <Search className="h-4 w-4 flex-shrink-0 text-zinc-400" />
-              <input
-                type="text"
-                placeholder="Rechercher…"
-                onFocus={() => setSearchFocused(true)}
-                onBlur={() => setSearchFocused(false)}
-                className="flex-1 bg-transparent text-sm text-zinc-700 dark:text-zinc-100 placeholder:text-zinc-400 outline-none"
-              />
-              <button
-                aria-label="Filtres"
-                className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-brand-green text-white transition-transform active:scale-90"
-              >
-                <SlidersHorizontal className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </div>
+          {/* collapsed search moved into top row — nothing needed here */}
+
 
         </div>
       </header>
 
       {/* ── Spacer matching the hero height — responsive via CSS var ── */}
       <div
-        style={{ height: 'var(--hero-h, 260px)' }}
-        aria-hidden="true"
-      />
-    </>
-  );
-}
         style={{ height: 'var(--hero-h, 260px)' }}
         aria-hidden="true"
       />
