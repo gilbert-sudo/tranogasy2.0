@@ -223,10 +223,16 @@ export default function LandingNav() {
 
             {/* ── Quartier shortcut chips ── */}
             <div className="flex gap-2 overflow-x-auto scrollbar-hide -mx-1 px-1 pb-0.5">
-              {/* Trending label */}
-              <div className="flex-shrink-0 flex items-center gap-1 pr-1 text-white/60">
-                <TrendingUp className="h-3 w-3" />
-                <span className="text-[10px] font-semibold uppercase tracking-widest whitespace-nowrap">
+              {/* Trending label — solid pill so it reads on both dark hero and light page bg */}
+              <div
+                className="flex-shrink-0 flex items-center gap-1 rounded-full px-2.5 py-1.5 whitespace-nowrap"
+                style={{
+                  background: 'rgba(124,189,30,0.18)',
+                  border: '1px solid rgba(124,189,30,0.35)',
+                }}
+              >
+                <TrendingUp className="h-3 w-3 text-brand-green" />
+                <span className="text-[10px] font-bold uppercase tracking-widest text-brand-green">
                   Populaires
                 </span>
               </div>
