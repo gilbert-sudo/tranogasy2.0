@@ -1,13 +1,12 @@
 import { Search } from 'lucide-react';
+import Image from 'next/image';
 
 export default function Hero() {
   return (
-    <div className="relative flex flex-col items-center justify-center bg-white py-12 dark:bg-black">
+    <div className="relative flex flex-col items-center justify-center bg-white py-12 dark:bg-zinc-900/50">
       {/* Hand with keys image */}
-      <div className="relative h-48 w-48 overflow-hidden rounded-full md:h-64 md:w-64 border-4 border-white shadow-sm">
-        <div className="flex h-full w-full items-center justify-center bg-zinc-100 text-7xl dark:bg-zinc-900">
-          🔑
-        </div>
+      <div className="relative h-48 w-48 md:h-64 md:w-64">
+        <Image src="/hero-keys.png" alt="Remise de clés" fill className="object-contain" priority />
       </div>
       
       <div className="mt-8">
