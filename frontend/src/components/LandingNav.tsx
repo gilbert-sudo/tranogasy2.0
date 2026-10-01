@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Search, MapPin, SlidersHorizontal, Bell, Building2, TreePine, Landmark, Waves, Globe } from 'lucide-react';
+import { Search, MapPin, SlidersHorizontal, Bell, Building2, TreePine, Landmark, Waves, Globe, ChevronLeft, ChevronRight } from 'lucide-react';
 import DarkModeToggle from './DarkModeToggle';
 
 // Different thresholds per breakpoint handled in JS via the hero height CSS var
@@ -27,6 +27,33 @@ export default function LandingNav() {
   const [activePlace, setActivePlace] = useState('Tous');
   const [searchFocused, setSearchFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(true);
+
+  const checkScroll = useCallback(() => {
+    if (scrollContainerRef.current) {
+      const { scrollLeft, scrollWidth, clientWidth } = scrollContainerRef.current;
+      setCanScrollLeft(scrollLeft > 0);
+      setCanScrollRight(scrollLeft < scrollWidth - clientWidth - 1);
+    }
+  }, []);
+
+  useEffect(() => {
+    checkScroll();
+    window.addEventListener('resize', checkScroll);
+    return () => window.removeEventListener('resize', checkScroll);
+  }, [checkScroll]);
+
+  const scrollPlaces = (direction: 'left' | 'right') => {
+    if (scrollContainerRef.current) {
+      const scrollAmount = 300;
+      scrollContainerRef.current.scrollBy({
+        left: direction === 'left' ? -scrollAmount : scrollAmount,
+        behavior: 'smooth'
+      });
+    }
+  };
 
   const handleScroll = useCallback(() => {
     const y = window.scrollY;
@@ -208,7 +235,7 @@ export default function LandingNav() {
               All collapse to 0 height + opacity 0 when scrolled
           ── */}
           <div
-            className="flex flex-col flex-1 justify-end pb-3"
+            className="flex flex-col flex-1 justify-end pb-3 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 xl:-mx-12 xl:px-12"
             style={{
               opacity: 1 - scrollProgress * 2.5,
               transform: `translateY(${scrollProgress * -16}px)`,
@@ -272,8 +299,28 @@ export default function LandingNav() {
             </div>
 
             {/* ── Place chips ── */}
-            <div className="flex gap-2 overflow-x-auto scrollbar-hide -mx-1 px-1">
-              {PLACES.map(({ name, icon: Icon, count }) => {
+            <div className="relative group flex items-center">
+              {/* Scroll Left Button */}
+              <div 
+                className={`hidden md:flex absolute -left-4 z-10 transition-opacity duration-300 ${
+                  canScrollLeft ? 'opacity-0 group-hover:opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+                }`}
+              >
+                <button
+                  onClick={() => scrollPlaces('left')}
+                  className="flex h-8 w-8 items-center justify-center rounded-full bg-white/95 text-zinc-700 shadow-[0_2px_8px_rgba(0,0,0,0.15)] transition-transform hover:scale-105"
+                  aria-label="Défiler vers la gauche"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div 
+                ref={scrollContainerRef}
+                onScroll={checkScroll}
+                className="flex gap-2 overflow-x-auto scrollbar-hide -mx-1 px-1 w-full"
+              >
+                {PLACES.map(({ name, icon: Icon, count }) => {
                 const isActive = activePlace === name;
                 return (
                   <button
@@ -308,6 +355,22 @@ export default function LandingNav() {
                   </button>
                 );
               })}
+              </div>
+
+              {/* Scroll Right Button */}
+              <div 
+                className={`hidden md:flex absolute -right-4 z-10 transition-opacity duration-300 ${
+                  canScrollRight ? 'opacity-0 group-hover:opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+                }`}
+              >
+                <button
+                  onClick={() => scrollPlaces('right')}
+                  className="flex h-8 w-8 items-center justify-center rounded-full bg-white/95 text-zinc-700 shadow-[0_2px_8px_rgba(0,0,0,0.15)] transition-transform hover:scale-105"
+                  aria-label="Défiler vers la droite"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
             </div>
           </div>
 
