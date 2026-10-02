@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { X, Share2, Phone, MapPin, Heart, ChevronLeft, BedDouble, Expand, Home, Utensils, Droplets, Grid2X2 } from 'lucide-react';
+import { X, Share2, Phone, MapPin, Heart, ChevronLeft, BedDouble, Expand, Home, Utensils, Droplets, Grid2X2, ChevronRight } from 'lucide-react';
 import {
   FaCar, FaMotorcycle, FaWifi, FaParking, FaShieldAlt, FaSwimmingPool, FaHotTub, FaBed
 } from "react-icons/fa";
@@ -72,10 +72,34 @@ export default function PropertyDetailsClient({ property }: { property: any }) {
   const router = useRouter();
   const [showContact, setShowContact] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [currentMobileImageIndex, setCurrentMobileImageIndex] = useState(0);
+  const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
+  const lightboxRef = useRef<HTMLDivElement | null>(null);
 
   const images = property.images && property.images.length > 0 
     ? property.images.map((img: any) => typeof img === 'string' ? img : img.src)
     : ['https://via.placeholder.com/1200x800?text=TranoGasy'];
+
+  useEffect(() => {
+    if (lightboxIndex === null) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setLightboxIndex(null);
+      } else if (e.key === 'ArrowLeft' && lightboxIndex > 0) {
+        if (lightboxRef.current) {
+          lightboxRef.current.scrollBy({ left: -window.innerWidth, behavior: 'smooth' });
+        }
+      } else if (e.key === 'ArrowRight' && lightboxIndex < images.length - 1) {
+        if (lightboxRef.current) {
+          lightboxRef.current.scrollBy({ left: window.innerWidth, behavior: 'smooth' });
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [lightboxIndex, images.length]);
 
   const displayPrice = property.type === 'rent' ? property.rent : property.price;
 
@@ -110,359 +134,375 @@ export default function PropertyDetailsClient({ property }: { property: any }) {
     }
   };
 
-  return (
-    <div className="bg-white min-h-screen relative pb-24">
-      {/* HERO SECTION */}
-      <div className="relative h-[450px] md:h-[550px] w-full">
-        {/* Background Image */}
-        <div className="absolute inset-0">
-          <Image 
-            src={images[0]} 
-            alt={property.title} 
-            fill 
-            className="object-cover"
-            priority
-          />
-        </div>
-        
-        {/* Overlays */}
-        <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/30 to-black/70" />
-        
-        {/* Top Bar Items */}
-        <div className="absolute top-4 left-4 right-4 flex justify-between items-start z-10">
-          {/* User Info */}
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-white overflow-hidden border-2 border-white/80 shadow-md">
-              <img 
-                src={
-                  property.owner?.role === "admin"
-                    ? (property.sources?.avatar || "/icon-logo.png")
-                    : (property.owner?.avatar || "https://ui-avatars.com/api/?name=User&background=random")
-                }
-                alt="Avatar" 
-                className="w-full h-full object-cover" 
-                onError={(e) => {
-                  e.currentTarget.src = "https://ui-avatars.com/api/?name=User&background=random";
-                }}
-              />
-            </div>
-            <div className="flex flex-col text-white drop-shadow-md">
-              <span className="font-semibold text-sm leading-tight">Loïc James Immobilier</span>
-              <span className="text-xs text-zinc-300">{formatDateAgo(property.created_at)}</span>
-            </div>
-          </div>
-          
-          {/* Close Button */}
-          <button 
-            onClick={() => router.back()}
-            className="h-8 w-8 rounded-full border-2 border-white/80 flex items-center justify-center text-white hover:bg-white hover:text-black transition-colors"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
+  const stats = [
+    { value: property.rooms || 0, label: "Chambres", icon: BedDouble },
+    { value: property.livingRoom || 0, label: "Salon", icon: Home },
+    { value: property.kitchen || 0, label: "Cuisine", icon: Utensils },
+    { value: property.bathrooms || 0, label: "Douches", icon: Droplets },
+    { value: property.toilet || 0, label: "W.C", icon: Grid2X2 },
+    { value: property.area ? `${property.area}` : 0, label: "Surface (m²)", icon: Expand },
+  ];
 
-        {/* Center Content */}
-        <div className="absolute inset-0 flex flex-col items-center justify-center text-center z-10 px-4 mt-8">
-          <p className="text-white font-medium text-sm md:text-base drop-shadow-md mb-2">
-            Détails de la propriété <span className="text-brand-red font-bold">n°{property.propertyNumber || property._id.slice(-4).toUpperCase()}</span>
-          </p>
-          <div className="flex flex-wrap items-center justify-center gap-2 text-white/90 text-xs md:text-sm mb-4">
-            <MapPin className="h-4 w-4 text-brand-red" />
-            <span className="drop-shadow-sm font-medium">
-              {property.city?.fokontany} {property.city?.commune} {property.city?.district}
-            </span>
-          </div>
-          <h2 className="text-4xl md:text-5xl font-extrabold text-brand-green tracking-tight drop-shadow-lg mb-6">
-            {displayPrice ? `${displayPrice.toLocaleString('fr-FR')} Ar` : 'Sur dmd'}
-            {property.type === 'rent' && <span className="text-xl md:text-2xl text-white/90 font-medium">/mois</span>}
-          </h2>
-          <button 
-            onClick={() => setShowContact(true)}
-            className="bg-[#2A2A2A] hover:bg-black text-white px-6 py-2.5 rounded-full flex items-center gap-2 text-sm font-semibold transition-colors shadow-lg border border-white/10"
-          >
-            <Phone className="h-4 w-4" />
-            Voir contact
-          </button>
-        </div>
+  const handleMobileScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const scrollPosition = e.currentTarget.scrollLeft;
+    const width = e.currentTarget.clientWidth;
+    const newIndex = Math.round(scrollPosition / width);
+    setCurrentMobileImageIndex(newIndex);
+  };
 
-        {/* Favorite Button (Bottom Right) */}
-        <div className="absolute bottom-4 right-4 z-10">
-          <button className="h-12 w-12 rounded-full bg-white flex items-center justify-center shadow-lg hover:scale-105 transition-transform text-zinc-700 hover:text-brand-red">
-            <Heart className="h-6 w-6" />
+  const renderMobileGallery = () => (
+    <div className="lg:hidden relative w-full h-[350px] sm:h-[450px] overflow-hidden mb-6 rounded-b-[2rem] shadow-sm">
+      <div 
+        className="flex overflow-x-auto snap-x snap-mandatory h-full w-full" 
+        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+        onScroll={handleMobileScroll}
+      >
+        {images.map((img: string, idx: number) => (
+          <div key={idx} className="w-full flex-shrink-0 h-full relative snap-center" onClick={() => setLightboxIndex(idx)}>
+            <Image src={img} fill className="object-cover" alt={`Photo ${idx+1}`} priority={idx === 0} />
+          </div>
+        ))}
+      </div>
+      
+      {/* Mobile Top Actions */}
+      <div className="absolute top-4 left-4 right-4 flex justify-between items-start z-10 pointer-events-none">
+        <button onClick={() => router.back()} className="pointer-events-auto h-10 w-10 rounded-full bg-white/90 backdrop-blur-md flex items-center justify-center text-zinc-900 shadow-sm border border-black/5 hover:scale-105 transition-transform">
+          <ChevronLeft className="h-6 w-6 pr-0.5" />
+        </button>
+        <div className="flex gap-2 pointer-events-auto">
+          <button onClick={handleShare} className="h-10 w-10 rounded-full bg-white/90 backdrop-blur-md flex items-center justify-center text-zinc-900 shadow-sm border border-black/5 hover:scale-105 transition-transform">
+            <Share2 className="h-4 w-4" />
+          </button>
+          <button className="h-10 w-10 rounded-full bg-white/90 backdrop-blur-md flex items-center justify-center text-brand-red shadow-sm border border-black/5 hover:scale-105 transition-transform">
+            <Heart className="h-5 w-5" />
           </button>
         </div>
       </div>
 
-      {/* CONTENT SECTION */}
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 md:py-8">
-        
-        {/* Title and Share */}
-        <div className="flex justify-between items-start mb-6">
-          <h1 className="text-2xl md:text-3xl font-bold text-zinc-900">{property.title}</h1>
-          <button 
-            onClick={handleShare}
-            className="flex items-center gap-2 px-4 py-2 rounded-full border border-zinc-200 text-zinc-700 hover:bg-zinc-50 text-sm font-medium transition-colors ml-4 shrink-0"
-          >
-            <Share2 className="h-4 w-4" />
-            <span className="hidden sm:inline">Partager</span>
-          </button>
+      {images.length > 1 && (
+        <div className="absolute bottom-4 right-4 z-10 bg-black/60 backdrop-blur-md text-white px-3 py-1.5 rounded-full text-xs font-bold tracking-widest shadow-sm border border-white/10">
+          {currentMobileImageIndex + 1} / {images.length}
         </div>
+      )}
+    </div>
+  );
 
-        {/* Description Box */}
-        <div className="border border-zinc-200 rounded-xl p-5 md:p-6 mb-8 text-zinc-700 text-sm md:text-base leading-relaxed bg-white shadow-sm whitespace-pre-wrap">
-          {property.description}
+  const renderDesktopGallery = () => {
+    if (!images || images.length === 0) return null;
+
+    if (images.length === 1) {
+      return (
+        <div className="hidden lg:block w-full h-[400px] xl:h-[500px] relative rounded-[2rem] overflow-hidden cursor-pointer group shadow-sm mb-6" onClick={() => setLightboxIndex(0)}>
+          <Image src={images[0]} fill className="object-cover group-hover:scale-105 transition-transform duration-700" alt="Principale" priority />
+          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-500" />
         </div>
+      );
+    }
 
-        {/* Features Pills */}
-        {activeFeatures.length > 0 && (
-          <div className="flex flex-wrap gap-3 mb-10">
-            {activeFeatures.map((key) => {
-              const feature = FEATURE_ICONS[key];
-              if (!feature) return null;
-              const Icon = feature.icon;
-              return (
-                <div key={key} className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-zinc-200 bg-white text-xs font-medium text-zinc-700 shadow-sm hover:border-zinc-300 transition-colors">
-                  <Icon className="h-4 w-4 text-zinc-500" />
-                  {feature.label}
-                </div>
-              );
-            })}
-          </div>
-        )}
+    const rows = [];
+    let i = 0;
+    let rowIndex = 0;
 
-        {/* Details Divider */}
-        <div className="relative flex py-5 items-center mb-6">
-          <div className="flex-grow border-t border-zinc-200"></div>
-          <span className="flex-shrink-0 mx-4 text-zinc-400 text-sm font-medium uppercase tracking-widest">Plus de détails</span>
-          <div className="flex-grow border-t border-zinc-200"></div>
-        </div>
-
-        {/* Stats Grid */}
-        <div className="grid grid-cols-3 md:grid-cols-6 gap-y-8 gap-x-2 mb-10">
-          <div className="flex flex-col items-center justify-center text-center">
-            <div className="flex items-center gap-1 mb-1">
-              <span className="font-bold text-lg text-zinc-900">{property.rooms || 0}</span>
-              <BedDouble className="h-4 w-4 text-zinc-500" />
+    // Build alternating rows: 2 items, 3 items, 2 items, etc. (max 7 items for preview)
+    while (i < images.length && i < 7) {
+      const isEvenRow = rowIndex % 2 === 0;
+      const itemsInRow = isEvenRow ? 2 : 3;
+      const rowImages = images.slice(i, i + itemsInRow);
+      
+      if (rowImages.length === 1) {
+        rows.push(
+          <div key={`row-${rowIndex}`} className="flex gap-[2px] h-[220px] xl:h-[260px] w-full">
+            <div className="flex-1 relative cursor-pointer group overflow-hidden" onClick={() => setLightboxIndex(i)}>
+              <Image src={rowImages[0]} fill className="object-cover group-hover:scale-105 transition-transform duration-700" alt={`Photo ${i + 1}`} />
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-500" />
             </div>
-            <span className="text-[10px] md:text-xs text-zinc-500 font-medium">Chambre(s)</span>
           </div>
-          <div className="flex flex-col items-center justify-center text-center">
-            <div className="flex items-center gap-1 mb-1">
-              <span className="font-bold text-lg text-zinc-900">{property.livingRoom || 0}</span>
-              <Home className="h-4 w-4 text-zinc-500" />
+        );
+      } else if (rowImages.length === 2) {
+        // Recreate the 40% / 60% split seen in the old app for 2-item rows
+        rows.push(
+          <div key={`row-${rowIndex}`} className="flex gap-[2px] h-[220px] xl:h-[260px] w-full">
+            <div className="flex-[4] relative cursor-pointer group overflow-hidden" onClick={() => setLightboxIndex(i)}>
+              <Image src={rowImages[0]} fill className="object-cover group-hover:scale-105 transition-transform duration-700" alt={`Photo ${i + 1}`} />
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-500" />
             </div>
-            <span className="text-[10px] md:text-xs text-zinc-500 font-medium">Salon</span>
-          </div>
-          <div className="flex flex-col items-center justify-center text-center">
-            <div className="flex items-center gap-1 mb-1">
-              <span className="font-bold text-lg text-zinc-900">{property.kitchen || 0}</span>
-              <Utensils className="h-4 w-4 text-zinc-500" />
-            </div>
-            <span className="text-[10px] md:text-xs text-zinc-500 font-medium">Cuisine(s)</span>
-          </div>
-          <div className="flex flex-col items-center justify-center text-center">
-            <div className="flex items-center gap-1 mb-1">
-              <span className="font-bold text-lg text-zinc-900">{property.toilet || 0}</span>
-              <Grid2X2 className="h-4 w-4 text-zinc-500" />
-            </div>
-            <span className="text-[10px] md:text-xs text-zinc-500 font-medium">W.C</span>
-          </div>
-          <div className="flex flex-col items-center justify-center text-center">
-            <div className="flex items-center gap-1 mb-1">
-              <span className="font-bold text-lg text-zinc-900">{property.bathrooms || 0}</span>
-              <Droplets className="h-4 w-4 text-zinc-500" />
-            </div>
-            <span className="text-[10px] md:text-xs text-zinc-500 font-medium">Douche</span>
-          </div>
-          <div className="flex flex-col items-center justify-center text-center">
-            <div className="flex items-center gap-1 mb-1">
-              <span className="font-bold text-lg text-zinc-900">{property.area || 0}</span>
-              <span className="text-xs font-bold">m²</span>
-              <Expand className="h-4 w-4 text-zinc-500" />
-            </div>
-            <span className="text-[10px] md:text-xs text-zinc-500 font-medium">Surface</span>
-          </div>
-        </div>
-
-        {/* Masonry / Mosaic Property Gallery */}
-        {images.length > 0 && (
-          <div className="mb-10">
-            <div className="rounded-xl overflow-hidden">
-              {/* Row 1: Featured large image + 2 stacked small images */}
-              <div className="flex gap-[2px]" style={{ height: 'clamp(250px, 40vw, 420px)' }}>
-                {/* Featured image — takes ~65% width */}
-                <div
-                  className="relative flex-[2] cursor-pointer overflow-hidden group"
-                  onClick={() => setLightboxIndex(0)}
-                >
-                  <Image
-                    src={images[0]}
-                    alt="Photo principale"
-                    fill
-                    className="object-cover group-hover:scale-105 transition-transform duration-500"
-                    priority
-                  />
-                </div>
-                {/* Right column — 2 stacked images */}
-                {images.length > 1 && (
-                  <div className="flex flex-col flex-[1] gap-[2px]">
-                    {images.slice(1, 3).map((img: string, idx: number) => (
-                      <div
-                        key={idx}
-                        className="relative flex-1 cursor-pointer overflow-hidden group"
-                        onClick={() => setLightboxIndex(idx + 1)}
-                      >
-                        <Image
-                          src={img}
-                          alt={`Photo ${idx + 2}`}
-                          fill
-                          className="object-cover group-hover:scale-105 transition-transform duration-500"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Row 2+: Remaining images in mosaic rows of 3 */}
-              {images.length > 3 && (
-                <div className="mt-[2px]">
-                  {Array.from({ length: Math.ceil((images.length - 3) / 3) }).map((_, rowIdx) => {
-                    const rowImages = images.slice(3 + rowIdx * 3, 3 + rowIdx * 3 + 3);
-                    return (
-                      <div
-                        key={rowIdx}
-                        className="flex gap-[2px]"
-                        style={{
-                          height: 'clamp(120px, 22vw, 220px)',
-                          marginTop: rowIdx > 0 ? '2px' : 0,
-                        }}
-                      >
-                        {rowImages.map((img: string, imgIdx: number) => {
-                          const globalIdx = 3 + rowIdx * 3 + imgIdx;
-                          return (
-                            <div
-                              key={imgIdx}
-                              className="relative flex-1 cursor-pointer overflow-hidden group"
-                              onClick={() => setLightboxIndex(globalIdx)}
-                            >
-                              <Image
-                                src={img}
-                                alt={`Photo ${globalIdx + 1}`}
-                                fill
-                                className="object-cover group-hover:scale-105 transition-transform duration-500"
-                              />
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })}
+            <div className="flex-[6] relative cursor-pointer group overflow-hidden" onClick={() => setLightboxIndex(i + 1)}>
+              <Image src={rowImages[1]} fill className="object-cover group-hover:scale-105 transition-transform duration-700" alt={`Photo ${i + 2}`} />
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-500" />
+              {i + 1 === 6 && images.length > 7 && (
+                <div className="absolute inset-0 bg-black/50 hover:bg-black/60 transition-colors flex flex-col items-center justify-center text-white text-center backdrop-blur-[2px]">
+                  <Grid2X2 className="h-7 w-7 mb-2" />
+                  <span className="font-bold text-sm tracking-wide">+{images.length - 7} photos</span>
                 </div>
               )}
             </div>
           </div>
-        )}
-
-        {/* Lightbox Viewer */}
-        {lightboxIndex !== null && (
-          <div
-            className="fixed inset-0 z-[70] bg-black/95 flex items-center justify-center"
-            onClick={() => setLightboxIndex(null)}
-          >
-            {/* Close button */}
-            <button
-              className="absolute top-4 right-4 z-10 h-10 w-10 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center text-white hover:bg-white/20 transition-colors"
-              onClick={() => setLightboxIndex(null)}
-            >
-              <X className="h-6 w-6" />
-            </button>
-
-            {/* Prev arrow */}
-            {lightboxIndex > 0 && (
-              <button
-                className="absolute left-3 md:left-6 z-10 h-10 w-10 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center text-white hover:bg-white/20 transition-colors"
-                onClick={(e) => { e.stopPropagation(); setLightboxIndex(lightboxIndex - 1); }}
-              >
-                <ChevronLeft className="h-6 w-6" />
-              </button>
-            )}
-
-            {/* Next arrow */}
-            {lightboxIndex < images.length - 1 && (
-              <button
-                className="absolute right-3 md:right-6 z-10 h-10 w-10 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center text-white hover:bg-white/20 transition-colors"
-                onClick={(e) => { e.stopPropagation(); setLightboxIndex(lightboxIndex + 1); }}
-              >
-                <ChevronLeft className="h-6 w-6 rotate-180" />
-              </button>
-            )}
-
-            {/* Image */}
-            <div
-              className="relative w-[90vw] h-[80vh] max-w-5xl"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <Image
-                src={images[lightboxIndex]}
-                alt={`Photo ${lightboxIndex + 1}`}
-                fill
-                className="object-contain"
-              />
-            </div>
-
-            {/* Counter */}
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/70 text-sm font-medium">
-              {lightboxIndex + 1} / {images.length}
-            </div>
+        );
+      } else if (rowImages.length === 3) {
+        // Recreate the 33% / 33% / 33% split for 3-item rows
+        rows.push(
+          <div key={`row-${rowIndex}`} className="flex gap-[2px] h-[150px] xl:h-[180px] w-full">
+            {rowImages.map((img: string, idx: number) => {
+              const globalIdx = i + idx;
+              const isLast = globalIdx === 6 && images.length > 7;
+              return (
+                <div key={globalIdx} className="flex-1 relative cursor-pointer group overflow-hidden" onClick={() => setLightboxIndex(globalIdx)}>
+                  <Image src={img} fill className="object-cover group-hover:scale-105 transition-transform duration-700" alt={`Photo ${globalIdx + 1}`} />
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-500" />
+                  {isLast && (
+                    <div className="absolute inset-0 bg-black/50 hover:bg-black/60 transition-colors flex flex-col items-center justify-center text-white text-center backdrop-blur-[2px]">
+                      <Grid2X2 className="h-7 w-7 mb-2" />
+                      <span className="font-bold text-sm tracking-wide">+{images.length - 7} photos</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
-        )}
+        );
+      }
+      
+      i += itemsInRow;
+      rowIndex++;
+    }
 
-        {/* Location Map Placeholder */}
-        <div className="mb-4">
-          <PropertyLocationDisplayer position={position} circle={useCircle} />
+    return (
+      <div className="hidden lg:flex flex-col gap-[2px] w-full rounded-[2rem] overflow-hidden shadow-sm">
+        {rows}
+      </div>
+    );
+  };
+
+  const renderIdentityAndStats = (isMobile: boolean) => (
+    <div className={isMobile ? "lg:hidden px-4" : "hidden lg:block"}>
+      <div className="flex items-center gap-3 mb-4">
+        <span className="px-3 py-1.5 bg-brand-green text-white rounded-full text-[10px] font-extrabold uppercase tracking-widest shadow-sm">
+          {property.type === 'rent' ? 'En location' : 'En vente'}
+        </span>
+        <span className="text-xs font-bold text-zinc-400 uppercase tracking-widest">
+          Réf: {property.propertyNumber || property._id.slice(-4).toUpperCase()}
+        </span>
+      </div>
+      
+      <h1 className="text-2xl lg:text-3xl xl:text-4xl font-extrabold text-zinc-900 leading-tight mb-4 tracking-tight">
+        {property.title}
+      </h1>
+      
+      <div className="flex items-start gap-2.5 text-zinc-600 mb-8">
+        <MapPin className="h-5 w-5 text-brand-red shrink-0 mt-0.5" />
+        <span className="font-medium text-base lg:text-lg">
+          {property.city?.fokontany} {property.city?.commune} {property.city?.district}
+        </span>
+      </div>
+
+      <div className="mb-10">
+        <div className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-widest mb-2">
+          {property.type === 'rent' ? 'Loyer Mensuel' : 'Prix de Vente'}
+        </div>
+        <div className="flex items-baseline gap-2">
+          <span className="text-4xl lg:text-5xl font-black text-brand-green tracking-tighter">
+            {displayPrice ? `${displayPrice.toLocaleString('fr-FR')} Ar` : 'Sur demande'}
+          </span>
+          {property.type === 'rent' && <span className="text-lg lg:text-xl text-zinc-400 font-bold ml-1">/ mois</span>}
         </div>
       </div>
 
-      {/* FIXED BOTTOM BAR */}
-      <div className="fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-zinc-200 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] z-50 flex items-center justify-between px-4 md:px-8">
-        <button 
-          onClick={() => router.back()}
-          className="flex items-center gap-1 text-zinc-600 hover:text-zinc-900 font-medium text-sm px-2 py-2"
-        >
-          <ChevronLeft className="h-5 w-5" />
-          Fermer
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 gap-3 mb-8">
+        {stats.map((stat, idx) => (stat.value && stat.value !== '-' && stat.value !== 0) ? (
+          <div key={idx} className="flex items-center gap-4 bg-zinc-50 rounded-2xl p-4 border border-zinc-100/80 hover:border-zinc-200 transition-colors shadow-sm">
+            <div className="h-10 w-10 rounded-full bg-white shadow-sm flex items-center justify-center shrink-0 border border-black/[0.02]">
+               <stat.icon className="h-5 w-5 text-zinc-700" />
+            </div>
+            <div className="flex flex-col">
+              <span className="font-black text-zinc-900 text-lg leading-none">{stat.value}</span>
+              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mt-1.5">{stat.label}</span>
+            </div>
+          </div>
+        ) : null)}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="bg-white min-h-screen pb-32 lg:pb-24">
+      {/* MOBILE GALLERY */}
+      {renderMobileGallery()}
+
+      <div className="max-w-[1440px] mx-auto lg:px-6 xl:px-8 lg:py-6">
+        
+        {/* DESKTOP NAVIGATION */}
+        <div className="hidden lg:flex items-center justify-between mb-8">
+          <button onClick={() => router.back()} className="flex items-center gap-2 text-zinc-500 hover:text-zinc-900 font-bold text-sm transition-all bg-zinc-50 hover:bg-zinc-100 px-5 py-2.5 rounded-full border border-zinc-100">
+            <ChevronLeft className="h-4 w-4" />
+            Retour à la recherche
+          </button>
+        </div>
+
+        <div className="flex flex-col lg:flex-row gap-8 lg:gap-12 xl:gap-16">
+          
+          {/* LEFT COLUMN: Gallery, Description, Features, Map */}
+          <div className="w-full lg:w-[55%] xl:w-[65%]">
+            
+            {/* Mobile Identity */}
+            {renderIdentityAndStats(true)}
+
+            {/* Desktop Gallery */}
+            {renderDesktopGallery()}
+
+            {/* CONTENT UNDER GALLERY */}
+            <div className="px-4 lg:px-0 mt-10 lg:mt-16 space-y-12 lg:space-y-16">
+              
+              {/* Features */}
+              {activeFeatures.length > 0 && (
+                <div className="scroll-mt-24">
+                  <h3 className="text-xl lg:text-2xl font-bold text-zinc-900 mb-6 lg:mb-8 flex items-center gap-4">
+                     Équipements et atouts
+                     <div className="h-px bg-zinc-100 flex-1"></div>
+                  </h3>
+                  <div className="flex flex-wrap gap-2.5 lg:gap-3">
+                    {activeFeatures.map(key => {
+                       const feature = FEATURE_ICONS[key];
+                       if (!feature) return null;
+                       const Icon = feature.icon;
+                       return (
+                         <div key={key} className="flex items-center gap-2.5 px-4 py-2.5 rounded-full border border-zinc-200 bg-white shadow-[0_2px_8px_-4px_rgba(0,0,0,0.05)] hover:border-brand-green/30 hover:bg-green-50/50 hover:-translate-y-0.5 transition-all cursor-default">
+                           <Icon className="h-4 w-4 text-brand-green" />
+                           <span className="text-sm font-semibold text-zinc-700">{feature.label}</span>
+                         </div>
+                       )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Description */}
+              <div className="scroll-mt-24">
+                <h3 className="text-xl lg:text-2xl font-bold text-zinc-900 mb-6 lg:mb-8 flex items-center gap-4">
+                   À propos de ce bien
+                   <div className="h-px bg-zinc-100 flex-1"></div>
+                </h3>
+                <div className={`text-zinc-600 text-base leading-relaxed whitespace-pre-wrap font-medium ${!isDescriptionExpanded ? 'line-clamp-6 md:line-clamp-none' : ''}`}>
+                  {property.description}
+                </div>
+                {property.description && property.description.length > 300 && (
+                  <button 
+                    onClick={() => setIsDescriptionExpanded(!isDescriptionExpanded)}
+                    className="mt-4 font-bold text-brand-green hover:text-green-700 text-sm flex items-center gap-1 md:hidden"
+                  >
+                    {isDescriptionExpanded ? 'Voir moins' : 'Lire la suite'}
+                    <ChevronRight className={`h-4 w-4 transition-transform ${isDescriptionExpanded ? '-rotate-90' : 'rotate-90'}`} />
+                  </button>
+                )}
+              </div>
+
+              {/* Location */}
+              <div className="scroll-mt-24">
+                 <h3 className="text-xl lg:text-2xl font-bold text-zinc-900 mb-6 lg:mb-8 flex items-center gap-4">
+                   Localisation
+                   <div className="h-px bg-zinc-100 flex-1"></div>
+                 </h3>
+                 <div className="h-[250px] lg:h-[350px] rounded-[2rem] overflow-hidden border border-zinc-100 shadow-inner relative z-0">
+                   <PropertyLocationDisplayer position={position} circle={useCircle} />
+                 </div>
+              </div>
+            </div>
+          </div>
+
+          {/* RIGHT COLUMN: Desktop Identity & Sticky Contact Card */}
+          <div className="w-full lg:w-[45%] xl:w-[35%] shrink-0 px-4 lg:px-0">
+            <div className="lg:sticky lg:top-24 space-y-8">
+              
+              {/* Desktop Identity */}
+              {renderIdentityAndStats(false)}
+
+              {/* Contact Action Area */}
+              <div className="bg-white rounded-[2rem] border border-zinc-100 p-6 lg:p-8 shadow-2xl shadow-black/[0.03] relative overflow-hidden">
+                 {/* Subtle background accent */}
+                 <div className="absolute top-0 right-0 w-32 h-32 bg-brand-green/5 rounded-bl-full -mr-4 -mt-4 pointer-events-none"></div>
+                 
+                 <div className="flex items-center gap-4 mb-8 relative z-10 bg-zinc-50/50 p-4 rounded-2xl border border-zinc-100/50">
+                   <div className="h-14 w-14 rounded-full overflow-hidden bg-white border border-zinc-200 shrink-0 shadow-sm">
+                      <img 
+                        src={
+                          property.owner?.role === "admin"
+                            ? (property.sources?.avatar || "/icon-logo.png")
+                            : (property.owner?.avatar || "https://ui-avatars.com/api/?name=User&background=random")
+                        }
+                        alt="Avatar" 
+                        className="w-full h-full object-cover" 
+                        onError={(e) => {
+                          e.currentTarget.src = "https://ui-avatars.com/api/?name=User&background=random";
+                        }}
+                      />
+                   </div>
+                   <div className="flex flex-col min-w-0">
+                      <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-0.5">Annonceur</span>
+                      <span className="font-bold text-zinc-900 text-base truncate">
+                        {property.owner?.role === "admin" ? (property.sources?.username || "TranoGasy") : (property.owner?.username || "Utilisateur")}
+                      </span>
+                      <span className="text-xs text-brand-green font-semibold mt-0.5">Annonce {formatDateAgo(property.created_at)}</span>
+                   </div>
+                 </div>
+
+                 <div className="hidden lg:flex gap-3 relative z-10">
+                   <button onClick={() => setShowContact(true)} className="flex-1 bg-brand-green hover:bg-green-700 text-white rounded-2xl py-4 flex items-center justify-center gap-2 font-bold text-sm shadow-lg shadow-brand-green/20 hover:shadow-brand-green/30 hover:-translate-y-0.5 transition-all">
+                      <Phone className="h-5 w-5" />
+                      Voir contact
+                   </button>
+                   <button className="h-[52px] w-[52px] shrink-0 rounded-2xl bg-red-50 text-brand-red flex items-center justify-center hover:bg-red-100 hover:-translate-y-0.5 transition-all">
+                      <Heart className="h-5 w-5" />
+                   </button>
+                   <button onClick={handleShare} className="h-[52px] w-[52px] shrink-0 rounded-2xl bg-zinc-50 text-zinc-600 border border-zinc-200 flex items-center justify-center hover:bg-zinc-100 hover:-translate-y-0.5 transition-all">
+                      <Share2 className="h-5 w-5" />
+                   </button>
+                 </div>
+                 
+                 <div className="hidden lg:flex items-center justify-center gap-2 text-xs font-semibold text-zinc-400 mt-6">
+                   <FaShieldAlt className="h-3.5 w-3.5" />
+                   <span>Contact sécurisé via TranoGasy</span>
+                 </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* MOBILE FIXED BOTTOM BAR */}
+      <div 
+        className="lg:hidden fixed left-0 right-0 bg-white/90 backdrop-blur-md border-t border-zinc-200/50 shadow-[0_-8px_30px_rgba(0,0,0,0.08)] z-40 px-5 py-3.5 flex gap-3 transition-all"
+        style={{ bottom: 'calc(65px + env(safe-area-inset-bottom))' }}
+      >
+        <button onClick={() => setShowContact(true)} className="flex-1 bg-brand-green hover:bg-green-700 text-white rounded-2xl py-3.5 flex items-center justify-center gap-2 font-bold text-sm shadow-lg shadow-brand-green/20 hover:shadow-brand-green/30 hover:-translate-y-0.5 transition-all">
+           <Phone className="h-5 w-5" />
+           Voir contact
         </button>
-
-        <div className="w-12 h-1.5 rounded-full bg-zinc-200"></div>
-
-        <button 
-          onClick={() => setShowContact(true)}
-          className="bg-brand-green hover:bg-green-700 text-white px-6 py-2 rounded-full flex items-center gap-2 text-sm font-bold shadow-md hover:shadow-lg transition-all"
-        >
-          <Phone className="h-4 w-4" />
-          Voir contact
+        <button className="h-[50px] w-[50px] shrink-0 rounded-2xl bg-red-50 text-brand-red flex items-center justify-center hover:bg-red-100 hover:-translate-y-0.5 transition-all">
+           <Heart className="h-5 w-5" />
+        </button>
+        <button onClick={handleShare} className="h-[50px] w-[50px] shrink-0 rounded-2xl bg-zinc-50 text-zinc-600 border border-zinc-200 flex items-center justify-center hover:bg-zinc-100 hover:-translate-y-0.5 transition-all">
+           <Share2 className="h-5 w-5" />
         </button>
       </div>
 
-      {/* CONTACT MODAL */}
+      {/* MODALS */}
       {showContact && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={() => setShowContact(false)}>
-          <div className="bg-white rounded-2xl p-6 shadow-2xl max-w-sm w-full relative" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowContact(false)}>
+          <div className="bg-white rounded-[2rem] p-6 md:p-8 shadow-2xl max-w-sm w-full relative transform transition-all animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
             <button 
               onClick={() => setShowContact(false)}
-              className="absolute top-4 right-4 h-8 w-8 flex items-center justify-center rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-500 transition-colors"
+              className="absolute top-4 right-4 h-10 w-10 flex items-center justify-center rounded-full bg-zinc-50 hover:bg-zinc-100 text-zinc-500 transition-colors"
             >
               <X className="h-5 w-5" />
             </button>
             
-            <div className="text-center mb-6 pt-2">
-              <div className="h-16 w-16 mx-auto rounded-full bg-green-50 flex items-center justify-center mb-4">
+            <div className="text-center mb-8 pt-4">
+              <div className="h-20 w-20 mx-auto rounded-full bg-green-50 flex items-center justify-center mb-5 border border-green-100 shadow-sm">
                 <Phone className="h-8 w-8 text-brand-green" />
               </div>
-              <h3 className="text-xl font-bold text-zinc-900">Contactez le propriétaire</h3>
-              <p className="text-sm text-zinc-500 mt-1">
-                Mentionnez que vous avez vu l'annonce sur TranoGasy
+              <h3 className="text-2xl font-black text-zinc-900 tracking-tight">Contactez l'annonceur</h3>
+              <p className="text-sm text-zinc-500 mt-2 font-medium">
+                Mentionnez que vous avez vu l'annonce sur TranoGasy pour un meilleur accueil.
               </p>
             </div>
             
@@ -471,20 +511,19 @@ export default function PropertyDetailsClient({ property }: { property: any }) {
                 <>
                   {[property.phone1, property.phone2, property.phone3, property.owner?.phone]
                     .filter(Boolean)
-                    // Remove duplicates
                     .filter((v, i, a) => a.indexOf(v) === i)
                     .map((phone, idx) => (
                       <a 
                         key={idx}
                         href={`tel:${phone}`} 
-                        className="flex items-center justify-center py-3 rounded-xl bg-green-50 text-brand-green border border-green-100 font-bold text-xl tracking-wider hover:bg-green-100 transition-colors"
+                        className="flex items-center justify-center py-4 rounded-2xl bg-zinc-50 text-brand-green border border-zinc-100 font-black text-xl tracking-wider hover:bg-green-50 hover:border-green-200 hover:shadow-sm transition-all"
                       >
                         {phone}
                       </a>
                     ))}
                 </>
               ) : (
-                <div className="text-center py-4 text-zinc-500 font-medium">
+                <div className="text-center py-6 text-zinc-500 font-semibold bg-zinc-50 rounded-2xl border border-zinc-100">
                   Aucun numéro de téléphone fourni
                 </div>
               )}
@@ -492,6 +531,94 @@ export default function PropertyDetailsClient({ property }: { property: any }) {
           </div>
         </div>
       )}
+
+      {/* LIGHTBOX VIEWER */}
+      {lightboxIndex !== null && (
+        <div
+          className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center backdrop-blur-xl transition-all duration-300"
+          onClick={() => setLightboxIndex(null)}
+        >
+          {/* Close button */}
+          <button
+            className="absolute top-6 right-6 z-20 h-12 w-12 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-colors border border-white/20"
+            onClick={() => setLightboxIndex(null)}
+          >
+            <X className="h-6 w-6" />
+          </button>
+
+          {/* Prev arrow */}
+          {lightboxIndex > 0 && (
+            <button
+              className="hidden md:flex absolute left-8 z-20 h-14 w-14 rounded-full bg-white/10 items-center justify-center text-white hover:bg-white/20 hover:scale-110 transition-all border border-white/20"
+              onClick={(e) => { 
+                e.stopPropagation(); 
+                if (lightboxRef.current) {
+                  lightboxRef.current.scrollBy({ left: -window.innerWidth, behavior: 'smooth' });
+                }
+              }}
+            >
+              <ChevronLeft className="h-7 w-7" />
+            </button>
+          )}
+
+          {/* Next arrow */}
+          {lightboxIndex < images.length - 1 && (
+            <button
+              className="hidden md:flex absolute right-8 z-20 h-14 w-14 rounded-full bg-white/10 items-center justify-center text-white hover:bg-white/20 hover:scale-110 transition-all border border-white/20"
+              onClick={(e) => { 
+                e.stopPropagation(); 
+                if (lightboxRef.current) {
+                  lightboxRef.current.scrollBy({ left: window.innerWidth, behavior: 'smooth' });
+                }
+              }}
+            >
+              <ChevronRight className="h-7 w-7" />
+            </button>
+          )}
+
+          {/* Image Container with Scroll Snap */}
+          <div
+            ref={(el) => {
+              if (el && !el.dataset.initialized) {
+                el.scrollTo({ left: el.clientWidth * lightboxIndex, behavior: 'instant' });
+                el.dataset.initialized = 'true';
+              }
+              lightboxRef.current = el;
+            }}
+            className="w-full h-full flex overflow-x-auto snap-x snap-mandatory"
+            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+            onClick={(e) => e.stopPropagation()}
+            onScroll={(e) => {
+               const target = e.currentTarget;
+               const index = Math.round(target.scrollLeft / target.clientWidth);
+               if (index !== lightboxIndex) {
+                 setLightboxIndex(index);
+               }
+            }}
+          >
+            {images.map((src: string, idx: number) => (
+              <div key={idx} className="min-w-full h-full flex items-center justify-center snap-center snap-always relative px-4 md:px-24">
+                <div className="relative w-full max-w-6xl h-[85vh]">
+                  <Image
+                    src={src}
+                    alt={`Photo ${idx + 1}`}
+                    fill
+                    className={`object-contain transition-transform duration-700 ${idx === lightboxIndex ? 'scale-100 opacity-100' : 'scale-95 opacity-50'}`}
+                    priority={idx === lightboxIndex || idx === lightboxIndex + 1 || idx === lightboxIndex - 1}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Counter */}
+          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 text-white px-5 py-2.5 rounded-full bg-white/10 border border-white/20 text-sm font-bold tracking-widest backdrop-blur-md z-20">
+            {lightboxIndex + 1} / {images.length}
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
+
