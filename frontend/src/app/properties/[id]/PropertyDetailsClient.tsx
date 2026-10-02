@@ -70,6 +70,7 @@ function formatDateAgo(dateString?: string) {
 export default function PropertyDetailsClient({ property }: { property: any }) {
   const router = useRouter();
   const [showContact, setShowContact] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
   const images = property.images && property.images.length > 0 
     ? property.images.map((img: any) => typeof img === 'string' ? img : img.src)
@@ -267,27 +268,136 @@ export default function PropertyDetailsClient({ property }: { property: any }) {
           </div>
         </div>
 
-        {/* Gallery Grid */}
+        {/* Masonry / Mosaic Property Gallery */}
         {images.length > 0 && (
           <div className="mb-10">
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-2 md:gap-4">
-              {images.map((img: string, idx: number) => {
-                // Determine spans for a masonry-like feel
-                let spanClasses = "";
-                if (idx === 0) spanClasses = "col-span-2 row-span-2 aspect-video md:aspect-auto h-full"; // Large first image
-                else spanClasses = "aspect-video"; // Smaller square/video aspects
-                
-                return (
-                  <div key={idx} className={`relative rounded-lg overflow-hidden bg-zinc-100 ${spanClasses}`}>
-                    <Image 
-                      src={img} 
-                      alt={`Photo ${idx + 1}`} 
-                      fill 
-                      className="object-cover hover:scale-105 transition-transform duration-500"
-                    />
+            <div className="rounded-xl overflow-hidden">
+              {/* Row 1: Featured large image + 2 stacked small images */}
+              <div className="flex gap-[2px]" style={{ height: 'clamp(250px, 40vw, 420px)' }}>
+                {/* Featured image — takes ~65% width */}
+                <div
+                  className="relative flex-[2] cursor-pointer overflow-hidden group"
+                  onClick={() => setLightboxIndex(0)}
+                >
+                  <Image
+                    src={images[0]}
+                    alt="Photo principale"
+                    fill
+                    className="object-cover group-hover:scale-105 transition-transform duration-500"
+                    priority
+                  />
+                </div>
+                {/* Right column — 2 stacked images */}
+                {images.length > 1 && (
+                  <div className="flex flex-col flex-[1] gap-[2px]">
+                    {images.slice(1, 3).map((img: string, idx: number) => (
+                      <div
+                        key={idx}
+                        className="relative flex-1 cursor-pointer overflow-hidden group"
+                        onClick={() => setLightboxIndex(idx + 1)}
+                      >
+                        <Image
+                          src={img}
+                          alt={`Photo ${idx + 2}`}
+                          fill
+                          className="object-cover group-hover:scale-105 transition-transform duration-500"
+                        />
+                      </div>
+                    ))}
                   </div>
-                )
-              })}
+                )}
+              </div>
+
+              {/* Row 2+: Remaining images in mosaic rows of 3 */}
+              {images.length > 3 && (
+                <div className="mt-[2px]">
+                  {Array.from({ length: Math.ceil((images.length - 3) / 3) }).map((_, rowIdx) => {
+                    const rowImages = images.slice(3 + rowIdx * 3, 3 + rowIdx * 3 + 3);
+                    return (
+                      <div
+                        key={rowIdx}
+                        className="flex gap-[2px]"
+                        style={{
+                          height: 'clamp(120px, 22vw, 220px)',
+                          marginTop: rowIdx > 0 ? '2px' : 0,
+                        }}
+                      >
+                        {rowImages.map((img: string, imgIdx: number) => {
+                          const globalIdx = 3 + rowIdx * 3 + imgIdx;
+                          return (
+                            <div
+                              key={imgIdx}
+                              className="relative flex-1 cursor-pointer overflow-hidden group"
+                              onClick={() => setLightboxIndex(globalIdx)}
+                            >
+                              <Image
+                                src={img}
+                                alt={`Photo ${globalIdx + 1}`}
+                                fill
+                                className="object-cover group-hover:scale-105 transition-transform duration-500"
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Lightbox Viewer */}
+        {lightboxIndex !== null && (
+          <div
+            className="fixed inset-0 z-[70] bg-black/95 flex items-center justify-center"
+            onClick={() => setLightboxIndex(null)}
+          >
+            {/* Close button */}
+            <button
+              className="absolute top-4 right-4 z-10 h-10 w-10 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center text-white hover:bg-white/20 transition-colors"
+              onClick={() => setLightboxIndex(null)}
+            >
+              <X className="h-6 w-6" />
+            </button>
+
+            {/* Prev arrow */}
+            {lightboxIndex > 0 && (
+              <button
+                className="absolute left-3 md:left-6 z-10 h-10 w-10 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center text-white hover:bg-white/20 transition-colors"
+                onClick={(e) => { e.stopPropagation(); setLightboxIndex(lightboxIndex - 1); }}
+              >
+                <ChevronLeft className="h-6 w-6" />
+              </button>
+            )}
+
+            {/* Next arrow */}
+            {lightboxIndex < images.length - 1 && (
+              <button
+                className="absolute right-3 md:right-6 z-10 h-10 w-10 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center text-white hover:bg-white/20 transition-colors"
+                onClick={(e) => { e.stopPropagation(); setLightboxIndex(lightboxIndex + 1); }}
+              >
+                <ChevronLeft className="h-6 w-6 rotate-180" />
+              </button>
+            )}
+
+            {/* Image */}
+            <div
+              className="relative w-[90vw] h-[80vh] max-w-5xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <Image
+                src={images[lightboxIndex]}
+                alt={`Photo ${lightboxIndex + 1}`}
+                fill
+                className="object-contain"
+              />
+            </div>
+
+            {/* Counter */}
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/70 text-sm font-medium">
+              {lightboxIndex + 1} / {images.length}
             </div>
           </div>
         )}
