@@ -166,14 +166,14 @@ export default function PropertyDetailsClient({ property }: { property: any }) {
       
       {/* Mobile Top Actions */}
       <div className="absolute top-4 left-4 right-4 flex justify-between items-start z-10 pointer-events-none">
-        <button onClick={() => router.back()} className="pointer-events-auto h-10 w-10 rounded-full bg-white/90 backdrop-blur-md flex items-center justify-center text-zinc-900 shadow-sm border border-black/5 hover:scale-105 transition-transform">
+        <button onClick={() => router.back()} className="pointer-events-auto h-10 w-10 rounded-full bg-white/90 dark:bg-zinc-800/90 backdrop-blur-md flex items-center justify-center text-zinc-900 dark:text-zinc-100 shadow-sm border border-black/5 dark:border-white/10 hover:scale-105 transition-transform">
           <ChevronLeft className="h-6 w-6 pr-0.5" />
         </button>
         <div className="flex gap-2 pointer-events-auto">
-          <button onClick={handleShare} className="h-10 w-10 rounded-full bg-white/90 backdrop-blur-md flex items-center justify-center text-zinc-900 shadow-sm border border-black/5 hover:scale-105 transition-transform">
+          <button onClick={handleShare} className="h-10 w-10 rounded-full bg-white/90 dark:bg-zinc-800/90 backdrop-blur-md flex items-center justify-center text-zinc-900 dark:text-zinc-100 shadow-sm border border-black/5 dark:border-white/10 hover:scale-105 transition-transform">
             <Share2 className="h-4 w-4" />
           </button>
-          <button className="h-10 w-10 rounded-full bg-white/90 backdrop-blur-md flex items-center justify-center text-brand-red shadow-sm border border-black/5 hover:scale-105 transition-transform">
+          <button className="h-10 w-10 rounded-full bg-white/90 dark:bg-zinc-800/90 backdrop-blur-md flex items-center justify-center text-brand-red shadow-sm border border-black/5 dark:border-white/10 hover:scale-105 transition-transform">
             <Heart className="h-5 w-5" />
           </button>
         </div>
@@ -284,11 +284,11 @@ export default function PropertyDetailsClient({ property }: { property: any }) {
         </span>
       </div>
       
-      <h1 className="text-2xl lg:text-3xl xl:text-4xl font-extrabold text-zinc-900 leading-tight mb-4 tracking-tight">
+      <h1 className="text-2xl lg:text-3xl xl:text-4xl font-extrabold text-zinc-900 dark:text-white leading-tight mb-4 tracking-tight">
         {property.title}
       </h1>
       
-      <div className="flex items-start gap-2.5 text-zinc-600 mb-8">
+      <div className="flex items-start gap-2.5 text-zinc-600 dark:text-zinc-300 mb-8">
         <MapPin className="h-5 w-5 text-brand-red shrink-0 mt-0.5" />
         <span className="font-medium text-base lg:text-lg">
           {property.city?.fokontany} {property.city?.commune} {property.city?.district}
@@ -299,23 +299,27 @@ export default function PropertyDetailsClient({ property }: { property: any }) {
         <div className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-widest mb-2">
           {property.type === 'rent' ? 'Loyer Mensuel' : 'Prix de Vente'}
         </div>
-        <div className="flex items-baseline gap-2">
-          <span className="text-4xl lg:text-5xl font-black text-brand-green tracking-tighter">
-            {displayPrice ? `${displayPrice.toLocaleString('fr-FR')} Ar` : 'Sur demande'}
+        <div className="flex items-baseline gap-1 text-brand-green">
+          <span className="text-4xl lg:text-5xl font-black tracking-tighter">
+            {displayPrice ? displayPrice.toLocaleString('en-US') : 'Sur demande'}
           </span>
-          {property.type === 'rent' && <span className="text-lg lg:text-xl text-zinc-400 font-bold ml-1">/ mois</span>}
+          {displayPrice && (
+            <span className="text-xl lg:text-2xl font-bold ml-1">
+              AR{property.type === 'rent' ? '/mois' : ''}
+            </span>
+          )}
         </div>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 gap-3 mb-8">
         {stats.map((stat, idx) => (stat.value && stat.value !== '-' && stat.value !== 0) ? (
-          <div key={idx} className="flex items-center gap-4 bg-zinc-50 rounded-2xl p-4 border border-zinc-100/80 hover:border-zinc-200 transition-colors shadow-sm">
-            <div className="h-10 w-10 rounded-full bg-white shadow-sm flex items-center justify-center shrink-0 border border-black/[0.02]">
-               <stat.icon className="h-5 w-5 text-zinc-700" />
+          <div key={idx} className="flex items-center gap-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl p-4 border border-zinc-100/80 dark:border-zinc-700/50 hover:border-zinc-200 dark:hover:border-zinc-600 transition-colors shadow-sm">
+            <div className="h-10 w-10 rounded-full bg-white dark:bg-zinc-800 shadow-sm flex items-center justify-center shrink-0 border border-black/[0.02] dark:border-white/5">
+               <stat.icon className="h-5 w-5 text-zinc-700 dark:text-zinc-300" />
             </div>
             <div className="flex flex-col">
-              <span className="font-black text-zinc-900 text-lg leading-none">{stat.value}</span>
-              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mt-1.5">{stat.label}</span>
+              <span className="font-black text-zinc-900 dark:text-white text-lg leading-none">{stat.value}</span>
+              <span className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-widest mt-1.5">{stat.label}</span>
             </div>
           </div>
         ) : null)}
@@ -324,7 +328,7 @@ export default function PropertyDetailsClient({ property }: { property: any }) {
   );
 
   return (
-    <div className="bg-white min-h-screen pb-32 lg:pb-24">
+    <div className="bg-white dark:bg-zinc-900 min-h-screen">
       {/* MOBILE GALLERY */}
       {renderMobileGallery()}
 
@@ -332,7 +336,7 @@ export default function PropertyDetailsClient({ property }: { property: any }) {
         
         {/* DESKTOP NAVIGATION */}
         <div className="hidden lg:flex items-center justify-between mb-8">
-          <button onClick={() => router.back()} className="flex items-center gap-2 text-zinc-500 hover:text-zinc-900 font-bold text-sm transition-all bg-zinc-50 hover:bg-zinc-100 px-5 py-2.5 rounded-full border border-zinc-100">
+          <button onClick={() => router.back()} className="flex items-center gap-2 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 font-bold text-sm transition-all bg-zinc-50 dark:bg-zinc-800/50 hover:bg-zinc-100 dark:hover:bg-zinc-800 px-5 py-2.5 rounded-full border border-zinc-100 dark:border-zinc-700/50">
             <ChevronLeft className="h-4 w-4" />
             Retour à la recherche
           </button>
@@ -355,9 +359,9 @@ export default function PropertyDetailsClient({ property }: { property: any }) {
               {/* Features */}
               {activeFeatures.length > 0 && (
                 <div className="scroll-mt-24">
-                  <h3 className="text-xl lg:text-2xl font-bold text-zinc-900 mb-6 lg:mb-8 flex items-center gap-4">
+                  <h3 className="text-xl lg:text-2xl font-bold text-zinc-900 dark:text-white mb-6 lg:mb-8 flex items-center gap-4">
                      Équipements et atouts
-                     <div className="h-px bg-zinc-100 flex-1"></div>
+                     <div className="h-px bg-zinc-100 dark:bg-zinc-800 flex-1"></div>
                   </h3>
                   <div className="flex flex-wrap gap-2.5 lg:gap-3">
                     {activeFeatures.map(key => {
@@ -365,9 +369,9 @@ export default function PropertyDetailsClient({ property }: { property: any }) {
                        if (!feature) return null;
                        const Icon = feature.icon;
                        return (
-                         <div key={key} className="flex items-center gap-2.5 px-4 py-2.5 rounded-full border border-zinc-200 bg-white shadow-[0_2px_8px_-4px_rgba(0,0,0,0.05)] hover:border-brand-green/30 hover:bg-green-50/50 hover:-translate-y-0.5 transition-all cursor-default">
+                         <div key={key} className="flex items-center gap-2.5 px-4 py-2.5 rounded-full border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800/80 shadow-[0_2px_8px_-4px_rgba(0,0,0,0.05)] hover:border-brand-green/30 dark:hover:border-brand-green/50 hover:bg-green-50/50 dark:hover:bg-zinc-800 hover:-translate-y-0.5 transition-all cursor-default">
                            <Icon className="h-4 w-4 text-brand-green" />
-                           <span className="text-sm font-semibold text-zinc-700">{feature.label}</span>
+                           <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">{feature.label}</span>
                          </div>
                        )
                     })}
@@ -377,11 +381,11 @@ export default function PropertyDetailsClient({ property }: { property: any }) {
 
               {/* Description */}
               <div className="scroll-mt-24">
-                <h3 className="text-xl lg:text-2xl font-bold text-zinc-900 mb-6 lg:mb-8 flex items-center gap-4">
+                <h3 className="text-xl lg:text-2xl font-bold text-zinc-900 dark:text-white mb-6 lg:mb-8 flex items-center gap-4">
                    À propos de ce bien
-                   <div className="h-px bg-zinc-100 flex-1"></div>
+                   <div className="h-px bg-zinc-100 dark:bg-zinc-800 flex-1"></div>
                 </h3>
-                <div className={`text-zinc-600 text-base leading-relaxed whitespace-pre-wrap font-medium ${!isDescriptionExpanded ? 'line-clamp-6 md:line-clamp-none' : ''}`}>
+                <div className={`text-zinc-600 dark:text-zinc-300 text-base leading-relaxed whitespace-pre-wrap font-medium ${!isDescriptionExpanded ? 'line-clamp-6 md:line-clamp-none' : ''}`}>
                   {property.description}
                 </div>
                 {property.description && property.description.length > 300 && (
@@ -397,11 +401,11 @@ export default function PropertyDetailsClient({ property }: { property: any }) {
 
               {/* Location */}
               <div className="scroll-mt-24">
-                 <h3 className="text-xl lg:text-2xl font-bold text-zinc-900 mb-6 lg:mb-8 flex items-center gap-4">
+                 <h3 className="text-xl lg:text-2xl font-bold text-zinc-900 dark:text-white mb-6 lg:mb-8 flex items-center gap-4">
                    Localisation
-                   <div className="h-px bg-zinc-100 flex-1"></div>
+                   <div className="h-px bg-zinc-100 dark:bg-zinc-800 flex-1"></div>
                  </h3>
-                 <div className="h-[250px] lg:h-[350px] rounded-[2rem] overflow-hidden border border-zinc-100 shadow-inner relative z-0">
+                 <div className="h-[250px] lg:h-[350px] rounded-[2rem] overflow-hidden border border-zinc-100 dark:border-zinc-700 shadow-inner relative z-0">
                    <PropertyLocationDisplayer position={position} circle={useCircle} />
                  </div>
               </div>
@@ -416,12 +420,12 @@ export default function PropertyDetailsClient({ property }: { property: any }) {
               {renderIdentityAndStats(false)}
 
               {/* Contact Action Area */}
-              <div className="bg-white rounded-[2rem] border border-zinc-100 p-6 lg:p-8 shadow-2xl shadow-black/[0.03] relative overflow-hidden">
+              <div className="bg-white dark:bg-zinc-800 rounded-[2rem] border border-zinc-100 dark:border-zinc-700 p-6 lg:p-8 shadow-2xl shadow-black/[0.03] relative overflow-hidden">
                  {/* Subtle background accent */}
                  <div className="absolute top-0 right-0 w-32 h-32 bg-brand-green/5 rounded-bl-full -mr-4 -mt-4 pointer-events-none"></div>
                  
-                 <div className="flex items-center gap-4 mb-8 relative z-10 bg-zinc-50/50 p-4 rounded-2xl border border-zinc-100/50">
-                   <div className="h-14 w-14 rounded-full overflow-hidden bg-white border border-zinc-200 shrink-0 shadow-sm">
+                 <div className="flex items-center gap-4 lg:mb-8 relative z-10 bg-zinc-50/50 dark:bg-zinc-700/50 p-4 rounded-2xl border border-zinc-100/50 dark:border-zinc-600/50">
+                   <div className="h-14 w-14 rounded-full overflow-hidden bg-white dark:bg-zinc-700 border border-zinc-200 dark:border-zinc-600 shrink-0 shadow-sm">
                       <img 
                         src={
                           property.owner?.role === "admin"
@@ -437,7 +441,7 @@ export default function PropertyDetailsClient({ property }: { property: any }) {
                    </div>
                    <div className="flex flex-col min-w-0">
                       <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-0.5">Annonceur</span>
-                      <span className="font-bold text-zinc-900 text-base truncate">
+                      <span className="font-bold text-zinc-900 dark:text-white text-base truncate">
                         {property.owner?.role === "admin" ? (property.sources?.username || "TranoGasy") : (property.owner?.username || "Utilisateur")}
                       </span>
                       <span className="text-xs text-brand-green font-semibold mt-0.5">Annonce {formatDateAgo(property.created_at)}</span>
@@ -449,10 +453,10 @@ export default function PropertyDetailsClient({ property }: { property: any }) {
                       <Phone className="h-5 w-5" />
                       Voir contact
                    </button>
-                   <button className="h-[52px] w-[52px] shrink-0 rounded-2xl bg-red-50 text-brand-red flex items-center justify-center hover:bg-red-100 hover:-translate-y-0.5 transition-all">
+                   <button className="h-[52px] w-[52px] shrink-0 rounded-2xl bg-red-50 dark:bg-red-900/30 text-brand-red flex items-center justify-center hover:bg-red-100 dark:hover:bg-red-900/50 hover:-translate-y-0.5 transition-all">
                       <Heart className="h-5 w-5" />
                    </button>
-                   <button onClick={handleShare} className="h-[52px] w-[52px] shrink-0 rounded-2xl bg-zinc-50 text-zinc-600 border border-zinc-200 flex items-center justify-center hover:bg-zinc-100 hover:-translate-y-0.5 transition-all">
+                   <button onClick={handleShare} className="h-[52px] w-[52px] shrink-0 rounded-2xl bg-zinc-50 dark:bg-zinc-700/50 text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-600 flex items-center justify-center hover:bg-zinc-100 dark:hover:bg-zinc-700 hover:-translate-y-0.5 transition-all">
                       <Share2 className="h-5 w-5" />
                    </button>
                  </div>
@@ -470,17 +474,17 @@ export default function PropertyDetailsClient({ property }: { property: any }) {
 
       {/* MOBILE FIXED BOTTOM BAR */}
       <div 
-        className="lg:hidden fixed left-0 right-0 bg-white/90 backdrop-blur-md border-t border-zinc-200/50 shadow-[0_-8px_30px_rgba(0,0,0,0.08)] z-40 px-5 py-3.5 flex gap-3 transition-all"
+        className="lg:hidden fixed left-0 right-0 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md border-t border-zinc-200/50 dark:border-zinc-800/50 shadow-[0_-8px_30px_rgba(0,0,0,0.08)] dark:shadow-[0_-8px_30px_rgba(0,0,0,0.3)] z-40 px-5 py-3.5 flex gap-3 transition-all"
         style={{ bottom: 'calc(65px + env(safe-area-inset-bottom))' }}
       >
         <button onClick={() => setShowContact(true)} className="flex-1 bg-brand-green hover:bg-green-700 text-white rounded-2xl py-3.5 flex items-center justify-center gap-2 font-bold text-sm shadow-lg shadow-brand-green/20 hover:shadow-brand-green/30 hover:-translate-y-0.5 transition-all">
            <Phone className="h-5 w-5" />
            Voir contact
         </button>
-        <button className="h-[50px] w-[50px] shrink-0 rounded-2xl bg-red-50 text-brand-red flex items-center justify-center hover:bg-red-100 hover:-translate-y-0.5 transition-all">
+        <button className="h-[50px] w-[50px] shrink-0 rounded-2xl bg-red-50 dark:bg-red-900/30 text-brand-red flex items-center justify-center hover:bg-red-100 dark:hover:bg-red-900/50 hover:-translate-y-0.5 transition-all">
            <Heart className="h-5 w-5" />
         </button>
-        <button onClick={handleShare} className="h-[50px] w-[50px] shrink-0 rounded-2xl bg-zinc-50 text-zinc-600 border border-zinc-200 flex items-center justify-center hover:bg-zinc-100 hover:-translate-y-0.5 transition-all">
+        <button onClick={handleShare} className="h-[50px] w-[50px] shrink-0 rounded-2xl bg-zinc-50 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center hover:bg-zinc-100 dark:hover:bg-zinc-700 hover:-translate-y-0.5 transition-all">
            <Share2 className="h-5 w-5" />
         </button>
       </div>
@@ -488,20 +492,20 @@ export default function PropertyDetailsClient({ property }: { property: any }) {
       {/* MODALS */}
       {showContact && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowContact(false)}>
-          <div className="bg-white rounded-[2rem] p-6 md:p-8 shadow-2xl max-w-sm w-full relative transform transition-all animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+          <div className="bg-white dark:bg-zinc-900 rounded-[2rem] p-6 md:p-8 shadow-2xl max-w-sm w-full relative transform transition-all animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
             <button 
               onClick={() => setShowContact(false)}
-              className="absolute top-4 right-4 h-10 w-10 flex items-center justify-center rounded-full bg-zinc-50 hover:bg-zinc-100 text-zinc-500 transition-colors"
+              className="absolute top-4 right-4 h-10 w-10 flex items-center justify-center rounded-full bg-zinc-50 dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-500 dark:text-zinc-400 transition-colors"
             >
               <X className="h-5 w-5" />
             </button>
             
             <div className="text-center mb-8 pt-4">
-              <div className="h-20 w-20 mx-auto rounded-full bg-green-50 flex items-center justify-center mb-5 border border-green-100 shadow-sm">
+              <div className="h-20 w-20 mx-auto rounded-full bg-green-50 dark:bg-brand-green/20 flex items-center justify-center mb-5 border border-green-100 dark:border-brand-green/30 shadow-sm">
                 <Phone className="h-8 w-8 text-brand-green" />
               </div>
-              <h3 className="text-2xl font-black text-zinc-900 tracking-tight">Contactez l'annonceur</h3>
-              <p className="text-sm text-zinc-500 mt-2 font-medium">
+              <h3 className="text-2xl font-black text-zinc-900 dark:text-white tracking-tight">Contactez l'annonceur</h3>
+              <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-2 font-medium">
                 Mentionnez que vous avez vu l'annonce sur TranoGasy pour un meilleur accueil.
               </p>
             </div>
@@ -516,14 +520,14 @@ export default function PropertyDetailsClient({ property }: { property: any }) {
                       <a 
                         key={idx}
                         href={`tel:${phone}`} 
-                        className="flex items-center justify-center py-4 rounded-2xl bg-zinc-50 text-brand-green border border-zinc-100 font-black text-xl tracking-wider hover:bg-green-50 hover:border-green-200 hover:shadow-sm transition-all"
+                        className="flex items-center justify-center py-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800 text-brand-green border border-zinc-100 dark:border-zinc-700 font-black text-xl tracking-wider hover:bg-green-50 dark:hover:bg-zinc-700 hover:border-green-200 dark:hover:border-zinc-600 hover:shadow-sm transition-all"
                       >
                         {phone}
                       </a>
                     ))}
                 </>
               ) : (
-                <div className="text-center py-6 text-zinc-500 font-semibold bg-zinc-50 rounded-2xl border border-zinc-100">
+                <div className="text-center py-6 text-zinc-500 font-semibold bg-zinc-50 dark:bg-zinc-800 rounded-2xl border border-zinc-100 dark:border-zinc-700">
                   Aucun numéro de téléphone fourni
                 </div>
               )}
