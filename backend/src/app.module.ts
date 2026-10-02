@@ -7,6 +7,8 @@ import { CitiesModule } from './cities/cities.module';
 import { FeaturesModule } from './features/features.module';
 import { PropertiesModule } from './properties/properties.module';
 
+import { UsersModule } from './users/users.module';
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -22,6 +24,7 @@ import { PropertiesModule } from './properties/properties.module';
     CitiesModule,
     FeaturesModule,
     PropertiesModule,
+    UsersModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -133,12 +133,17 @@ export default function PropertyDetailsClient({ property }: { property: any }) {
           {/* User Info */}
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-full bg-white overflow-hidden border-2 border-white/80 shadow-md">
-              <Image 
-                src="https://via.placeholder.com/40" // Replace with actual avatar if available
+              <img 
+                src={
+                  property.owner?.role === "admin"
+                    ? (property.sources?.avatar || "/icon-logo.png")
+                    : (property.owner?.avatar || "https://ui-avatars.com/api/?name=User&background=random")
+                }
                 alt="Avatar" 
-                width={40} 
-                height={40} 
-                className="object-cover" 
+                className="w-full h-full object-cover" 
+                onError={(e) => {
+                  e.currentTarget.src = "https://ui-avatars.com/api/?name=User&background=random";
+                }}
               />
             </div>
             <div className="flex flex-col text-white drop-shadow-md">

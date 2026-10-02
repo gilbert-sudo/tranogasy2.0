@@ -53,7 +53,7 @@ export class Property {
   area: number;
 
   @Prop({ required: true })
-  propertyNumber: number;
+  propertyNumber: string;
 
   @Prop({ type: Types.ObjectId, ref: 'Feature', default: null })
   features: Feature;
