@@ -16,6 +16,7 @@ import {
 import { MdOutlineLiving, MdBalcony, MdLandscape, MdOutlineFiberSmartRecord } from "react-icons/md";
 import { TbAirConditioning, TbBuildingCastle, TbWash } from "react-icons/tb";
 import { TfiLayoutSidebarLeft } from "react-icons/tfi";
+import PropertyLocationDisplayer from '@/components/map/PropertyLocationDisplayer';
 
 const FEATURE_ICONS: Record<string, { icon: React.ElementType, label: string }> = {
   electricityJirama: { icon: FaPlugCircleBolt, label: "Électricité JIRAMA" },
@@ -81,6 +82,16 @@ export default function PropertyDetailsClient({ property }: { property: any }) {
   const activeFeatures = property.features 
     ? Object.entries(property.features).filter(([_, value]) => value).map(([key]) => key)
     : [];
+
+  const position = property.coords
+    ? property.coords
+    : property.city?.coords
+      ? property.city.coords
+      : {
+          lat: -18.905195365917766,
+          lng: 47.52370521426201,
+        };
+  const useCircle = property.coords ? false : true;
 
   const handleShare = async () => {
     try {
@@ -403,13 +414,8 @@ export default function PropertyDetailsClient({ property }: { property: any }) {
         )}
 
         {/* Location Map Placeholder */}
-        <div className="w-full h-64 md:h-96 bg-zinc-100 rounded-xl border border-zinc-200 overflow-hidden relative mb-4 flex items-center justify-center">
-          <div className="absolute inset-0 opacity-20 pointer-events-none" style={{ backgroundImage: 'url("https://maps.googleapis.com/maps/api/staticmap?center=-18.87919,47.507905&zoom=13&size=800x400&sensor=false")', backgroundSize: 'cover' }}></div>
-          <div className="relative z-10 flex flex-col items-center text-zinc-500">
-            <MapPin className="h-10 w-10 text-brand-red mb-2" />
-            <p className="font-medium text-sm">Zone approximative: {property.city?.fokontany}</p>
-            <p className="text-xs">L'intégration Google Maps est requise ici</p>
-          </div>
+        <div className="mb-4">
+          <PropertyLocationDisplayer position={position} circle={useCircle} />
         </div>
       </div>
 
