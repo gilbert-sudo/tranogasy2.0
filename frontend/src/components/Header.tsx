@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import Image from 'next/image';
-import { Search } from 'lucide-react';
+import { Search, User } from 'lucide-react';
 import DarkModeToggle from './DarkModeToggle';
 
 export default function Header() {
@@ -21,6 +21,11 @@ export default function Header() {
             <span>Chercher</span>
             <Search className="h-4 w-4" />
           </button>
+          
+          {/* User Profile Avatar */}
+          <Link href="/profile" className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-200 dark:bg-zinc-700 transition-colors hover:ring-2 hover:ring-brand-green overflow-hidden border border-zinc-300 dark:border-zinc-600">
+            <User className="h-5 w-5 text-zinc-600 dark:text-zinc-300" />
+          </Link>
         </div>
       </div>
     </header>

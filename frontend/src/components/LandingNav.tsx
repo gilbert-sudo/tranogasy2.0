@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Search, MapPin, SlidersHorizontal, Bell, Building2, TreePine, Landmark, Waves, Globe, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, MapPin, SlidersHorizontal, Bell, Building2, TreePine, Landmark, Waves, Globe, ChevronLeft, ChevronRight, User } from 'lucide-react';
 import DarkModeToggle from './DarkModeToggle';
 
 // Different thresholds per breakpoint handled in JS via the hero height CSS var
@@ -228,6 +228,19 @@ export default function LandingNav() {
                 <Bell className="h-5 w-5" />
                 <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-brand-red ring-2 ring-white dark:ring-zinc-900" />
               </button>
+              
+              {/* User Profile Avatar */}
+              <Link 
+                href="/profile" 
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-200 dark:bg-zinc-700 transition-colors hover:ring-2 hover:ring-brand-green overflow-hidden border border-zinc-300 dark:border-zinc-600"
+                style={{
+                  background: isScrolled ? undefined : 'rgba(255,255,255,0.2)',
+                  borderColor: isScrolled ? undefined : 'transparent',
+                  color: isScrolled ? undefined : 'white',
+                }}
+              >
+                <User className="h-5 w-5 text-zinc-600 dark:text-zinc-300" style={{ color: isScrolled ? undefined : 'white' }} />
+              </Link>
             </div>
           </div>
 
