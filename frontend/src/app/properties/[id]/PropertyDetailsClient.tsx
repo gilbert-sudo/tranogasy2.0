@@ -165,7 +165,7 @@ export default function PropertyDetailsClient({ property }: { property: any }) {
       </div>
       
       {/* Mobile Top Actions */}
-      <div className="absolute top-4 left-4 right-4 flex justify-between items-start z-10 pointer-events-none">
+      <div className="fixed top-0 left-0 right-0 z-50 pointer-events-none lg:hidden bg-gradient-to-b from-black/40 via-black/10 to-transparent pt-4 pb-10 px-4 flex justify-between items-start">
         <button onClick={() => router.back()} className="pointer-events-auto h-10 w-10 rounded-full bg-white/90 dark:bg-zinc-800/90 backdrop-blur-md flex items-center justify-center text-zinc-900 dark:text-zinc-100 shadow-sm border border-black/5 dark:border-white/10 hover:scale-105 transition-transform">
           <ChevronLeft className="h-6 w-6 pr-0.5" />
         </button>
@@ -335,8 +335,8 @@ export default function PropertyDetailsClient({ property }: { property: any }) {
       <div className="max-w-[1440px] mx-auto lg:px-6 xl:px-8 lg:py-6">
         
         {/* DESKTOP NAVIGATION */}
-        <div className="hidden lg:flex items-center justify-between mb-8">
-          <button onClick={() => router.back()} className="flex items-center gap-2 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 font-bold text-sm transition-all bg-zinc-50 dark:bg-zinc-800/50 hover:bg-zinc-100 dark:hover:bg-zinc-800 px-5 py-2.5 rounded-full border border-zinc-100 dark:border-zinc-700/50">
+        <div className="hidden lg:flex items-center justify-between mb-8 sticky top-6 z-50">
+          <button onClick={() => router.back()} className="flex items-center gap-2 text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white font-bold text-sm transition-all bg-white/80 dark:bg-zinc-800/80 backdrop-blur-md hover:bg-zinc-50 dark:hover:bg-zinc-700 px-5 py-2.5 rounded-full border border-zinc-200/80 dark:border-zinc-700/80 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.1)] dark:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.4)]">
             <ChevronLeft className="h-4 w-4" />
             Retour à la recherche
           </button>
@@ -369,10 +369,10 @@ export default function PropertyDetailsClient({ property }: { property: any }) {
                        if (!feature) return null;
                        const Icon = feature.icon;
                        return (
-                         <div key={key} className="flex items-center gap-2.5 px-4 py-2.5 rounded-full border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800/80 shadow-[0_2px_8px_-4px_rgba(0,0,0,0.05)] hover:border-brand-green/30 dark:hover:border-brand-green/50 hover:bg-green-50/50 dark:hover:bg-zinc-800 hover:-translate-y-0.5 transition-all cursor-default">
-                           <Icon className="h-4 w-4 text-brand-green" />
-                           <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">{feature.label}</span>
-                         </div>
+                        <div key={key} className="flex items-center gap-2.5 px-4 py-2.5 rounded-full border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800/80 shadow-[0_2px_8px_-4px_rgba(0,0,0,0.05)] hover:border-zinc-300 dark:hover:border-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-700 hover:-translate-y-0.5 transition-all cursor-default">
+                          <Icon className="h-4 w-4 text-zinc-700 dark:text-zinc-300" />
+                          <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">{feature.label}</span>
+                        </div>
                        )
                     })}
                   </div>
