@@ -179,11 +179,19 @@ export default function PropertyDetailsClient({ property }: { property: any }) {
         </div>
       </div>
 
-      {images.length > 1 && (
-        <div className="absolute bottom-4 right-4 z-10 bg-black/60 backdrop-blur-md text-white px-3 py-1.5 rounded-full text-xs font-bold tracking-widest shadow-sm border border-white/10">
-          {currentMobileImageIndex + 1} / {images.length}
-        </div>
-      )}
+      <div className="absolute bottom-4 right-4 z-10 flex items-center gap-2 pointer-events-none">
+        {images.length > 0 && (
+          <div className="bg-black/60 backdrop-blur-md text-white h-7 w-7 rounded-full flex items-center justify-center shadow-sm border border-white/10">
+            <Expand className="h-3.5 w-3.5" />
+          </div>
+        )}
+
+        {images.length > 1 && (
+          <div className="bg-black/60 backdrop-blur-md text-white px-3 py-1.5 rounded-full text-xs font-bold tracking-widest shadow-sm border border-white/10">
+            {currentMobileImageIndex + 1} / {images.length}
+          </div>
+        )}
+      </div>
     </div>
   );
 
