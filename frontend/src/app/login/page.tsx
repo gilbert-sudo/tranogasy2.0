@@ -61,13 +61,14 @@ export default function LoginPage() {
       <div className="w-full flex-grow flex flex-col md:flex-grow-0 md:max-w-md md:rounded-[2rem] md:shadow-2xl md:overflow-hidden relative bg-zinc-50 dark:bg-zinc-900">
         
         {/* Top Image */}
-        <div className="w-full h-[30vh] md:h-64 relative bg-[#f4f4f4] dark:bg-zinc-800/50 flex-shrink-0">
+        <div className="w-full h-[30vh] md:h-64 relative bg-[#f4f4f4] dark:bg-zinc-800/50 flex-shrink-0 overflow-hidden">
           <Image 
-            src="/login-illustration.svg" 
-            alt="Login Illustration" 
+            src="/login-illustration-masterpiece.jpg" 
+            alt="Tranogasy Masterpiece Illustration" 
             fill 
-            className="object-cover md:object-contain p-4" 
+            className="object-cover animate-ken-burns" 
             unoptimized
+            priority
           />
         </div>
 

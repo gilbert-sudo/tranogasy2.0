@@ -91,13 +91,14 @@ function LoginForm({ openModal, closeModal }: { openModal: any, closeModal: any 
 
   return (
     <>
-      <div className="w-full h-[30vh] md:h-56 relative bg-[#f4f4f4] dark:bg-zinc-800/50 flex-shrink-0">
+      <div className="w-full h-[30vh] md:h-56 relative bg-[#f4f4f4] dark:bg-zinc-800/50 flex-shrink-0 overflow-hidden">
         <Image 
-          src="/login-illustration.svg" 
-          alt="Login Illustration" 
+          src="/login-illustration-masterpiece.jpg" 
+          alt="Tranogasy Masterpiece Illustration" 
           fill 
-          className="object-cover md:object-contain p-4" 
+          className="object-cover animate-ken-burns" 
           unoptimized
+          priority
         />
       </div>
 
