@@ -17,6 +17,7 @@ import { MdOutlineLiving, MdBalcony, MdLandscape, MdOutlineFiberSmartRecord } fr
 import { TbAirConditioning, TbBuildingCastle, TbWash } from "react-icons/tb";
 import { TfiLayoutSidebarLeft } from "react-icons/tfi";
 import PropertyLocationDisplayer from '@/components/map/PropertyLocationDisplayer';
+import { usePropertyStore } from '@/store/propertyStore';
 
 const FEATURE_ICONS: Record<string, { icon: React.ElementType, label: string }> = {
   electricityJirama: { icon: FaPlugCircleBolt, label: "Électricité JIRAMA" },
@@ -68,7 +69,7 @@ function formatDateAgo(dateString?: string) {
   return "Récent";
 }
 
-export default function PropertyDetailsClient({ property }: { property: any }) {
+function PropertyDetailsContent({ property }: { property: any }) {
   const router = useRouter();
   const [showContact, setShowContact] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
@@ -76,7 +77,7 @@ export default function PropertyDetailsClient({ property }: { property: any }) {
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
   const lightboxRef = useRef<HTMLDivElement | null>(null);
 
-  const images = property.images && property.images.length > 0 
+  const images = property?.images && property.images.length > 0 
     ? property.images.map((img: any) => typeof img === 'string' ? img : img.src)
     : ['https://via.placeholder.com/1200x800?text=TranoGasy'];
 
@@ -101,28 +102,28 @@ export default function PropertyDetailsClient({ property }: { property: any }) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [lightboxIndex, images.length]);
 
-  const displayPrice = property.type === 'rent' ? property.rent : property.price;
+  const displayPrice = property?.type === 'rent' ? property?.rent : property?.price;
 
-  const activeFeatures = property.features 
+  const activeFeatures = property?.features 
     ? Object.entries(property.features).filter(([_, value]) => value).map(([key]) => key)
     : [];
 
-  const position = property.coords
+  const position = property?.coords
     ? property.coords
-    : property.city?.coords
+    : property?.city?.coords
       ? property.city.coords
       : {
           lat: -18.905195365917766,
           lng: 47.52370521426201,
         };
-  const useCircle = property.coords ? false : true;
+  const useCircle = property?.coords ? false : true;
 
   const handleShare = async () => {
     try {
       if (navigator.share) {
         await navigator.share({
-          title: property.title,
-          text: property.description,
+          title: property?.title,
+          text: property?.description,
           url: window.location.href,
         });
       } else {
@@ -135,12 +136,12 @@ export default function PropertyDetailsClient({ property }: { property: any }) {
   };
 
   const stats = [
-    { value: property.rooms || 0, label: "Chambres", icon: BedDouble },
-    { value: property.livingRoom || 0, label: "Salon", icon: Home },
-    { value: property.kitchen || 0, label: "Cuisine", icon: Utensils },
-    { value: property.bathrooms || 0, label: "Douches", icon: Droplets },
-    { value: property.toilet || 0, label: "W.C", icon: Grid2X2 },
-    { value: property.area ? `${property.area}` : 0, label: "Surface (m²)", icon: Expand },
+    { value: property?.rooms || 0, label: "Chambres", icon: BedDouble },
+    { value: property?.livingRoom || 0, label: "Salon", icon: Home },
+    { value: property?.kitchen || 0, label: "Cuisine", icon: Utensils },
+    { value: property?.bathrooms || 0, label: "Douches", icon: Droplets },
+    { value: property?.toilet || 0, label: "W.C", icon: Grid2X2 },
+    { value: property?.area ? `${property.area}` : 0, label: "Surface (m²)", icon: Expand },
   ];
 
   const handleMobileScroll = (e: React.UIEvent<HTMLDivElement>) => {
@@ -632,5 +633,51 @@ export default function PropertyDetailsClient({ property }: { property: any }) {
 
     </div>
   );
+}
+
+export default function PropertyDetailsClient({ propertyId }: { propertyId: string }) {
+  const getProperty = usePropertyStore(state => state.getProperty);
+  const addProperty = usePropertyStore(state => state.addProperty);
+  
+  const [property, setProperty] = useState<any>(getProperty(propertyId) || null);
+  const [loading, setLoading] = useState(!property);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!property) {
+      const fetchProperty = async () => {
+        try {
+          const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+          const res = await fetch(`${apiUrl}/properties/${propertyId}`);
+          if (!res.ok) throw new Error('Failed to fetch property');
+          const data = await res.json();
+          setProperty(data);
+          addProperty(data);
+        } catch (err) {
+          setError('Erreur lors du chargement de la propriété.');
+        } finally {
+          setLoading(false);
+        }
+      };
+      fetchProperty();
+    }
+  }, [propertyId, property, addProperty]);
+
+  const router = useRouter();
+
+  if (loading) {
+    return <div className="min-h-screen bg-white dark:bg-zinc-900 flex items-center justify-center text-zinc-900 dark:text-white font-bold">Chargement...</div>;
+  }
+
+  if (error || !property) {
+    return (
+      <div className="min-h-screen bg-white dark:bg-zinc-900 flex flex-col items-center justify-center text-zinc-900 dark:text-white font-bold gap-4">
+        {error || 'Propriété introuvable.'}
+        <button onClick={() => router.back()} className="px-4 py-2 bg-brand-green text-white rounded-full text-sm">Retour</button>
+      </div>
+    );
+  }
+
+  return <PropertyDetailsContent property={property} />;
 }
 

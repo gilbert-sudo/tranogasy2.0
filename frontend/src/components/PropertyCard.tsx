@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { BedDouble, Bath, Maximize, MapPin, Heart, Check, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -16,6 +16,7 @@ import {
 import { MdOutlineLiving, MdBalcony, MdLandscape, MdOutlineFiberSmartRecord } from "react-icons/md";
 import { TbAirConditioning, TbBuildingCastle, TbWash } from "react-icons/tb";
 import { TfiLayoutSidebarLeft } from "react-icons/tfi";
+import { usePropertyStore } from '@/store/propertyStore';
 
 const FEATURE_ICONS: Record<string, React.ElementType> = {
   electricityJirama: FaPlugCircleBolt,
@@ -97,6 +98,14 @@ interface PropertyProps {
 }
 
 export default function PropertyCard({ property }: PropertyProps) {
+  const addProperty = usePropertyStore(state => state.addProperty);
+  
+  useEffect(() => {
+    if (property) {
+      addProperty(property);
+    }
+  }, [property, addProperty]);
+
   const displayPrice = property.type === 'rent' ? property.rent : property.price;
   
   const images = property.images && property.images.length > 0 

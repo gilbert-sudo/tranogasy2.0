@@ -19,7 +19,8 @@
     "react-dom": "19.2.8",
     "react-icons": "^5.7.0",
     "react-images": "^1.2.0-beta.7",
-    "react-photo-gallery": "^8.0.0"
+    "react-photo-gallery": "^8.0.0",
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
