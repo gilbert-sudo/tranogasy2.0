@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 250" fill="none">
+  <!-- Sun -->
+  <circle cx="320" cy="70" r="40" fill="#FDE68A" />
+  
+  <!-- Cloud -->
+  <path d="M120 80a20 20 0 0 1 35-10 25 25 0 0 1 45 10 20 20 0 0 1-20 35H120a20 20 0 0 1 0-35z" fill="#FFFFFF" opacity="0.8" />
+  
+  <!-- Mountains/Hills -->
+  <path d="M-50 250L100 120l100 130z" fill="#A7F3D0" />
+  <path d="M100 250l120-100 150 100z" fill="#6EE7B7" />
+  
+  <!-- Abstract Modern House -->
+  <path d="M150 200l50-40 50 40v50H150v-50z" fill="#FFFFFF" />
+  <path d="M140 200l60-48 60 48" stroke="#34D399" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
+  <rect x="185" y="210" width="30" height="40" fill="#34D399" rx="4" />
+  <rect x="160" y="210" width="15" height="15" fill="#A7F3D0" rx="2" />
+  
+  <!-- Trees -->
+  <path d="M80 250v-30M80 220l-10 10M80 220l10 10" stroke="#059669" stroke-width="4" stroke-linecap="round" />
+  <circle cx="80" cy="205" r="15" fill="#10B981" />
+  
+  <path d="M320 250v-40" stroke="#059669" stroke-width="4" stroke-linecap="round" />
+  <circle cx="320" cy="195" r="20" fill="#10B981" />
+  <circle cx="310" cy="185" r="15" fill="#34D399" />
+  <circle cx="330" cy="185" r="15" fill="#34D399" />
+</svg>

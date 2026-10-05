@@ -1,17 +1,27 @@
 'use client';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Home, Compass, Heart, Bell, User } from 'lucide-react';
+import { useModalStore } from '@/store/modalStore';
+import { useUserStore } from '@/store/userStore';
 
 export default function BottomNavigation() {
   const pathname = usePathname();
+  const openModal = useModalStore((state) => state.openModal);
+  const { user, initialize } = useUserStore();
+  const isLoggedIn = !!user;
+
+  useEffect(() => {
+    initialize();
+  }, [initialize]);
 
   const navItems = [
     { name: 'Accueil', href: '/', icon: Home },
     { name: 'Explorer', href: '/explore', icon: Compass },
     { name: 'Favoris', href: '/favorites', icon: Heart },
     { name: 'Notifs', href: '/notifications', icon: Bell },
-    { name: 'Compte', href: '/profile', icon: User },
+    { name: 'Compte', href: '/account', icon: User },
   ];
 
   return (
@@ -23,6 +33,22 @@ export default function BottomNavigation() {
         {navItems.map((item) => {
           const isActive = pathname === item.href;
           const Icon = item.icon;
+          
+          if (item.name === 'Compte' && !isLoggedIn) {
+            return (
+              <button
+                key={item.name}
+                onClick={() => openModal('login')}
+                className={`flex flex-col items-center gap-1 p-2 transition-all hover:scale-105 ${
+                  isActive ? 'text-brand-red' : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'
+                }`}
+              >
+                <Icon className="h-6 w-6" strokeWidth={isActive ? 2.5 : 2} />
+                <span className="text-[10px] font-medium">{item.name}</span>
+              </button>
+            );
+          }
+
           return (
             <Link
               key={item.name}

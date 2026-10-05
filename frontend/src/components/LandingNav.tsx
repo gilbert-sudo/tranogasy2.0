@@ -5,6 +5,8 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { Search, MapPin, SlidersHorizontal, Bell, Building2, TreePine, Landmark, Waves, Globe, ChevronLeft, ChevronRight, User } from 'lucide-react';
 import DarkModeToggle from './DarkModeToggle';
+import { useModalStore } from '@/store/modalStore';
+import { useUserStore } from '@/store/userStore';
 
 // Different thresholds per breakpoint handled in JS via the hero height CSS var
 const SCROLL_THRESHOLD = 220;
@@ -30,6 +32,10 @@ export default function LandingNav() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(true);
+  const openModal = useModalStore((state) => state.openModal);
+  const { user, initialize } = useUserStore();
+  const currentUser = user?.user || user;
+  const isLoggedIn = !!currentUser;
 
   const checkScroll = useCallback(() => {
     if (scrollContainerRef.current) {
@@ -42,8 +48,12 @@ export default function LandingNav() {
   useEffect(() => {
     checkScroll();
     window.addEventListener('resize', checkScroll);
+    
+    // Initialize user from local storage if they chose 'Remember me'
+    initialize();
+
     return () => window.removeEventListener('resize', checkScroll);
-  }, [checkScroll]);
+  }, [checkScroll, initialize]);
 
   const scrollPlaces = (direction: 'left' | 'right') => {
     if (scrollContainerRef.current) {
@@ -230,17 +240,37 @@ export default function LandingNav() {
               </button>
               
               {/* User Profile Avatar */}
-              <Link 
-                href="/profile" 
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-200 dark:bg-zinc-700 transition-colors hover:ring-2 hover:ring-brand-green overflow-hidden border border-zinc-300 dark:border-zinc-600"
-                style={{
-                  background: isScrolled ? undefined : 'rgba(255,255,255,0.2)',
-                  borderColor: isScrolled ? undefined : 'transparent',
-                  color: isScrolled ? undefined : 'white',
-                }}
-              >
-                <User className="h-5 w-5 text-zinc-600 dark:text-zinc-300" style={{ color: isScrolled ? undefined : 'white' }} />
-              </Link>
+              {isLoggedIn ? (
+                <Link 
+                  href="/account" 
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-200 dark:bg-zinc-700 transition-colors hover:ring-2 hover:ring-brand-green overflow-hidden border border-zinc-300 dark:border-zinc-600 relative"
+                  style={{
+                    background: isScrolled ? undefined : 'rgba(255,255,255,0.2)',
+                    borderColor: isScrolled ? undefined : 'transparent',
+                    color: isScrolled ? undefined : 'white',
+                  }}
+                >
+                  {currentUser?.avatar ? (
+                    <Image src={currentUser.avatar} alt="Profile" fill className="object-cover" />
+                  ) : (
+                    <span className="text-sm font-bold uppercase" style={{ color: isScrolled ? undefined : 'white' }}>
+                      {currentUser?.username?.charAt(0) || currentUser?.email?.charAt(0) || 'U'}
+                    </span>
+                  )}
+                </Link>
+              ) : (
+                <button 
+                  onClick={() => openModal('login')}
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-200 dark:bg-zinc-700 transition-colors hover:ring-2 hover:ring-brand-green overflow-hidden border border-zinc-300 dark:border-zinc-600"
+                  style={{
+                    background: isScrolled ? undefined : 'rgba(255,255,255,0.2)',
+                    borderColor: isScrolled ? undefined : 'transparent',
+                    color: isScrolled ? undefined : 'white',
+                  }}
+                >
+                  <User className="h-5 w-5 text-zinc-600 dark:text-zinc-300" style={{ color: isScrolled ? undefined : 'white' }} />
+                </button>
+              )}
             </div>
           </div>
 

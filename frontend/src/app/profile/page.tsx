@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import Header from '@/components/Header';
 import PropertyCard from '@/components/PropertyCard';
+import { useUserStore } from '@/store/userStore';
 
 // Dummy properties matching the PropertyCard interface
 const dummyProperties: ComponentProps<typeof PropertyCard>['property'][] = [
@@ -65,6 +66,7 @@ const dummyProperties: ComponentProps<typeof PropertyCard>['property'][] = [
 
 export default function ProfilePage() {
   const [activeTab, setActiveTab] = useState<'annonces' | 'favoris'>('annonces');
+  const logout = useUserStore(state => state.logout);
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex flex-col">
@@ -215,10 +217,16 @@ export default function ProfilePage() {
               <Settings className="w-5 h-5" />
               Paramètres du compte
             </button>
-            <Link href="/login" className="flex items-center justify-center gap-2 px-6 py-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl font-semibold text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors shadow-sm">
+            <button 
+              onClick={() => {
+                logout();
+                window.location.href = '/';
+              }} 
+              className="flex items-center justify-center gap-2 px-6 py-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl font-semibold text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors shadow-sm"
+            >
               <LogOut className="w-5 h-5" />
               Se déconnecter
-            </Link>
+            </button>
           </div>
 
         </div>

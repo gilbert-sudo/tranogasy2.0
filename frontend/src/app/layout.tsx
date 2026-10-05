@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import BottomNavigation from "@/components/BottomNavigation";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import AuthModals from "@/components/AuthModals";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -46,6 +47,7 @@ export default function RootLayout({
           <div className="flex min-h-screen flex-col bg-background pb-16 md:pb-0">
             <main className="flex-1">{children}</main>
             <BottomNavigation />
+            <AuthModals />
           </div>
         </ThemeProvider>
       </body>
