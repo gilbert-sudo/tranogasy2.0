@@ -81,21 +81,18 @@ export default function AccountPage() {
         <Header />
       </div>
 
-      <div className="md:hidden sticky top-[64px] z-40 bg-[#F8F9FA]/90 dark:bg-zinc-950/90 backdrop-blur-xl px-4 py-3 flex items-center gap-4 border-b border-zinc-200 dark:border-zinc-800">
-        <Link href="/" className="p-2 -ml-2 rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors">
-          <ArrowLeft className="w-6 h-6 text-zinc-800 dark:text-zinc-200" strokeWidth={2.5} />
-        </Link>
-        <h1 className="text-xl font-bold text-zinc-900 dark:text-white">Mon compte</h1>
+      <div className="sticky top-[64px] z-40 w-full bg-[#F8F9FA]/90 dark:bg-zinc-950/90 backdrop-blur-xl border-b border-zinc-200 dark:border-zinc-800 md:border-transparent">
+        <div className="mx-auto flex max-w-7xl items-center px-4 sm:px-6 lg:px-8 py-2 md:py-4">
+          <Link href="/" className="p-2 -ml-2 rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors mr-2">
+            <ArrowLeft className="w-5 h-5 md:w-6 md:h-6 text-zinc-800 dark:text-zinc-200" strokeWidth={2.5} />
+          </Link>
+          <h1 className="text-lg md:text-2xl font-bold text-zinc-900 dark:text-white tracking-tight">
+            Mon compte
+          </h1>
+        </div>
       </div>
 
-      <div className="max-w-6xl mx-auto px-4 lg:pr-[120px] pb-8 pt-2 md:pt-4">
-        {/* Title for desktop */}
-        <div className="hidden md:flex items-center gap-4 sticky top-[64px] z-40 bg-[#F8F9FA]/90 dark:bg-zinc-950/90 backdrop-blur-xl py-4 mb-6">
-          <Link href="/" className="p-2 -ml-2 rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors">
-            <ArrowLeft className="w-7 h-7 text-zinc-800 dark:text-zinc-200" strokeWidth={2.5} />
-          </Link>
-          <h1 className="text-3xl font-bold text-zinc-900 dark:text-white">Mon compte</h1>
-        </div>
+      <div className="max-w-6xl mx-auto px-4 lg:pr-[120px] pb-8 pt-2 w-full">
 
         <div className="flex flex-col lg:grid lg:grid-cols-12 lg:gap-8">
           
