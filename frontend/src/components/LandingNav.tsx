@@ -335,7 +335,7 @@ export default function LandingNav() {
               <button
                 id="filter-btn"
                 aria-label="Filtres"
-                className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl bg-brand-green text-white transition-transform active:scale-90 md:h-9 md:w-9 md:rounded-xl"
+                className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-brand-green text-white transition-transform active:scale-90 md:h-9 md:w-9 md:rounded-full"
               >
                 <SlidersHorizontal className="h-4 w-4" />
               </button>

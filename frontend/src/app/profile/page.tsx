@@ -213,7 +213,7 @@ export default function ProfilePage() {
 
           {/* Logout / Settings */}
           <div className="mt-8 mb-12 flex flex-col sm:flex-row gap-4 justify-center">
-            <button className="flex items-center justify-center gap-2 px-6 py-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors shadow-sm">
+            <button className="flex items-center justify-center gap-2 px-6 py-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-full font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors shadow-sm">
               <Settings className="w-5 h-5" />
               Paramètres du compte
             </button>
@@ -222,7 +222,7 @@ export default function ProfilePage() {
                 logout();
                 window.location.href = '/';
               }} 
-              className="flex items-center justify-center gap-2 px-6 py-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl font-semibold text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors shadow-sm"
+              className="flex items-center justify-center gap-2 px-6 py-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-full font-semibold text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors shadow-sm"
             >
               <LogOut className="w-5 h-5" />
               Se déconnecter

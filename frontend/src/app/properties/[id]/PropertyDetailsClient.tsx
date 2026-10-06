@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { X, Share2, Phone, MapPin, Heart, ChevronLeft, BedDouble, Expand, Home, Utensils, Droplets, Grid2X2, ChevronRight } from 'lucide-react';
+import { X, Share2, Phone, MapPin, Heart, ChevronLeft, BedDouble, Expand, Home, Utensils, Droplets, Grid2X2, ChevronRight, MessageCircle, Send } from 'lucide-react';
 import {
   FaCar, FaMotorcycle, FaWifi, FaParking, FaShieldAlt, FaSwimmingPool, FaHotTub, FaBed
 } from "react-icons/fa";
@@ -349,6 +349,15 @@ function PropertyDetailsContent({ property }: { property: any }) {
             <ChevronLeft className="h-4 w-4" />
             Retour à la recherche
           </button>
+
+          <div className="flex items-center gap-3">
+            <button onClick={handleShare} className="h-11 w-11 rounded-full bg-white/80 dark:bg-zinc-800/80 backdrop-blur-md flex items-center justify-center text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-700 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.1)] dark:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.4)] border border-zinc-200/80 dark:border-zinc-700/80 hover:scale-105 transition-all">
+              <Share2 className="h-4 w-4" />
+            </button>
+            <button className="h-11 w-11 rounded-full bg-white/80 dark:bg-zinc-800/80 backdrop-blur-md flex items-center justify-center text-brand-red hover:bg-red-50 dark:hover:bg-zinc-700 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.1)] dark:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.4)] border border-zinc-200/80 dark:border-zinc-700/80 hover:scale-105 transition-all">
+              <Heart className="h-5 w-5" />
+            </button>
+          </div>
         </div>
 
         <div className="flex flex-col lg:flex-row gap-8 lg:gap-12 xl:gap-16">
@@ -458,15 +467,15 @@ function PropertyDetailsContent({ property }: { property: any }) {
                  </div>
 
                  <div className="hidden lg:flex gap-3 relative z-10">
-                   <button onClick={() => setShowContact(true)} className="flex-1 bg-brand-green hover:bg-green-700 text-white rounded-2xl py-4 flex items-center justify-center gap-2 font-bold text-sm shadow-lg shadow-brand-green/20 hover:shadow-brand-green/30 hover:-translate-y-0.5 transition-all">
+                   <button onClick={() => setShowContact(true)} className="flex-1 bg-brand-green hover:bg-green-700 text-white rounded-full py-4 flex items-center justify-center gap-2 font-bold text-sm shadow-lg shadow-brand-green/20 hover:shadow-brand-green/30 hover:-translate-y-0.5 transition-all">
                       <Phone className="h-5 w-5" />
                       Voir contact
                    </button>
-                   <button className="h-[52px] w-[52px] shrink-0 rounded-2xl bg-red-50 dark:bg-red-900/30 text-brand-red flex items-center justify-center hover:bg-red-100 dark:hover:bg-red-900/50 hover:-translate-y-0.5 transition-all">
-                      <Heart className="h-5 w-5" />
+                   <button className="h-[52px] w-[52px] shrink-0 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-800/50 flex items-center justify-center hover:bg-blue-100 dark:hover:bg-blue-900/50 hover:-translate-y-0.5 transition-all">
+                      <Send className="h-5 w-5 pr-0.5 pt-0.5" />
                    </button>
-                   <button onClick={handleShare} className="h-[52px] w-[52px] shrink-0 rounded-2xl bg-zinc-50 dark:bg-zinc-700/50 text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-600 flex items-center justify-center hover:bg-zinc-100 dark:hover:bg-zinc-700 hover:-translate-y-0.5 transition-all">
-                      <Share2 className="h-5 w-5" />
+                   <button className="h-[52px] w-[52px] shrink-0 rounded-full bg-zinc-50 dark:bg-zinc-700/50 text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-600 flex items-center justify-center hover:bg-zinc-100 dark:hover:bg-zinc-700 hover:-translate-y-0.5 transition-all">
+                      <MessageCircle className="h-5 w-5" />
                    </button>
                  </div>
                  
@@ -480,21 +489,20 @@ function PropertyDetailsContent({ property }: { property: any }) {
           </div>
         </div>
       </div>
-
       {/* MOBILE FIXED BOTTOM BAR */}
       <div 
         className="lg:hidden fixed left-0 right-0 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md border-t border-zinc-200/50 dark:border-zinc-800/50 shadow-[0_-8px_30px_rgba(0,0,0,0.08)] dark:shadow-[0_-8px_30px_rgba(0,0,0,0.3)] z-40 px-5 py-3.5 flex gap-3 transition-all"
         style={{ bottom: 'calc(65px + env(safe-area-inset-bottom))' }}
       >
-        <button onClick={() => setShowContact(true)} className="flex-1 bg-brand-green hover:bg-green-700 text-white rounded-2xl py-3.5 flex items-center justify-center gap-2 font-bold text-sm shadow-lg shadow-brand-green/20 hover:shadow-brand-green/30 hover:-translate-y-0.5 transition-all">
+        <button onClick={() => setShowContact(true)} className="flex-1 bg-brand-green hover:bg-green-700 text-white rounded-full py-3.5 flex items-center justify-center gap-2 font-bold text-sm shadow-lg shadow-brand-green/20 hover:shadow-brand-green/30 hover:-translate-y-0.5 transition-all">
            <Phone className="h-5 w-5" />
            Voir contact
         </button>
-        <button className="h-[50px] w-[50px] shrink-0 rounded-2xl bg-red-50 dark:bg-red-900/30 text-brand-red flex items-center justify-center hover:bg-red-100 dark:hover:bg-red-900/50 hover:-translate-y-0.5 transition-all">
-           <Heart className="h-5 w-5" />
+        <button className="h-[50px] w-[50px] shrink-0 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center shadow-sm hover:bg-blue-100 dark:hover:bg-blue-900/50 hover:-translate-y-0.5 transition-all">
+           <Send className="h-5 w-5 pr-0.5 pt-0.5" />
         </button>
-        <button onClick={handleShare} className="h-[50px] w-[50px] shrink-0 rounded-2xl bg-zinc-50 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center hover:bg-zinc-100 dark:hover:bg-zinc-700 hover:-translate-y-0.5 transition-all">
-           <Share2 className="h-5 w-5" />
+        <button className="h-[50px] w-[50px] shrink-0 bg-zinc-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 rounded-full flex items-center justify-center shadow-sm hover:bg-zinc-100 dark:hover:bg-zinc-700 hover:-translate-y-0.5 transition-all">
+           <MessageCircle className="h-5 w-5" />
         </button>
       </div>
 
@@ -529,7 +537,7 @@ function PropertyDetailsContent({ property }: { property: any }) {
                       <a 
                         key={idx}
                         href={`tel:${phone}`} 
-                        className="flex items-center justify-center py-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800 text-brand-green border border-zinc-100 dark:border-zinc-700 font-black text-xl tracking-wider hover:bg-green-50 dark:hover:bg-zinc-700 hover:border-green-200 dark:hover:border-zinc-600 hover:shadow-sm transition-all"
+                        className="flex items-center justify-center py-4 rounded-full bg-zinc-50 dark:bg-zinc-800 text-brand-green border border-zinc-100 dark:border-zinc-700 font-black text-xl tracking-wider hover:bg-green-50 dark:hover:bg-zinc-700 hover:border-green-200 dark:hover:border-zinc-600 hover:shadow-sm transition-all"
                       >
                         {phone}
                       </a>
