@@ -17,7 +17,7 @@ import { MdOutlineLiving, MdBalcony, MdLandscape, MdOutlineFiberSmartRecord } fr
 import { TbAirConditioning, TbBuildingCastle, TbWash } from "react-icons/tb";
 import { TfiLayoutSidebarLeft } from "react-icons/tfi";
 import { usePropertyStore } from '@/store/propertyStore';
-import { useFavoriteStore } from '@/store/favoriteStore';
+import { useFavorite } from '@/hooks/useFavorite';
 import { useUserStore } from '@/store/userStore';
 
 const FEATURE_ICONS: Record<string, React.ElementType> = {
@@ -102,7 +102,7 @@ interface PropertyProps {
 export default function PropertyCard({ property }: PropertyProps) {
   const addProperty = usePropertyStore(state => state.addProperty);
   const user = useUserStore(state => state.user);
-  const { favorites, checkFavorite, toggleFavorite } = useFavoriteStore();
+  const { favorites, checkFavorite, toggleFavorite } = useFavorite();
   
   const isFavorite = favorites[property._id] || false;
   

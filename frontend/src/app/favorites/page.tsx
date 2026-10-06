@@ -6,13 +6,13 @@ import { ArrowLeft, Heart } from 'lucide-react';
 import Header from '@/components/Header';
 import PropertyCard from '@/components/PropertyCard';
 import { useUserStore } from '@/store/userStore';
-import { useFavoriteStore } from '@/store/favoriteStore';
+import { useFavorite } from '@/hooks/useFavorite';
 import { useRouter } from 'next/navigation';
 
 export default function FavoritesPage() {
   const userStore = useUserStore(state => state.user);
   const currentUser = userStore?.user || userStore;
-  const { favorites, favoritePropertiesData, fetchFavorites } = useFavoriteStore();
+  const { favorites, favoritePropertiesData, fetchFavorites } = useFavorite();
   const [loading, setLoading] = useState(!favoritePropertiesData);
   const router = useRouter();
 

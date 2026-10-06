@@ -17,7 +17,7 @@ import {
 import Header from '@/components/Header';
 import PropertyCard from '@/components/PropertyCard';
 import { useUserStore } from '@/store/userStore';
-import { useFavoriteStore } from '@/store/favoriteStore';
+import { useFavorite } from '@/hooks/useFavorite';
 
 
 // Dummy properties matching the PropertyCard interface
@@ -71,7 +71,7 @@ export default function ProfilePage() {
   const userStore = useUserStore(state => state.user);
   const currentUser = userStore?.user || userStore;
   const logout = useUserStore(state => state.logout);
-  const { favorites, favoritePropertiesData, fetchFavorites } = useFavoriteStore();
+  const { favorites, favoritePropertiesData, fetchFavorites } = useFavorite();
   const [loadingFavorites, setLoadingFavorites] = useState(!favoritePropertiesData);
 
   useEffect(() => {

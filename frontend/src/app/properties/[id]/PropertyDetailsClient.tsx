@@ -17,9 +17,9 @@ import { MdOutlineLiving, MdBalcony, MdLandscape, MdOutlineFiberSmartRecord } fr
 import { TbAirConditioning, TbBuildingCastle, TbWash } from "react-icons/tb";
 import { TfiLayoutSidebarLeft } from "react-icons/tfi";
 import PropertyLocationDisplayer from '@/components/map/PropertyLocationDisplayer';
-import { usePropertyStore } from '@/store/propertyStore';
-import { useFavoriteStore } from '@/store/favoriteStore';
 import { useUserStore } from '@/store/userStore';
+import { useProperty } from '@/hooks/useProperty';
+import { useFavorite } from '@/hooks/useFavorite';
 
 const FEATURE_ICONS: Record<string, { icon: React.ElementType, label: string }> = {
   electricityJirama: { icon: FaPlugCircleBolt, label: "Électricité JIRAMA" },
@@ -81,7 +81,7 @@ function PropertyDetailsContent({ property }: { property: any }) {
 
   const userStore = useUserStore(state => state.user);
   const currentUser = userStore?.user || userStore;
-  const { favorites, checkFavorite, toggleFavorite } = useFavoriteStore();
+  const { favorites, checkFavorite, toggleFavorite } = useFavorite();
   const isFavorite = favorites[property?._id] || false;
 
   useEffect(() => {
@@ -667,36 +667,10 @@ function PropertyDetailsContent({ property }: { property: any }) {
 }
 
 export default function PropertyDetailsClient({ propertyId }: { propertyId: string }) {
-  const getProperty = usePropertyStore(state => state.getProperty);
-  const addProperty = usePropertyStore(state => state.addProperty);
-  
-  const [property, setProperty] = useState<any>(getProperty(propertyId) || null);
-  const [loading, setLoading] = useState(!property);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!property) {
-      const fetchProperty = async () => {
-        try {
-          const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
-          const res = await fetch(`${apiUrl}/properties/${propertyId}`);
-          if (!res.ok) throw new Error('Failed to fetch property');
-          const data = await res.json();
-          setProperty(data);
-          addProperty(data);
-        } catch (err) {
-          setError('Erreur lors du chargement de la propriété.');
-        } finally {
-          setLoading(false);
-        }
-      };
-      fetchProperty();
-    }
-  }, [propertyId, property, addProperty]);
-
+  const { property, isLoading, error } = useProperty(propertyId);
   const router = useRouter();
 
-  if (loading) {
+  if (isLoading) {
     return <div className="min-h-screen bg-white dark:bg-zinc-900 flex items-center justify-center text-zinc-900 dark:text-white font-bold">Chargement...</div>;
   }
 

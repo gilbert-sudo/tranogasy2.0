@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { Eye, EyeOff, Camera, X, Check } from 'lucide-react';
 import { useModalStore } from '@/store/modalStore';
 import { useUserStore } from '@/store/userStore';
+import { useAuth } from '@/hooks/useAuth';
 
 export default function AuthModals() {
   const { activeModal, closeModal, openModal } = useModalStore();
@@ -42,9 +43,7 @@ function LoginForm({ openModal, closeModal }: { openModal: any, closeModal: any 
   const [showPassword, setShowPassword] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState('');
   const [password, setPassword] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const setUser = useUserStore((state) => state.setUser);
+  const { login, isLoading, error } = useAuth();
 
   const handlePhoneNumberInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     const numericValue = e.target.value.replace(/\D/g, "");
@@ -53,40 +52,7 @@ function LoginForm({ openModal, closeModal }: { openModal: any, closeModal: any 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      let phone = phoneNumber;
-      if (phone.startsWith("261")) phone = phone.slice(3);
-      if (phone.startsWith("0")) phone = phone;
-      else phone = `0${phone}`;
-
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-      const res = await fetch(`${apiUrl}/users/login`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ phone, password }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        // NestJS typically sends the error description in data.message
-        throw new Error(data.message || data.error || 'Erreur lors de la connexion');
-      }
-
-      localStorage.setItem('user', JSON.stringify(data));
-      
-      setUser(data);
-      closeModal();
-    } catch (err: any) {
-      setError(err.message || "Impossible de se connecter.");
-    } finally {
-      setIsLoading(false);
-    }
+    await login(phoneNumber, password, { onSuccess: closeModal });
   };
 
   return (
@@ -179,9 +145,7 @@ function SignupForm({ openModal, closeModal }: { openModal: any, closeModal: any
   const [email, setEmail] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [password, setPassword] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const setUser = useUserStore((state) => state.setUser);
+  const { signup, isLoading, error } = useAuth();
 
   const handlePhoneNumberInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     const numericValue = e.target.value.replace(/\D/g, "");
@@ -190,40 +154,7 @@ function SignupForm({ openModal, closeModal }: { openModal: any, closeModal: any
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      let phone = phoneNumber;
-      if (phone.startsWith("261")) phone = phone.slice(3);
-      if (phone.startsWith("0")) phone = phone;
-      else phone = `0${phone}`;
-
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-      
-      const checkRes = await fetch(`${apiUrl}/users/exist/${phone}`);
-      if (checkRes.ok) {
-        throw new Error("Ce numéro de téléphone est déjà utilisé.");
-      }
-
-      const res = await fetch(`${apiUrl}/users`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: name, email, phone, password }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || data.error || 'Erreur lors de la création du compte');
-
-      // For signup, always log the user in directly and persist to local storage
-      localStorage.setItem('user', JSON.stringify(data));
-      setUser(data);
-      closeModal();
-    } catch (err: any) {
-      setError(err.message || "Une erreur s'est produite.");
-    } finally {
-      setIsLoading(false);
-    }
+    await signup({ name, email, phone: phoneNumber, password }, { onSuccess: closeModal });
   };
 
   return (

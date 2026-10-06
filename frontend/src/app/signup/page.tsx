@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Eye, EyeOff, Camera } from 'lucide-react';
 import Image from 'next/image';
+import { useAuth } from '../../hooks/useAuth';
 
 export default function SignupPage() {
   const [showPassword, setShowPassword] = useState(false);
@@ -13,9 +14,7 @@ export default function SignupPage() {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [password, setPassword] = useState('');
   
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const router = useRouter();
+  const { signup, isLoading, error } = useAuth();
 
   const handlePhoneNumberInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     const numericValue = e.target.value.replace(/\D/g, "");
@@ -24,50 +23,7 @@ export default function SignupPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      let phone = phoneNumber;
-      if (phone.startsWith("261")) phone = phone.slice(3);
-      if (phone.startsWith("0")) phone = phone;
-      else phone = `0${phone}`;
-
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-      
-      // Step 1: Check if user exists
-      const checkRes = await fetch(`${apiUrl}/users/exist/${phone}`);
-      if (checkRes.ok) {
-        throw new Error("Ce numéro de téléphone est déjà utilisé.");
-      }
-
-      // Step 2: Create user
-      const res = await fetch(`${apiUrl}/users`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          username: name,
-          email,
-          phone,
-          password,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || 'Erreur lors de la création du compte');
-      }
-
-      localStorage.setItem('user', JSON.stringify(data));
-      window.location.href = '/profile';
-    } catch (err: any) {
-      setError(err.message || "Une erreur s'est produite. Veuillez réessayer.");
-    } finally {
-      setIsLoading(false);
-    }
+    await signup({ name, email, phone: phoneNumber, password }, { redirectUrl: '/profile' });
   };
 
   return (

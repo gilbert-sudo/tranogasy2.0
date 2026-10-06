@@ -5,14 +5,14 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Eye, EyeOff } from 'lucide-react';
 import Image from 'next/image';
+import { useAuth } from '../../hooks/useAuth';
 
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState('');
   const [password, setPassword] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const router = useRouter();
+  
+  const { login, isLoading, error } = useAuth();
 
   const handlePhoneNumberInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     const numericValue = e.target.value.replace(/\D/g, "");
@@ -21,37 +21,7 @@ export default function LoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      let phone = phoneNumber;
-      if (phone.startsWith("261")) phone = phone.slice(3);
-      if (phone.startsWith("0")) phone = phone;
-      else phone = `0${phone}`;
-
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-      const res = await fetch(`${apiUrl}/users/login`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ phone, password }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.message || data.error || 'Erreur lors de la connexion');
-      }
-
-      localStorage.setItem('user', JSON.stringify(data));
-      window.location.href = '/profile';
-    } catch (err: any) {
-      setError(err.message || "Impossible de se connecter. Vérifiez vos identifiants.");
-    } finally {
-      setIsLoading(false);
-    }
+    await login(phoneNumber, password, { redirectUrl: '/profile' });
   };
 
   return (
