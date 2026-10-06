@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, ComponentProps } from 'react';
+import { useState, useEffect, ComponentProps } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { 
@@ -17,6 +17,8 @@ import {
 import Header from '@/components/Header';
 import PropertyCard from '@/components/PropertyCard';
 import { useUserStore } from '@/store/userStore';
+import { useFavoriteStore } from '@/store/favoriteStore';
+
 
 // Dummy properties matching the PropertyCard interface
 const dummyProperties: ComponentProps<typeof PropertyCard>['property'][] = [
@@ -66,7 +68,22 @@ const dummyProperties: ComponentProps<typeof PropertyCard>['property'][] = [
 
 export default function ProfilePage() {
   const [activeTab, setActiveTab] = useState<'annonces' | 'favoris'>('annonces');
+  const userStore = useUserStore(state => state.user);
+  const currentUser = userStore?.user || userStore;
   const logout = useUserStore(state => state.logout);
+  const { favorites, favoritePropertiesData, fetchFavorites } = useFavoriteStore();
+  const [loadingFavorites, setLoadingFavorites] = useState(!favoritePropertiesData);
+
+  useEffect(() => {
+    if (activeTab === 'favoris' && currentUser) {
+      if (!favoritePropertiesData) setLoadingFavorites(true);
+      fetchFavorites(currentUser._id).then(() => {
+        setLoadingFavorites(false);
+      });
+    }
+  }, [activeTab, currentUser, favoritePropertiesData, fetchFavorites]);
+
+  const displayedFavorites = favoritePropertiesData?.filter(prop => favorites[prop._id]) || [];
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex flex-col">
@@ -197,14 +214,31 @@ export default function ProfilePage() {
                 </div>
               )}
               {activeTab === 'favoris' && (
-                <div className="flex flex-col items-center justify-center h-64 text-center">
-                  <div className="w-16 h-16 bg-brand-red/10 rounded-full flex items-center justify-center mb-4 text-brand-red">
-                    <Heart className="w-8 h-8 fill-current" />
-                  </div>
-                  <h3 className="text-lg font-bold text-zinc-900 dark:text-white mb-2">Aucun favori pour le moment</h3>
-                  <p className="text-zinc-500 max-w-sm">
-                    Explorez les annonces et ajoutez celles que vous aimez à vos favoris pour les retrouver ici.
-                  </p>
+                <div>
+                  {loadingFavorites ? (
+                    <div className="flex flex-col items-center justify-center h-64 text-center">
+                      <p className="text-zinc-500 font-bold">Chargement de vos favoris...</p>
+                    </div>
+                  ) : displayedFavorites.length > 0 ? (
+                    <>
+                      <h3 className="text-lg font-bold text-zinc-900 dark:text-white mb-6">Vos favoris ({displayedFavorites.length})</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {displayedFavorites.map((prop) => (
+                          <PropertyCard key={prop._id} property={prop} />
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center h-64 text-center">
+                      <div className="w-16 h-16 bg-brand-red/10 rounded-full flex items-center justify-center mb-4 text-brand-red">
+                        <Heart className="w-8 h-8 fill-current" />
+                      </div>
+                      <h3 className="text-lg font-bold text-zinc-900 dark:text-white mb-2">Aucun favori pour le moment</h3>
+                      <p className="text-zinc-500 max-w-sm">
+                        Explorez les annonces et ajoutez celles que vous aimez à vos favoris pour les retrouver ici.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

@@ -8,6 +8,7 @@ import { FeaturesModule } from './features/features.module';
 import { PropertiesModule } from './properties/properties.module';
 
 import { UsersModule } from './users/users.module';
+import { FavoritesModule } from './favorites/favorites.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { UsersModule } from './users/users.module';
     FeaturesModule,
     PropertiesModule,
     UsersModule,
+    FavoritesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

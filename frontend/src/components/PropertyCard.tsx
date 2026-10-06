@@ -17,6 +17,8 @@ import { MdOutlineLiving, MdBalcony, MdLandscape, MdOutlineFiberSmartRecord } fr
 import { TbAirConditioning, TbBuildingCastle, TbWash } from "react-icons/tb";
 import { TfiLayoutSidebarLeft } from "react-icons/tfi";
 import { usePropertyStore } from '@/store/propertyStore';
+import { useFavoriteStore } from '@/store/favoriteStore';
+import { useUserStore } from '@/store/userStore';
 
 const FEATURE_ICONS: Record<string, React.ElementType> = {
   electricityJirama: FaPlugCircleBolt,
@@ -99,12 +101,34 @@ interface PropertyProps {
 
 export default function PropertyCard({ property }: PropertyProps) {
   const addProperty = usePropertyStore(state => state.addProperty);
+  const user = useUserStore(state => state.user);
+  const { favorites, checkFavorite, toggleFavorite } = useFavoriteStore();
+  
+  const isFavorite = favorites[property._id] || false;
   
   useEffect(() => {
     if (property) {
       addProperty(property);
     }
   }, [property, addProperty]);
+
+  const currentUser = user?.user || user;
+  
+  useEffect(() => {
+    if (currentUser && property) {
+      checkFavorite(property._id, currentUser._id);
+    }
+  }, [currentUser, property, checkFavorite]);
+
+  const handleFavoriteClick = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!currentUser) {
+      alert('Veuillez vous connecter pour ajouter aux favoris');
+      return;
+    }
+    await toggleFavorite(property._id, currentUser._id);
+  };
 
   const displayPrice = property.type === 'rent' ? property.rent : property.price;
   
@@ -218,11 +242,11 @@ export default function PropertyCard({ property }: PropertyProps) {
 
           {/* Favorite Button */}
           <button 
-            onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
-            className="group absolute bottom-3 right-3 flex h-11 w-11 items-center justify-center rounded-full bg-white text-zinc-400 shadow-lg ring-1 ring-black/5 transition-all duration-300 hover:scale-110 hover:text-brand-red hover:shadow-xl active:scale-90 dark:bg-zinc-900 dark:ring-white/10 dark:hover:bg-zinc-800"
+            onClick={handleFavoriteClick}
+            className={`group absolute bottom-3 right-3 z-10 flex h-11 w-11 cursor-pointer items-center justify-center rounded-full bg-white shadow-lg ring-1 ring-black/5 transition-all duration-300 hover:scale-110 hover:shadow-xl active:scale-75 dark:bg-zinc-900 dark:ring-white/10 dark:hover:bg-zinc-800 ${isFavorite ? 'text-brand-red' : 'text-zinc-400 hover:text-brand-red'}`}
             aria-label="Ajouter aux favoris"
           >
-            <Heart className="h-5 w-5 transition-transform duration-300 group-hover:scale-110" strokeWidth={2} />
+            <Heart className={`h-5 w-5 transition-transform duration-300 ${isFavorite ? 'fill-brand-red scale-110' : 'group-hover:scale-110'}`} strokeWidth={2} />
           </button>
         </div>
 

@@ -18,6 +18,8 @@ import { TbAirConditioning, TbBuildingCastle, TbWash } from "react-icons/tb";
 import { TfiLayoutSidebarLeft } from "react-icons/tfi";
 import PropertyLocationDisplayer from '@/components/map/PropertyLocationDisplayer';
 import { usePropertyStore } from '@/store/propertyStore';
+import { useFavoriteStore } from '@/store/favoriteStore';
+import { useUserStore } from '@/store/userStore';
 
 const FEATURE_ICONS: Record<string, { icon: React.ElementType, label: string }> = {
   electricityJirama: { icon: FaPlugCircleBolt, label: "Électricité JIRAMA" },
@@ -76,6 +78,27 @@ function PropertyDetailsContent({ property }: { property: any }) {
   const [currentMobileImageIndex, setCurrentMobileImageIndex] = useState(0);
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
   const lightboxRef = useRef<HTMLDivElement | null>(null);
+
+  const userStore = useUserStore(state => state.user);
+  const currentUser = userStore?.user || userStore;
+  const { favorites, checkFavorite, toggleFavorite } = useFavoriteStore();
+  const isFavorite = favorites[property?._id] || false;
+
+  useEffect(() => {
+    if (currentUser && property?._id) {
+      checkFavorite(property._id, currentUser._id);
+    }
+  }, [currentUser, property, checkFavorite]);
+
+  const handleFavoriteClick = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!currentUser) {
+      alert('Veuillez vous connecter pour ajouter aux favoris');
+      return;
+    }
+    await toggleFavorite(property._id, currentUser._id);
+  };
 
   const images = property?.images && property.images.length > 0 
     ? property.images.map((img: any) => typeof img === 'string' ? img : img.src)
@@ -171,11 +194,11 @@ function PropertyDetailsContent({ property }: { property: any }) {
           <ChevronLeft className="h-6 w-6 pr-0.5" />
         </button>
         <div className="flex gap-2 pointer-events-auto">
-          <button onClick={handleShare} className="h-10 w-10 rounded-full bg-white/90 dark:bg-zinc-800/90 backdrop-blur-md flex items-center justify-center text-zinc-900 dark:text-zinc-100 shadow-sm border border-black/5 dark:border-white/10 hover:scale-105 transition-transform">
+          <button onClick={handleShare} className="h-10 w-10 cursor-pointer rounded-full bg-white/90 dark:bg-zinc-800/90 backdrop-blur-md flex items-center justify-center text-zinc-900 dark:text-zinc-100 shadow-sm border border-black/5 dark:border-white/10 hover:scale-105 active:scale-75 transition-transform">
             <Share2 className="h-4 w-4" />
           </button>
-          <button className="h-10 w-10 rounded-full bg-white/90 dark:bg-zinc-800/90 backdrop-blur-md flex items-center justify-center text-brand-red shadow-sm border border-black/5 dark:border-white/10 hover:scale-105 transition-transform">
-            <Heart className="h-5 w-5" />
+          <button onClick={handleFavoriteClick} className={`h-10 w-10 cursor-pointer rounded-full bg-white/90 dark:bg-zinc-800/90 backdrop-blur-md flex items-center justify-center shadow-sm border border-black/5 dark:border-white/10 hover:scale-105 active:scale-75 transition-transform ${isFavorite ? 'text-brand-red' : 'text-zinc-600 dark:text-zinc-300'}`}>
+            <Heart className={`h-5 w-5 transition-transform duration-300 ${isFavorite ? 'fill-brand-red scale-110' : ''}`} />
           </button>
         </div>
       </div>
@@ -351,11 +374,11 @@ function PropertyDetailsContent({ property }: { property: any }) {
           </button>
 
           <div className="flex items-center gap-3">
-            <button onClick={handleShare} className="h-11 w-11 rounded-full bg-white/80 dark:bg-zinc-800/80 backdrop-blur-md flex items-center justify-center text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-700 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.1)] dark:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.4)] border border-zinc-200/80 dark:border-zinc-700/80 hover:scale-105 transition-all">
+            <button onClick={handleShare} className="h-11 w-11 cursor-pointer rounded-full bg-white/80 dark:bg-zinc-800/80 backdrop-blur-md flex items-center justify-center text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-700 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.1)] dark:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.4)] border border-zinc-200/80 dark:border-zinc-700/80 hover:scale-110 active:scale-75 transition-all">
               <Share2 className="h-4 w-4" />
             </button>
-            <button className="h-11 w-11 rounded-full bg-white/80 dark:bg-zinc-800/80 backdrop-blur-md flex items-center justify-center text-brand-red hover:bg-red-50 dark:hover:bg-zinc-700 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.1)] dark:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.4)] border border-zinc-200/80 dark:border-zinc-700/80 hover:scale-105 transition-all">
-              <Heart className="h-5 w-5" />
+            <button onClick={handleFavoriteClick} className={`h-11 w-11 cursor-pointer rounded-full bg-white/80 dark:bg-zinc-800/80 backdrop-blur-md flex items-center justify-center hover:bg-red-50 dark:hover:bg-zinc-700 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.1)] dark:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.4)] border border-zinc-200/80 dark:border-zinc-700/80 hover:scale-110 active:scale-75 transition-all ${isFavorite ? 'text-brand-red' : 'text-zinc-600 dark:text-zinc-300 hover:text-brand-red'}`}>
+              <Heart className={`h-5 w-5 transition-transform duration-300 ${isFavorite ? 'fill-brand-red scale-110' : ''}`} />
             </button>
           </div>
         </div>
