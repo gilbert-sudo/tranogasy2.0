@@ -35,13 +35,14 @@ export function useFavorite() {
 
   const checkFavorite = useCallback(async (propertyId: string, userId: string) => {
     if (!userId || !propertyId) return;
+    if (favorites[propertyId] !== undefined) return;
     try {
       const data = await favoriteService.checkFavorite(userId, propertyId);
       setFavorite(propertyId, data.isFavorite);
     } catch (e) {
-      console.error("Failed to check favorite:", e);
+      // Quietly ignore network failures so cards render smoothly
     }
-  }, [setFavorite]);
+  }, [favorites, setFavorite]);
 
   const fetchFavorites = useCallback(async (userId: string) => {
     if (!userId) return [];

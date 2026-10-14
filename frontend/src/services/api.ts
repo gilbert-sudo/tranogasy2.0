@@ -1,4 +1,4 @@
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api').replace(/\/$/, '');
 
 export class ApiError extends Error {
   status?: number;
@@ -17,7 +17,12 @@ interface FetchOptions extends RequestInit {
 }
 
 export async function apiFetch<T>(endpoint: string, options: FetchOptions = {}): Promise<T> {
-  let url = `${API_BASE_URL}${endpoint}`;
+  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  // Avoid duplicating /api if API_BASE_URL already contains /api
+  const finalEndpoint = API_BASE_URL.endsWith('/api') && cleanEndpoint.startsWith('/api/')
+    ? cleanEndpoint.slice(4)
+    : cleanEndpoint;
+  let url = `${API_BASE_URL}${finalEndpoint}`;
   
   if (options.params) {
     const searchParams = new URLSearchParams(options.params);

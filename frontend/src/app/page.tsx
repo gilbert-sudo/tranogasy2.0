@@ -3,15 +3,22 @@ import PropertyCard from '@/components/PropertyCard';
 
 async function getProperties() {
   try {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
-    const res = await fetch(`${apiUrl}/properties?limit=12`, { next: { revalidate: 60 } });
+    const rawUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+    const apiUrl = rawUrl.replace(/\/$/, '');
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+    const res = await fetch(`${apiUrl}/properties?limit=12`, {
+      next: { revalidate: 60 },
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timeoutId));
+
     if (!res.ok) {
-      throw new Error('Failed to fetch data');
+      return [];
     }
     const data = await res.json();
     return data.properties || [];
   } catch (error) {
-    console.error('Error fetching properties:', error);
     return [];
   }
 }
