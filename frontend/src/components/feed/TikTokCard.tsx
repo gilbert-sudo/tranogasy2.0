@@ -236,12 +236,12 @@ export default function TikTokCard({
               className="absolute inset-0 bg-cover bg-center filter blur-3xl scale-110 opacity-35 pointer-events-none transition-all duration-500"
               style={{ backgroundImage: `url(${images[imageIndex]})` }}
             />
-            {/* Full Image: 100% visible overview, no cropping */}
             <img
               src={images[imageIndex]}
               alt={property.title}
               className="relative z-[1] w-full h-full object-contain drop-shadow-md transition-opacity duration-300"
-              loading="lazy"
+              loading={isActive ? "eager" : "lazy"}
+              decoding="async"
             />
           </>
         ) : (
@@ -301,7 +301,13 @@ export default function TikTokCard({
                   : 'border-white/30 opacity-90 hover:opacity-100'
               }`}
             >
-              <img src={src} alt={`Thumb ${idx + 1}`} className="w-full h-full object-cover" />
+              <img
+                src={src}
+                alt={`Thumb ${idx + 1}`}
+                className="w-full h-full object-cover"
+                loading="lazy"
+                decoding="async"
+              />
             </button>
           ))}
         </div>

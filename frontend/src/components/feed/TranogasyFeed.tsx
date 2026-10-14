@@ -112,6 +112,21 @@ export default function TranogasyFeed({ initialProperties = [] }: TranogasyFeedP
     prevIndexRef.current = currentIndex;
   }, [currentIndex]);
 
+  // Preload next 1-2 properties images ahead for instantaneous, flicker-free display
+  useEffect(() => {
+    const preloadAhead = [currentIndex + 1, currentIndex + 2];
+    preloadAhead.forEach((idx) => {
+      const prop = properties[idx];
+      if (prop?.images && prop.images.length > 0) {
+        const firstImg = typeof prop.images[0] === 'string' ? prop.images[0] : prop.images[0]?.src;
+        if (firstImg) {
+          const img = new Image();
+          img.src = firstImg;
+        }
+      }
+    });
+  }, [currentIndex, properties]);
+
   // Handle scroll snap index detection
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const target = e.currentTarget;
@@ -292,23 +307,34 @@ export default function TranogasyFeed({ initialProperties = [] }: TranogasyFeedP
               WebkitOverflowScrolling: 'touch',
             }}
           >
-            {properties.map((property, idx) => (
-              <div
-                key={property._id || idx}
-                className="w-full h-[calc(100dvh-4rem)] md:h-[100dvh] lg:h-[calc(100dvh-40px)] snap-start snap-always relative shrink-0"
-              >
-                <TikTokCard
-                  property={property}
-                  isActive={currentIndex === idx}
-                  isDesktop={isDesktop}
-                  onOpenDetails={() => setShowDetailsDrawer(true)}
-                  onOpenMap={() => setShowMapModal(true)}
-                  onOpenContact={() => setShowContactModal(true)}
-                  onOpenComments={() => setShowCommentsDrawer(true)}
-                  onShare={() => handleShare(property)}
-                />
-              </div>
-            ))}
+            {properties.map((property, idx) => {
+              // Virtual window: only mount heavy TikTokCard DOM for active slide, 1 behind and 2 ahead
+              const isWithinWindow = idx >= currentIndex - 1 && idx <= currentIndex + 2;
+
+              return (
+                <div
+                  key={property._id || idx}
+                  className="w-full h-[calc(100dvh-4rem)] md:h-[100dvh] lg:h-[calc(100dvh-40px)] snap-start snap-always relative shrink-0 bg-black"
+                >
+                  {isWithinWindow ? (
+                    <TikTokCard
+                      property={property}
+                      isActive={currentIndex === idx}
+                      isDesktop={isDesktop}
+                      onOpenDetails={() => setShowDetailsDrawer(true)}
+                      onOpenMap={() => setShowMapModal(true)}
+                      onOpenContact={() => setShowContactModal(true)}
+                      onOpenComments={() => setShowCommentsDrawer(true)}
+                      onShare={() => handleShare(property)}
+                    />
+                  ) : (
+                    <div className="w-full h-full bg-black flex items-center justify-center">
+                      <div className="w-8 h-8 rounded-full border-2 border-white/10 border-t-brand-green/60 animate-spin" />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
 
