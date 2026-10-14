@@ -1,45 +1,34 @@
-import Header from '@/components/Header';
-import PropertyCard from '@/components/PropertyCard';
+import { Metadata } from 'next';
+import TranogasyFeed from '@/components/feed/TranogasyFeed';
 
-async function getProperties() {
+export const metadata: Metadata = {
+  title: 'TranoFeed - Explorer les Propriétés | TranoGasy',
+  description: 'Découvrez les biens immobiliers à Madagascar dans un format immersif façon TikTok.',
+};
+
+async function getInitialProperties() {
   try {
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
-    const res = await fetch(`${apiUrl}/properties?limit=12`, { next: { revalidate: 60 } });
+    const res = await fetch(`${apiUrl}/properties?page=1&limit=10`, {
+      next: { revalidate: 30 },
+    });
     if (!res.ok) {
-      throw new Error('Failed to fetch data');
+      throw new Error('Failed to fetch initial properties');
     }
     const data = await res.json();
     return data.properties || [];
   } catch (error) {
-    console.error('Error fetching properties:', error);
+    console.error('Error fetching initial feed properties:', error);
     return [];
   }
 }
 
 export default async function ExplorePage() {
-  const properties = await getProperties();
+  const initialProperties = await getInitialProperties();
 
   return (
-    <div className="min-h-screen bg-background">
-      <Header />
-      <div className="mx-auto max-w-7xl px-4 pt-24 pb-16 sm:px-6 lg:px-8">
-        <div className="flex items-baseline justify-between border-b border-zinc-200 dark:border-zinc-800 pb-6">
-          <h1 className="text-4xl font-bold tracking-tight text-foreground">Découvrir les Propriétés</h1>
-        </div>
-        
-        <div className="mt-8 grid grid-cols-1 gap-y-12 sm:grid-cols-2 sm:gap-x-6 lg:grid-cols-3 xl:gap-x-8">
-          {properties.length > 0 ? (
-            properties.map((property: any) => (
-              <PropertyCard key={property._id} property={property} />
-            ))
-          ) : (
-            <div className="col-span-full py-12 text-center text-zinc-500">
-              <p className="text-lg">Aucune propriété trouvée pour le moment.</p>
-              <p className="text-sm mt-2">Veuillez vérifier que le backend est en cours d'exécution.</p>
-            </div>
-          )}
-        </div>
-      </div>
+    <div className="w-full h-full bg-black">
+      <TranogasyFeed initialProperties={initialProperties} />
     </div>
   );
 }

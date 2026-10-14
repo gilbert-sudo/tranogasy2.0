@@ -16,26 +16,39 @@ interface PropertyLocationDisplayerProps {
   circle?: boolean;
 }
 
+// Cached position across mounts to prevent re-querying geolocation on every feed scroll
+let cachedUserPosition: { lat: number; lng: number } | null = null;
+let isRequestingGeolocation = false;
+
 export default function PropertyLocationDisplayer({ position, circle }: PropertyLocationDisplayerProps) {
   const [open, setOpen] = useState(false);
-  const [userPosition, setUserPosition] = useState<{ lat: number; lng: number } | null>(null);
+  const [userPosition, setUserPosition] = useState<{ lat: number; lng: number } | null>(cachedUserPosition);
   const [mapZoom, setMapZoom] = useState<number | null>(null);
   const [center, setCenter] = useState<{ lat: number; lng: number } | null>(null);
 
-  // Ask for user location
+  // Ask for user location once
   useEffect(() => {
-    if ("geolocation" in navigator) {
+    if (cachedUserPosition) {
+      setUserPosition(cachedUserPosition);
+      return;
+    }
+
+    if ("geolocation" in navigator && !isRequestingGeolocation) {
+      isRequestingGeolocation = true;
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          setUserPosition({
+          cachedUserPosition = {
             lat: pos.coords.latitude,
             lng: pos.coords.longitude,
-          });
+          };
+          setUserPosition(cachedUserPosition);
+          isRequestingGeolocation = false;
         },
         (err) => {
           console.warn("Geolocation error:", err.message);
+          isRequestingGeolocation = false;
         },
-        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 60000 }
       );
     }
   }, []);
