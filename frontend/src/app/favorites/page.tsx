@@ -1,12 +1,11 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { 
   ChevronLeft, 
   Heart, 
-  Share2, 
   Compass, 
   Search, 
   Check, 
@@ -31,10 +30,10 @@ export default function FavoritesPage() {
   const { noFavoriteImg } = useImage();
 
   const [loading, setLoading] = useState(!favoritePropertiesData);
-  const [copied, setCopied] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<FilterCategory>('all');
   const [sortBy, setSortBy] = useState<SortOption>('newest');
+  const [isScrolled, setIsScrolled] = useState(false);
 
   useEffect(() => {
     initialize();
@@ -62,6 +61,46 @@ export default function FavoritesPage() {
   const allFavorites = useMemo(() => {
     return favoritePropertiesData?.filter((prop) => favorites[prop._id]) || [];
   }, [favoritePropertiesData, favorites]);
+
+  // Categories with live counts
+  const categories = useMemo(() => [
+    { id: 'all' as FilterCategory, label: 'Toutes', count: allFavorites.length },
+    { 
+      id: 'rent' as FilterCategory, 
+      label: 'En location', 
+      count: allFavorites.filter(p => p.type?.toLowerCase().includes('location') || (p.rent && p.rent > 0)).length 
+    },
+    { 
+      id: 'sale' as FilterCategory, 
+      label: 'En vente', 
+      count: allFavorites.filter(p => p.type?.toLowerCase().includes('vente') || (!p.rent && p.price)).length 
+    },
+    { 
+      id: 'house' as FilterCategory, 
+      label: 'Maisons', 
+      count: allFavorites.filter(p => p.houseType?.toLowerCase().includes('maison') || p.houseType?.toLowerCase().includes('villa')).length 
+    },
+    { 
+      id: 'apartment' as FilterCategory, 
+      label: 'Apparts', 
+      count: allFavorites.filter(p => p.houseType?.toLowerCase().includes('appartement') || p.houseType?.toLowerCase().includes('studio')).length 
+    },
+  ], [allFavorites]);
+
+  // Rolling Header Scroll Listener
+  const handleScroll = useCallback(() => {
+    const y = window.scrollY;
+    setIsScrolled(y > 50);
+  }, []);
+
+  const isPopulated = allFavorites.length > 0 && !loading && currentUser;
+
+  useEffect(() => {
+    if (!isPopulated) return;
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    handleScroll();
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [isPopulated, handleScroll]);
 
   // Filtered & Sorted properties
   const filteredProperties = useMemo(() => {
@@ -107,87 +146,287 @@ export default function FavoritesPage() {
       });
   }, [allFavorites, activeCategory, searchQuery, sortBy]);
 
-  // Share Action
-  const handleShare = async () => {
-    const shareUrl = typeof window !== 'undefined' ? window.location.href : '';
-    const shareData = {
-      title: 'Mes favoris • TranoGasy',
-      text: 'Découvrez ma sélection de biens immobiliers sur TranoGasy !',
-      url: shareUrl,
-    };
-
-    if (typeof navigator !== 'undefined' && navigator.share && navigator.canShare && navigator.canShare(shareData)) {
-      try {
-        await navigator.share(shareData);
-        return;
-      } catch (err: any) {
-        if (err?.name === 'AbortError') return;
-      }
-    }
-
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (e) {
-      console.error('Clipboard copy failed:', e);
-    }
-  };
-
-  const isPopulated = allFavorites.length > 0 && !loading && currentUser;
-
   return (
     <div className={`bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white font-sans flex flex-col ${isPopulated ? 'min-h-screen' : 'h-[calc(100dvh-4rem)] md:h-screen max-h-[calc(100dvh-4rem)] md:max-h-screen overflow-hidden'}`}>
-      {/* TOP NAV BAR - Shown on mobile and desktop */}
-      <div className="shrink-0">
-        <Header />
-      </div>
+      
+      {/* INJECT RESPONSIVE CSS VARIABLES FOR ROLLING HEADER */}
+      <style>{`
+        :root {
+          --fav-expanded-h: 224px;
+          --fav-compact-h: 154px;
+        }
+        @media (min-width: 768px) {
+          :root {
+            --fav-expanded-h: 174px;
+            --fav-compact-h: 112px;
+          }
+        }
+      `}</style>
 
-      {/* TOP BAR - Only shown when populated */}
-      {isPopulated && (
-        <div className="w-full px-4 sm:px-6 lg:px-8 py-2.5 flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800">
-          <div className="flex items-center gap-3">
-            <button 
-              onClick={() => router.back()} 
-              className="h-10 w-10 cursor-pointer rounded-full bg-white dark:bg-zinc-800 flex items-center justify-center text-zinc-700 dark:text-zinc-200 shadow-sm border border-black/5 dark:border-white/10 hover:scale-105 active:scale-75 transition-all"
-              title="Retour"
-            >
-              <ChevronLeft className="h-5 w-5" />
-            </button>
-            <h1 className="text-lg md:text-xl font-extrabold tracking-tight text-zinc-900 dark:text-white flex items-center gap-2">
-              Vos favoris
-              <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-brand-red/10 text-brand-red dark:bg-brand-red/20">
-                {allFavorites.length}
-              </span>
-            </h1>
-          </div>
-
-          <div className="flex items-center gap-2.5">
-            <button 
-              onClick={handleShare} 
-              className="h-10 w-10 cursor-pointer rounded-full bg-white dark:bg-zinc-800 flex items-center justify-center text-zinc-700 dark:text-zinc-200 shadow-sm border border-black/5 dark:border-white/10 hover:scale-105 active:scale-75 transition-all"
-              title="Partager"
-            >
-              {copied ? <Check className="h-4 w-4 text-brand-green" /> : <Share2 className="h-4 w-4" />}
-            </button>
-
-            <div className="h-10 w-10 rounded-full bg-white dark:bg-zinc-800 flex items-center justify-center text-brand-red shadow-sm border border-black/5 dark:border-white/10">
-              <Heart className="h-5 w-5 fill-brand-red" />
-            </div>
-          </div>
+      {/* ── TOP NAV BAR (WHEN NOT POPULATED / EMPTY / NOT LOGGED IN) ── */}
+      {!isPopulated && (
+        <div className="shrink-0">
+          <Header />
         </div>
       )}
 
-      {/* TOAST ALERT */}
-      {copied && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-zinc-900/95 dark:bg-zinc-100/95 text-white dark:text-zinc-900 px-4 py-2 rounded-full shadow-2xl flex items-center gap-2 text-xs font-bold backdrop-blur-md animate-in fade-in slide-in-from-bottom-2 duration-150">
-          <Check className="w-4 h-4 text-brand-green" />
-          <span>Lien copié dans le presse-papiers !</span>
-        </div>
+      {/* ══════════════════════════════════════════════════════════════════
+          ROLLING COMPACT STICKY HEADER (WHEN POPULATED WITH FAVORITES)
+      ══════════════════════════════════════════════════════════════════ */}
+      {isPopulated && (
+        <>
+          <header
+            className="fixed inset-x-0 top-0 z-40 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border-b border-zinc-200/80 dark:border-zinc-800 shadow-xs overflow-hidden transition-[height,box-shadow] duration-400 ease-[cubic-bezier(0.4,0,0.2,1)]"
+            style={{
+              height: isScrolled
+                ? 'var(--fav-compact-h, 154px)'
+                : 'var(--fav-expanded-h, 204px)',
+            } as React.CSSProperties}
+          >
+            <div className="max-w-[1440px] mx-auto h-full flex flex-col justify-between">
+              
+              {/* ── ROW 1: TOP NAV (HEADER) — ALWAYS DISPLAYED ── */}
+              <div className="shrink-0 w-full">
+                <Header />
+              </div>
+
+              {/* ── ROW 2 (EXPANDED): TITLE & ACTIONS BAR (VISIBLE WHEN NOT SCROLLED) ── */}
+              <div
+                className={`px-4 sm:px-6 lg:px-8 py-2 items-center justify-between shrink-0 transition-opacity duration-300 ${
+                  isScrolled ? 'hidden' : 'flex'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <button 
+                    onClick={() => router.back()} 
+                    className="h-10 w-10 cursor-pointer rounded-full bg-white dark:bg-zinc-800 flex items-center justify-center text-zinc-700 dark:text-zinc-200 shadow-sm border border-black/5 dark:border-white/10 hover:scale-105 active:scale-75 transition-all"
+                    title="Retour"
+                  >
+                    <ChevronLeft className="h-5 w-5" />
+                  </button>
+                  <h1 className="text-xl md:text-2xl font-extrabold tracking-tight text-zinc-900 dark:text-white">
+                    Vos favoris
+                  </h1>
+                </div>
+
+                <div className="flex items-center gap-2.5">
+                  {/* FAVORITES PROPERTY NUMBERS COUNT UI */}
+                  <div 
+                    className="h-10 min-w-10 px-3.5 rounded-full bg-brand-red/10 dark:bg-brand-red/20 text-brand-red flex items-center justify-center font-extrabold text-sm border border-brand-red/20 shadow-xs"
+                    title={`${allFavorites.length} propriétés dans vos favoris`}
+                  >
+                    <span>{allFavorites.length}</span>
+                  </div>
+
+                  <button 
+                    onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                    className="h-10 w-10 cursor-pointer rounded-full bg-white dark:bg-zinc-800 flex items-center justify-center text-brand-red shadow-sm border border-black/5 dark:border-white/10 hover:scale-105 active:scale-75 transition-all"
+                    title="Haut de page"
+                  >
+                    <Heart className="h-5 w-5 fill-brand-red" />
+                  </button>
+                </div>
+              </div>
+
+              {/* ── ROW 2 (SCROLLED COMPACT): CONSOLIDATED TOP BAR (VISIBLE WHEN SCROLLED) ── */}
+              <div
+                className={`px-4 sm:px-6 lg:px-8 py-2 items-center justify-between gap-3 shrink-0 transition-opacity duration-300 ${
+                  isScrolled ? 'flex' : 'hidden'
+                }`}
+              >
+                {/* Left: Back + Compact Title */}
+                <div className="flex items-center gap-2 shrink-0">
+                  <button 
+                    onClick={() => router.back()} 
+                    className="h-8 w-8 cursor-pointer rounded-full bg-white dark:bg-zinc-800 flex items-center justify-center text-zinc-700 dark:text-zinc-200 shadow-xs border border-black/5 dark:border-white/10 hover:scale-105 active:scale-75 transition-all"
+                    title="Retour"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <span className="text-xs sm:text-sm font-extrabold tracking-tight text-zinc-900 dark:text-white">
+                    Vos favoris
+                  </span>
+                </div>
+
+                {/* Desktop Center: Categories on desktop when scrolled */}
+                <div className="hidden md:flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+                  {categories.map((cat) => (
+                    <button
+                      key={cat.id}
+                      onClick={() => setActiveCategory(cat.id)}
+                      className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                        activeCategory === cat.id
+                          ? 'bg-brand-green text-white border-brand-green shadow-xs shadow-brand-green/30'
+                          : 'border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 hover:border-zinc-300'
+                      }`}
+                    >
+                      <span>{cat.label}</span>
+                      <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                        activeCategory === cat.id ? 'bg-white/20 text-white' : 'bg-zinc-100 dark:bg-zinc-700 text-zinc-500 dark:text-zinc-400'
+                      }`}>
+                        {cat.count}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Right: Compact Search, Sort & Favorites Property Numbers Count UI */}
+                <div className="flex items-center gap-2">
+                  {/* Compact Search input */}
+                  <div className="relative w-28 sm:w-44 focus-within:w-36 sm:focus-within:w-52 transition-all duration-300">
+                    <Search className="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400" />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Filtrer..."
+                      className="w-full pl-7 pr-6 py-1 text-xs rounded-full bg-zinc-100 dark:bg-zinc-800 border border-zinc-200/80 dark:border-zinc-700 focus:outline-none focus:ring-1.5 focus:ring-brand-green text-zinc-900 dark:text-white"
+                    />
+                    {searchQuery && (
+                      <button
+                        onClick={() => setSearchQuery('')}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+                      >
+                        <X className="w-2.5 h-2.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Compact Sort */}
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as SortOption)}
+                    className="px-2 py-1 text-xs rounded-full bg-zinc-100 dark:bg-zinc-800 border border-zinc-200/80 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 focus:outline-none focus:ring-1.5 focus:ring-brand-green cursor-pointer shrink-0"
+                  >
+                    <option value="newest">Récents</option>
+                    <option value="price-asc">Prix ↑</option>
+                    <option value="price-desc">Prix ↓</option>
+                  </select>
+
+                  {/* FAVORITES PROPERTY NUMBERS COUNT UI */}
+                  <div
+                    className="h-7 min-w-7 px-2 rounded-full bg-brand-red/10 dark:bg-brand-red/20 text-brand-red flex items-center justify-center font-extrabold text-[11px] shrink-0 border border-brand-red/20 shadow-2xs"
+                    title={`${allFavorites.length} propriétés dans vos favoris`}
+                  >
+                    <span>{allFavorites.length}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── ROW 3: CATEGORIES & SEARCH IN EXPANDED MODE (OR MOBILE PILLS STRIP WHEN SCROLLED) ── */}
+              <div className={`px-4 sm:px-6 lg:px-8 shrink-0 ${isScrolled ? 'pb-3.5 pt-0.5' : 'pb-4 sm:pb-3'}`}>
+                {!isScrolled ? (
+                  /* Expanded mode: Full category pills + search & sort */
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+                    {/* Category Pills */}
+                    <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
+                      {categories.map((cat) => (
+                        <button
+                          key={cat.id}
+                          onClick={() => setActiveCategory(cat.id)}
+                          className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full border text-xs font-semibold shadow-xs hover:-translate-y-0.5 transition-all cursor-pointer whitespace-nowrap ${
+                            activeCategory === cat.id
+                              ? 'bg-brand-green text-white border-brand-green shadow-brand-green/20'
+                              : 'border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 hover:border-zinc-300 dark:hover:border-zinc-600'
+                          }`}
+                        >
+                          <span>{cat.label}</span>
+                          <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                            activeCategory === cat.id
+                              ? 'bg-white/20 text-white'
+                              : 'bg-zinc-100 dark:bg-zinc-700 text-zinc-500 dark:text-zinc-400'
+                          }`}>
+                            {cat.count}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* In-Favorites Search & Sort & Live Results Count UI */}
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                      {/* Live matching count badge (occupies the space on the left) */}
+                      <div 
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-zinc-100 dark:bg-zinc-800 border border-zinc-200/80 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-semibold shrink-0 shadow-2xs"
+                        title={`${filteredProperties.length} ${filteredProperties.length > 1 ? 'biens correspondent' : 'bien correspond'} aux critères`}
+                      >
+                        <span className="text-brand-green font-extrabold">{filteredProperties.length}</span>
+                        <span className="text-zinc-500 dark:text-zinc-400 font-medium text-[11px]">
+                          {filteredProperties.length > 1 ? 'biens' : 'bien'}
+                        </span>
+                      </div>
+
+                      {/* Search Input: flexibly expands to fill available horizontal width */}
+                      <div className="relative flex-1 sm:w-52">
+                        <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+                        <input
+                          type="text"
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          placeholder="Filtrer par ville..."
+                          className="w-full pl-8 pr-7 py-1.5 text-xs rounded-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200/80 dark:border-zinc-700 focus:outline-none focus:ring-1.5 focus:ring-brand-green text-zinc-900 dark:text-white"
+                        />
+                        {searchQuery && (
+                          <button
+                            onClick={() => setSearchQuery('')}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 cursor-pointer"
+                            title="Effacer"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Sort Dropdown */}
+                      <select
+                        value={sortBy}
+                        onChange={(e) => setSortBy(e.target.value as SortOption)}
+                        className="px-2.5 sm:px-3 py-1.5 text-xs rounded-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200/80 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 focus:outline-none focus:ring-1.5 focus:ring-brand-green cursor-pointer shrink-0"
+                      >
+                        <option value="newest">Plus récents</option>
+                        <option value="price-asc">Prix croissant</option>
+                        <option value="price-desc">Prix décroissant</option>
+                      </select>
+                    </div>
+                  </div>
+                ) : (
+                  /* Scrolled mode: Mobile-only category pills strip with breathing room */
+                  <div className="flex md:hidden items-center gap-1.5 overflow-x-auto no-scrollbar py-1 pb-1 mb-0.5">
+                    {categories.map((cat) => (
+                      <button
+                        key={cat.id}
+                        onClick={() => setActiveCategory(cat.id)}
+                        className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-[11px] font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                          activeCategory === cat.id
+                            ? 'bg-brand-green text-white border-brand-green shadow-xs shadow-brand-green/30'
+                            : 'border-zinc-200/80 dark:border-zinc-700 bg-white/80 dark:bg-zinc-800/80 text-zinc-700 dark:text-zinc-200 hover:border-zinc-300'
+                        }`}
+                      >
+                        <span>{cat.label}</span>
+                        <span className={`text-[9px] px-1.5 py-0.2 rounded-full ${
+                          activeCategory === cat.id ? 'bg-white/20 text-white' : 'bg-zinc-100 dark:bg-zinc-700 text-zinc-500 dark:text-zinc-400'
+                        }`}>
+                          {cat.count}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+            </div>
+          </header>
+
+          {/* STATIC SPACER — Matches the expanded header height so content rolls smoothly underneath without jumps */}
+          <div
+            style={{ height: 'var(--fav-expanded-h, 224px)' }}
+            aria-hidden="true"
+            className="shrink-0"
+          />
+        </>
       )}
 
       {/* MAIN CONTENT AREA */}
-      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+      <div className={isPopulated ? 'flex-1 flex flex-col' : 'flex-1 min-h-0 flex flex-col overflow-hidden'}>
 
         {/* ========================================================= */}
         {/* CASE 1: NOT LOGGED IN — IMAGE AT TOP WITH ROUNDED BOTTOM  */}
@@ -266,87 +505,6 @@ export default function FavoritesPage() {
           /* CASE 3: FAVORITES LIST (FULL SCREEN HIGH DENSITY)         */
           /* ========================================================= */
           <div className="max-w-[1440px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-            {/* SEARCH & FILTERS TOOLBAR */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              {/* Category Pills */}
-              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
-                {[
-                  { id: 'all', label: 'Toutes', count: allFavorites.length },
-                  { 
-                    id: 'rent', 
-                    label: 'En location', 
-                    count: allFavorites.filter(p => p.type?.toLowerCase().includes('location') || (p.rent && p.rent > 0)).length 
-                  },
-                  { 
-                    id: 'sale', 
-                    label: 'En vente', 
-                    count: allFavorites.filter(p => p.type?.toLowerCase().includes('vente') || (!p.rent && p.price)).length 
-                  },
-                  { 
-                    id: 'house', 
-                    label: 'Maisons', 
-                    count: allFavorites.filter(p => p.houseType?.toLowerCase().includes('maison') || p.houseType?.toLowerCase().includes('villa')).length 
-                  },
-                  { 
-                    id: 'apartment', 
-                    label: 'Apparts', 
-                    count: allFavorites.filter(p => p.houseType?.toLowerCase().includes('appartement') || p.houseType?.toLowerCase().includes('studio')).length 
-                  },
-                ].map((cat) => (
-                  <button
-                    key={cat.id}
-                    onClick={() => setActiveCategory(cat.id as FilterCategory)}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-full border text-xs font-semibold shadow-xs hover:-translate-y-0.5 transition-all cursor-pointer whitespace-nowrap ${
-                      activeCategory === cat.id
-                        ? 'bg-brand-green text-white border-brand-green shadow-brand-green/20'
-                        : 'border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 hover:border-zinc-300 dark:hover:border-zinc-600'
-                    }`}
-                  >
-                    <span>{cat.label}</span>
-                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
-                      activeCategory === cat.id
-                        ? 'bg-white/20 text-white'
-                        : 'bg-zinc-100 dark:bg-zinc-700 text-zinc-500 dark:text-zinc-400'
-                    }`}>
-                      {cat.count}
-                    </span>
-                  </button>
-                ))}
-              </div>
-
-              {/* In-Favorites Search & Sort */}
-              <div className="flex items-center gap-2 self-end sm:self-auto">
-                <div className="relative w-44 sm:w-52">
-                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Filtrer par ville..."
-                    className="w-full pl-8 pr-7 py-2 text-xs rounded-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200/80 dark:border-zinc-700 focus:outline-none focus:ring-1.5 focus:ring-brand-green text-zinc-900 dark:text-white"
-                  />
-                  {searchQuery && (
-                    <button
-                      onClick={() => setSearchQuery('')}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-
-                <select
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value as SortOption)}
-                  className="px-3 py-2 text-xs rounded-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200/80 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 focus:outline-none focus:ring-1.5 focus:ring-brand-green cursor-pointer"
-                >
-                  <option value="newest">Plus récents</option>
-                  <option value="price-asc">Prix croissant</option>
-                  <option value="price-desc">Prix décroissant</option>
-                </select>
-              </div>
-            </div>
-
             {/* PROPERTY CARDS GRID */}
             {filteredProperties.length > 0 ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 pt-2">
