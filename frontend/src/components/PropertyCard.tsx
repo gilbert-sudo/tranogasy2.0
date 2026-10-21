@@ -182,9 +182,9 @@ export default function PropertyCard({ property }: PropertyProps) {
 
   return (
     <Link href={`/properties/${property._id}`} className="block h-full">
-      <div className="flex h-full flex-col overflow-hidden rounded-xl bg-zinc-50 shadow-sm border border-zinc-200 transition-transform hover:-translate-y-1 hover:shadow-md dark:bg-zinc-800 dark:border-zinc-700 relative">
+      <div className="flex h-full flex-col overflow-hidden rounded-3xl bg-zinc-50 shadow-sm border border-zinc-200 transition-transform hover:-translate-y-1 hover:shadow-md dark:bg-zinc-800 dark:border-zinc-700 relative">
         <div 
-          className="relative h-44 w-full overflow-hidden bg-zinc-200 dark:bg-zinc-700 group"
+          className="relative h-48 w-full overflow-hidden rounded-t-3xl bg-zinc-200 dark:bg-zinc-700 group"
           onTouchStart={onTouchStart}
           onTouchMove={onTouchMove}
           onTouchEnd={onTouchEnd}
@@ -219,7 +219,7 @@ export default function PropertyCard({ property }: PropertyProps) {
               </button>
               
               {/* Dots */}
-              <div className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1.5 z-10">
+              <div className="absolute bottom-7 left-1/2 flex -translate-x-1/2 items-center gap-1.5 z-10">
                 {images.map((_, idx) => (
                   <div 
                     key={idx} 
@@ -233,24 +233,51 @@ export default function PropertyCard({ property }: PropertyProps) {
           )}
           
           {/* Badges */}
-          <div className="absolute top-2 left-2 rounded bg-brand-green px-2 py-0.5 text-[10px] font-bold text-white uppercase tracking-wide shadow-sm">
+          <div className="absolute top-3 left-3 rounded-full bg-brand-green px-2.5 py-0.5 text-[10px] font-bold text-white uppercase tracking-wide shadow-sm">
             {property.type === 'rent' ? 'Location' : 'Vente'}
           </div>
-          <div className="absolute top-2 right-2 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">
+          <div className="absolute top-3 right-3 rounded-full bg-black/60 px-2.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">
             {formatDateAgo(property.created_at)}
           </div>
 
-          {/* Favorite Button */}
+          {/* Favorite Button (Borderless & Backgroundless) */}
           <button 
             onClick={handleFavoriteClick}
-            className={`group absolute bottom-3 right-3 z-10 flex h-11 w-11 cursor-pointer items-center justify-center rounded-full bg-white shadow-lg ring-1 ring-black/5 transition-all duration-300 hover:scale-110 hover:shadow-xl active:scale-75 dark:bg-zinc-900 dark:ring-white/10 dark:hover:bg-zinc-800 ${isFavorite ? 'text-brand-red' : 'text-zinc-400 hover:text-brand-red'}`}
+            className="group absolute bottom-6 right-3 z-20 flex h-9 w-9 cursor-pointer items-center justify-center p-0 transition-transform duration-200 active:scale-75 focus:outline-none"
             aria-label="Ajouter aux favoris"
           >
-            <Heart className={`h-5 w-5 transition-transform duration-300 ${isFavorite ? 'fill-brand-red scale-110' : 'group-hover:scale-110'}`} strokeWidth={2} />
+            <Heart 
+              className={`h-6 w-6 transition-all duration-300 ${
+                isFavorite 
+                  ? 'fill-brand-red text-brand-red stroke-brand-red scale-110 drop-shadow-[0_2px_8px_rgba(236,28,36,0.45)]' 
+                  : 'fill-black/25 text-white stroke-white stroke-[2] drop-shadow-[0_2px_4px_rgba(0,0,0,0.6)] group-hover:scale-110 group-hover:fill-black/40'
+              }`} 
+            />
           </button>
         </div>
 
-        <div className="flex flex-col flex-1 p-3">
+        {/* Text Area: S-Shaped Curved Overlap Sheet */}
+        <div className="relative z-10 -mt-5 flex flex-col flex-1 rounded-tl-3xl rounded-tr-none bg-zinc-50 dark:bg-zinc-800 p-3.5 pt-4 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] dark:shadow-[0_-4px_16px_rgba(0,0,0,0.35)] border-t border-black/[0.04] dark:border-white/[0.06]">
+          {/* Inverted Concave Corner on Upper Right Side forming S-Shape */}
+          <svg 
+            className="absolute bottom-full right-0 w-6 h-6 pointer-events-none -mb-px" 
+            viewBox="0 0 24 24" 
+            fill="none" 
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden="true"
+          >
+            <path 
+              d="M 0,24 A 24,24 0 0,0 24,0 L 24,24 Z" 
+              className="fill-zinc-50 dark:fill-zinc-800" 
+            />
+            <path 
+              d="M 0,24 A 24,24 0 0,0 24,0" 
+              className="stroke-black/[0.04] dark:stroke-white/[0.06]" 
+              strokeWidth="1" 
+              fill="none" 
+            />
+          </svg>
+
           {/* Top line: Title & Price */}
           <div className="flex items-start justify-between gap-2">
             <h3 className="text-sm font-bold text-zinc-900 dark:text-white line-clamp-1 flex-1">
@@ -275,12 +302,12 @@ export default function PropertyCard({ property }: PropertyProps) {
           </div>
           
           {/* Third line: Description */}
-          <p className="mt-1.5 text-xs text-zinc-600 dark:text-zinc-400 line-clamp-2 flex-1 leading-relaxed">
-            {property.description || 'Aucune description disponible pour cette propriété...'}
+          <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400 line-clamp-2 leading-relaxed whitespace-pre-wrap">
+            {property.description?.trim() || 'Aucune description disponible pour cette propriété...'}
           </p>
 
           {/* Bottom line: Icons & Features */}
-          <div className="mt-2 flex items-center pt-2 border-t border-zinc-100 dark:border-zinc-700/60 overflow-hidden">
+          <div className="mt-1 flex items-center pt-1.5 border-t border-zinc-100 dark:border-zinc-700/60 overflow-hidden">
             {/* Core Stats */}
             <div className="flex items-center gap-2.5 text-zinc-500 dark:text-zinc-400 shrink-0 pr-3 border-r border-zinc-200 dark:border-zinc-700">
               <span className="flex items-center gap-1 text-[11px]" title="Pièces">
