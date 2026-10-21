@@ -8,7 +8,7 @@ async function getProperties() {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 3000);
 
-    const res = await fetch(`${apiUrl}/properties?limit=12`, {
+    const res = await fetch(`${apiUrl}/properties?limit=20`, {
       next: { revalidate: 60 },
       signal: controller.signal,
     }).finally(() => clearTimeout(timeoutId));
@@ -30,8 +30,8 @@ export default async function Home() {
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
       <LandingNav />
 
-      {/* ── Feed container — matches the nav's max-width ── */}
-      <div className="mx-auto max-w-screen-xl px-4 py-6 sm:px-6 lg:px-8 xl:px-12">
+      {/* ── Feed container — matches nav width with strictly symmetrical X margins ── */}
+      <div className="mx-auto w-full max-w-[2000px] px-4 sm:px-6 md:px-8 lg:px-28 xl:px-32 2xl:px-36 py-6">
 
         {/* Tabs + Sort row */}
         <div className="flex items-center justify-between border-b border-zinc-200 pb-4 dark:border-zinc-800 mb-6">
@@ -52,12 +52,14 @@ export default async function Home() {
         </div>
 
         {/* Property grid
-            Mobile: 1 col | sm: 2 col | lg: 3 col | xl: 4 col
+            Mobile: 1 col | sm: 2 col | lg: 3 col | xl: 4 col | 2xl: 5 col | ultrawide: 6 col
         */}
         <div className="grid grid-cols-1 gap-5
           sm:grid-cols-2
           lg:grid-cols-3
-          xl:grid-cols-4">
+          xl:grid-cols-4
+          2xl:grid-cols-5
+          min-[2100px]:grid-cols-6">
           {properties.length > 0 ? (
             properties.map((property: any) => (
               <PropertyCard key={property._id} property={property} />

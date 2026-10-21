@@ -44,7 +44,7 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <div className="flex min-h-screen flex-col bg-background pb-16 md:pb-0">
+          <div className="flex min-h-screen flex-col bg-background pb-16 md:pb-24 lg:pb-8">
             <main className="flex-1">{children}</main>
             <BottomNavigation />
             <AuthModals />

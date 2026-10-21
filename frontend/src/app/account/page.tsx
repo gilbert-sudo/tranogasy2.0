@@ -82,7 +82,7 @@ export default function AccountPage() {
       </div>
 
       <div className="sticky top-[64px] z-40 w-full bg-[#F8F9FA]/90 dark:bg-zinc-950/90 backdrop-blur-xl border-b border-zinc-200 dark:border-zinc-800 md:border-transparent">
-        <div className="mx-auto flex max-w-7xl items-center px-4 sm:px-6 lg:px-8 py-2 md:py-4">
+        <div className="mx-auto flex max-w-6xl items-center px-4 sm:px-6 md:px-8 lg:px-28 xl:px-32 2xl:px-36 py-2 md:py-4">
           <Link href="/" className="p-2 -ml-2 rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors mr-2">
             <ArrowLeft className="w-5 h-5 md:w-6 md:h-6 text-zinc-800 dark:text-zinc-200" strokeWidth={2.5} />
           </Link>
@@ -92,7 +92,7 @@ export default function AccountPage() {
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto px-4 lg:pr-[120px] pb-8 pt-2 w-full">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 md:px-8 lg:px-28 xl:px-32 2xl:px-36 pb-8 pt-2 w-full">
 
         <div className="flex flex-col lg:grid lg:grid-cols-12 lg:gap-8">
           

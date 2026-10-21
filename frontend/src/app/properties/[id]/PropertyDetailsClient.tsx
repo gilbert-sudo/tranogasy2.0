@@ -364,7 +364,7 @@ function PropertyDetailsContent({ property }: { property: any }) {
       {/* MOBILE GALLERY */}
       {renderMobileGallery()}
 
-      <div className="max-w-[1440px] mx-auto lg:px-6 xl:px-8 lg:py-6">
+      <div className="max-w-[2000px] mx-auto px-4 sm:px-6 md:px-8 lg:px-28 xl:px-32 2xl:px-36 lg:py-6">
         
         {/* DESKTOP NAVIGATION */}
         <div className="hidden lg:flex items-center justify-between mb-8 sticky top-6 z-50">

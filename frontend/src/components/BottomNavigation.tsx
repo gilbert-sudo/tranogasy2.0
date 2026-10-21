@@ -28,7 +28,7 @@ export default function BottomNavigation() {
     <nav className="fixed z-50 transition-all duration-300 bg-white/90 dark:bg-zinc-800/90 backdrop-blur-md border-zinc-200 dark:border-zinc-700 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] dark:shadow-[0_-4px_20px_rgba(0,0,0,0.2)]
       bottom-0 left-0 w-full border-t pb-safe pt-2
       md:bottom-6 md:left-1/2 md:-translate-x-1/2 md:w-[375px] md:rounded-[2rem] md:border md:pb-2 md:shadow-xl
-      lg:top-1/2 lg:right-6 lg:left-auto lg:bottom-auto lg:translate-x-0 lg:-translate-y-1/2 lg:w-[85px] lg:h-[400px] lg:rounded-[2.5rem] lg:pt-4 lg:pb-4 lg:px-0">
+      lg:top-1/2 lg:right-6 xl:right-8 2xl:right-9 lg:left-auto lg:bottom-auto lg:translate-x-0 lg:-translate-y-1/2 lg:w-[85px] lg:h-[400px] lg:rounded-[2.5rem] lg:pt-4 lg:pb-4 lg:px-0">
       <div className="flex h-full items-center justify-around px-2 pb-2 md:pb-0 lg:flex-col lg:px-0 lg:py-2">
         {navItems.map((item) => {
           const isActive = pathname === item.href;

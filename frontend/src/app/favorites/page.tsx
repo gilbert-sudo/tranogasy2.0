@@ -183,7 +183,7 @@ export default function FavoritesPage() {
                 : 'var(--fav-expanded-h, 204px)',
             } as React.CSSProperties}
           >
-            <div className="max-w-[1440px] mx-auto h-full flex flex-col justify-between">
+            <div className="max-w-[2000px] mx-auto h-full flex flex-col justify-between">
               
               {/* ── ROW 1: TOP NAV (HEADER) — ALWAYS DISPLAYED ── */}
               <div className="shrink-0 w-full">
@@ -192,7 +192,7 @@ export default function FavoritesPage() {
 
               {/* ── ROW 2 (EXPANDED): TITLE & ACTIONS BAR (VISIBLE WHEN NOT SCROLLED) ── */}
               <div
-                className={`px-4 sm:px-6 lg:px-8 py-2 items-center justify-between shrink-0 transition-opacity duration-300 ${
+                className={`px-4 sm:px-6 md:px-8 lg:px-28 xl:px-32 2xl:px-36 py-2 items-center justify-between shrink-0 transition-opacity duration-300 ${
                   isScrolled ? 'hidden' : 'flex'
                 }`}
               >
@@ -230,7 +230,7 @@ export default function FavoritesPage() {
 
               {/* ── ROW 2 (SCROLLED COMPACT): CONSOLIDATED TOP BAR (VISIBLE WHEN SCROLLED) ── */}
               <div
-                className={`px-4 sm:px-6 lg:px-8 py-2 items-center justify-between gap-3 shrink-0 transition-opacity duration-300 ${
+                className={`px-4 sm:px-6 md:px-8 lg:px-28 xl:px-32 2xl:px-36 py-2 items-center justify-between gap-3 shrink-0 transition-opacity duration-300 ${
                   isScrolled ? 'flex' : 'hidden'
                 }`}
               >
@@ -504,10 +504,10 @@ export default function FavoritesPage() {
           /* ========================================================= */
           /* CASE 3: FAVORITES LIST (FULL SCREEN HIGH DENSITY)         */
           /* ========================================================= */
-          <div className="max-w-[1440px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+          <div className="max-w-[2000px] w-full mx-auto px-4 sm:px-6 md:px-8 lg:px-28 xl:px-32 2xl:px-36 py-6 space-y-6">
             {/* PROPERTY CARDS GRID */}
             {filteredProperties.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 pt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 min-[2100px]:grid-cols-6 gap-6 pt-2">
                 {filteredProperties.map((prop) => (
                   <PropertyCard key={prop._id} property={prop} />
                 ))}

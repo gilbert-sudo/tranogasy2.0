@@ -14,7 +14,7 @@ export default function Header() {
   const currentUser = user?.user || user;
   return (
     <header className="sticky top-0 z-50 w-full border-b border-zinc-200 bg-zinc-50/80 backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-800/80">
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto flex h-16 max-w-[2000px] items-center justify-between px-4 sm:px-6 md:px-8 lg:px-28 xl:px-32 2xl:px-36">
         <div className="flex items-center gap-2">
           <Link href="/" className="flex items-center gap-2">
             <Image src="/logo.png" alt="TranoGasy Logo" width={32} height={32} />

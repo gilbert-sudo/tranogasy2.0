@@ -146,9 +146,9 @@ export default function LandingNav() {
         />
 
         {/* ══════════════════════════════════════════════════════
-            INNER CONTENT — centered, constrained, responsive
+            INNER CONTENT — centered, expanded, strictly symmetrical X margins
         ══════════════════════════════════════════════════════ */}
-        <div className="relative z-10 h-full flex flex-col max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8 xl:px-12">
+        <div className="relative z-10 h-full flex flex-col w-full max-w-[2000px] mx-auto px-4 sm:px-6 md:px-8 lg:px-28 xl:px-32 2xl:px-36">
 
           {/* ── TOP ROW: logo | [scrolled: search] | actions ── */}
           <div
@@ -202,7 +202,7 @@ export default function LandingNav() {
               <div
                 className={`flex items-center gap-2 rounded-full px-4 py-2 w-full
                   bg-zinc-100 dark:bg-zinc-800
-                  max-w-xs sm:max-w-sm md:max-w-md lg:max-w-lg
+                  max-w-xs sm:max-w-sm md:max-w-md lg:max-w-lg xl:max-w-xl
                   shadow-sm min-w-0
                   ${searchFocused ? 'ring-2 ring-brand-green' : 'ring-1 ring-zinc-200/70 dark:ring-zinc-700'}`}
               >
@@ -278,7 +278,7 @@ export default function LandingNav() {
               All collapse to 0 height + opacity 0 when scrolled
           ── */}
           <div
-            className="flex flex-col flex-1 justify-end pb-3 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 xl:-mx-12 xl:px-12"
+            className="flex flex-col flex-1 justify-end pb-3 w-full"
             style={{
               opacity: 1 - scrollProgress * 2.5,
               transform: `translateY(${scrollProgress * -16}px)`,
