@@ -34,7 +34,7 @@ export default function TopPropertySection({
 
   const viewAllContent = (
     <span className="group inline-flex items-center gap-1.5 py-1 text-xs sm:text-sm font-semibold text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white transition-colors cursor-pointer select-none touch-manipulation active:scale-95">
-      <span>View All</span>
+      <span>Voir tout</span>
       <ArrowRight className="w-3.5 h-3.5 transition-transform duration-200 group-hover:translate-x-0.5 text-zinc-400 group-hover:text-zinc-900 dark:group-hover:text-white" />
     </span>
   );
@@ -46,7 +46,7 @@ export default function TopPropertySection({
       {/* 1. Section Title */}
       <div className="col-start-1 row-start-1 justify-self-start sm:order-1 sm:justify-self-auto">
         <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-900 dark:text-white">
-          Top Property
+          Top Propriétés
         </h2>
       </div>
 

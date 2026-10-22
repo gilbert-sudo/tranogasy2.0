@@ -6,7 +6,7 @@ import { Moon, Sun } from "lucide-react";
 
 export default function DarkModeToggle() {
   const [mounted, setMounted] = useState(false);
-  const { theme, setTheme, systemTheme } = useTheme();
+  const { theme, setTheme, resolvedTheme } = useTheme();
 
   // Ensure component is mounted to avoid hydration mismatch
   useEffect(() => {
@@ -19,9 +19,8 @@ export default function DarkModeToggle() {
     );
   }
 
-  // Determine actual theme if set to 'system'
-  const currentTheme = theme === "system" ? systemTheme : theme;
-  const isDark = currentTheme === "dark";
+  // Determine actual theme (defaults to light)
+  const isDark = (resolvedTheme || theme) === "dark";
 
   return (
     <div

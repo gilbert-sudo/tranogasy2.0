@@ -16,7 +16,9 @@ import PropertyCard from '@/components/PropertyCard';
 import { useUserStore } from '@/store/userStore';
 import { useFavorite } from '@/hooks/useFavorite';
 import { useModalStore } from '@/store/modalStore';
-import { useImage } from '@/hooks/useImage';
+
+// Static file in /public (was a 3.8 MB inline string via useImage, which bloated this page's JS bundle)
+const NO_FAVORITE_IMG = '/images/no-favorite.svg';
 
 type FilterCategory = 'all' | 'rent' | 'sale' | 'house' | 'apartment';
 type SortOption = 'newest' | 'price-asc' | 'price-desc';
@@ -27,7 +29,6 @@ export default function FavoritesPage() {
   const currentUser = userStore?.user || userStore;
   const { favorites, favoritePropertiesData, fetchFavorites } = useFavorite();
   const openModal = useModalStore((state) => state.openModal);
-  const { noFavoriteImg } = useImage();
 
   const [loading, setLoading] = useState(!favoritePropertiesData);
   const [searchQuery, setSearchQuery] = useState('');
@@ -450,8 +451,9 @@ export default function FavoritesPage() {
               </div>
 
               <img 
-                src={noFavoriteImg()} 
+                src={NO_FAVORITE_IMG} 
                 alt="Vos favoris TranoGasy" 
+                decoding="async"
                 className="w-full h-full object-contain select-none pointer-events-none"
               />
             </div>
@@ -555,8 +557,9 @@ export default function FavoritesPage() {
               </div>
 
               <img 
-                src={noFavoriteImg()} 
+                src={NO_FAVORITE_IMG} 
                 alt="Aucun coup de cœur" 
+                decoding="async"
                 className="w-full h-full object-contain select-none pointer-events-none"
               />
             </div>

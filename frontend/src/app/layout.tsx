@@ -51,8 +51,8 @@ export default function RootLayout({
       >
         <ThemeProvider
           attribute="class"
-          defaultTheme="system"
-          enableSystem
+          defaultTheme="light"
+          enableSystem={false}
           disableTransitionOnChange
         >
           <div className="flex min-h-screen flex-col bg-background pb-16 md:pb-24 lg:pb-8">

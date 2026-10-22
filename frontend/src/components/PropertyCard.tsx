@@ -296,7 +296,7 @@ export default function PropertyCard({ property }: PropertyProps) {
             </h3>
             <p className="text-sm font-bold text-brand-green whitespace-nowrap">
               {displayPrice ? `${displayPrice.toLocaleString('fr-FR')} Ar` : 'Sur dmd'}
-              {property.type === 'rent' && <span className="text-[10px] font-normal text-zinc-500">/mo</span>}
+              {property.type === 'rent' && <span className="text-[10px] font-normal text-zinc-500">/mois</span>}
             </p>
           </div>
 

@@ -6,7 +6,6 @@ import Image from 'next/image';
 import {
   Search,
   MapPin,
-  Bell,
   Building2,
   Home,
   Building,
@@ -26,11 +25,11 @@ const SCROLL_THRESHOLD = 180;
 
 // Categories matching Image 2
 const CATEGORIES = [
-  { id: 'apartment', name: 'Apartment', icon: Building2 },
-  { id: 'home',      name: 'Home',      icon: Home },
-  { id: 'office',    name: 'Office',    icon: Building },
-  { id: 'villa',     name: 'Villa',     icon: Landmark },
-  { id: 'tous',      name: 'Tous',      icon: Globe },
+  { id: 'apartment', name: 'Appartement', icon: Building2 },
+  { id: 'home',      name: 'Maison',      icon: Home },
+  { id: 'office',    name: 'Bureau',      icon: Building },
+  { id: 'villa',     name: 'Villa',       icon: Landmark },
+  { id: 'tous',      name: 'Tous',        icon: Globe },
 ];
 
 // Available locations
@@ -48,7 +47,7 @@ const CITIES = [
 export default function LandingNav() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
-  const [activeCategory, setActiveCategory] = useState('Apartment');
+  const [activeCategory, setActiveCategory] = useState('Appartement');
   const [selectedLocation, setSelectedLocation] = useState('Antananarivo, Madagascar');
   const [isLocationOpen, setIsLocationOpen] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
@@ -216,7 +215,7 @@ export default function LandingNav() {
                 {/* User greeting */}
                 {isLoggedIn && userName ? (
                   <h2 className="text-[16px] sm:text-[17px] font-semibold text-zinc-900 dark:text-zinc-50 tracking-tight leading-snug truncate">
-                    Hello, {userName}
+                    Bonjour, {userName}
                   </h2>
                 ) : (
                   <button
@@ -224,7 +223,7 @@ export default function LandingNav() {
                     onClick={() => openModal('login')}
                     className="text-[16px] sm:text-[17px] font-semibold text-zinc-900 dark:text-zinc-50 tracking-tight leading-snug truncate hover:text-brand-green transition-colors text-left cursor-pointer"
                   >
-                    Tongasoa ô !
+                    Bienvenue !
                   </button>
                 )}
 
@@ -318,24 +317,9 @@ export default function LandingNav() {
               </div>
             </div>
 
-            {/* ── RIGHT: Liquid Glass Bell + Actions ── */}
+            {/* ── RIGHT: Theme Toggle & Actions ── */}
             <div className="flex items-center gap-2.5 flex-shrink-0">
               <DarkModeToggle />
-
-              {/* Liquid Glass Circular Notification Button matching Image 2 */}
-              <button
-                id="notif-btn"
-                aria-label="Notifications"
-                className="relative flex h-11 w-11 items-center justify-center rounded-full
-                  bg-white/75 dark:bg-zinc-800/70 backdrop-blur-xl
-                  border border-white/80 dark:border-white/10
-                  shadow-[0_4px_16px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_16px_rgba(0,0,0,0.3)]
-                  text-zinc-800 dark:text-zinc-200
-                  hover:scale-105 active:scale-95 transition-all cursor-pointer"
-              >
-                <Bell className="h-5 w-5" />
-                <span className="absolute top-2.5 right-2.5 h-2 w-2 rounded-full bg-brand-red ring-2 ring-white dark:ring-zinc-800" />
-              </button>
 
               {/* Mobile (always) or Scrolled Desktop: Standalone Circular User Profile Avatar / Login */}
               <div className={`${isScrolled ? 'flex' : 'flex md:hidden'}`}>
@@ -391,7 +375,7 @@ export default function LandingNav() {
                       href="/account"
                       className="text-[13px] font-semibold text-zinc-900 dark:text-zinc-50 tracking-tight leading-tight hover:text-brand-green transition-colors truncate max-w-[150px] lg:max-w-[200px]"
                     >
-                      Hello, {userName}
+                      Bonjour, {userName}
                     </Link>
                   ) : (
                     <button
@@ -399,7 +383,7 @@ export default function LandingNav() {
                       onClick={() => openModal('login')}
                       className="text-[13px] font-semibold text-zinc-900 dark:text-zinc-50 tracking-tight leading-tight hover:text-brand-green transition-colors truncate max-w-[150px] lg:max-w-[200px] cursor-pointer"
                     >
-                      Tongasoa ô !
+                      Bienvenue !
                     </button>
                   )}
 
@@ -501,17 +485,17 @@ export default function LandingNav() {
           >
             {/* Headline matching Image 2 typography and font weights */}
             <h1 className="text-[26px] sm:text-[32px] md:text-[38px] lg:text-[42px] leading-[1.2] tracking-tight text-zinc-900 dark:text-white mt-4 sm:mt-5 mb-4 sm:mb-5">
-              <span className="font-light text-zinc-900 dark:text-white">Explore </span>
-              <span className="font-bold text-zinc-900 dark:text-white">Modern Living</span>
+              <span className="font-light text-zinc-900 dark:text-white">Explorez </span>
+              <span className="font-bold text-zinc-900 dark:text-white">des logements</span>
               <br />
-              <span className="font-bold text-zinc-900 dark:text-white">Spaces Near You</span>
+              <span className="font-bold text-zinc-900 dark:text-white">près de chez vous</span>
             </h1>
 
             {/* ── Search Bar Row: Pill Input + Separate Circular Filter Button ── */}
-            <div className="flex items-center gap-3 w-full mb-4 sm:mb-5">
+            <div className="flex items-center gap-3 w-full max-w-xl mb-4 sm:mb-5">
               {/* Search input pill */}
               <div
-                className={`flex-1 flex items-center h-12 md:h-13 rounded-full px-4
+                className={`flex-1 min-w-0 flex items-center h-12 md:h-13 rounded-full px-4
                   bg-white/75 dark:bg-zinc-800/60 backdrop-blur-xl
                   border border-white/85 dark:border-white/10
                   shadow-[0_4px_20px_rgba(0,0,0,0.04)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.25)]
@@ -526,7 +510,7 @@ export default function LandingNav() {
                   ref={inputRef}
                   id="main-search"
                   type="text"
-                  placeholder="Search"
+                  placeholder="Rechercher"
                   onFocus={() => setSearchFocused(true)}
                   onBlur={() => setSearchFocused(false)}
                   className="w-full bg-transparent text-[15px] md:text-base text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 font-normal outline-none"
