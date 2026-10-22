@@ -18,7 +18,7 @@ export default function Header() {
         <div className="flex items-center gap-2">
           <Link href="/" className="flex items-center gap-2">
             <Image src="/logo.png" alt="TranoGasy Logo" width={32} height={32} />
-            <span className="text-xl font-bold tracking-tight text-zinc-900 dark:text-white">
+            <span className="text-xl font-bold tracking-tight leading-none text-zinc-900 dark:text-white">
               <span className="text-brand-green">Trano</span>Gasy.
             </span>
           </Link>

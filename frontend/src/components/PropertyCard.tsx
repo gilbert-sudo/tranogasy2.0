@@ -232,6 +232,9 @@ export default function PropertyCard({ property }: PropertyProps) {
             </>
           )}
           
+          {/* Depth vignette under the curved separation */}
+          <div className="absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-black/35 via-black/15 to-transparent pointer-events-none z-[5]" />
+
           {/* Badges */}
           <div className="absolute top-3 left-3 rounded-full bg-brand-green px-2.5 py-0.5 text-[10px] font-bold text-white uppercase tracking-wide shadow-sm">
             {property.type === 'rent' ? 'Location' : 'Vente'}
@@ -256,23 +259,31 @@ export default function PropertyCard({ property }: PropertyProps) {
           </button>
         </div>
 
-        {/* Text Area: S-Shaped Curved Overlap Sheet */}
-        <div className="relative z-10 -mt-5 flex flex-col flex-1 rounded-tl-3xl rounded-tr-none bg-zinc-50 dark:bg-zinc-800 p-3.5 pt-4 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] dark:shadow-[0_-4px_16px_rgba(0,0,0,0.35)] border-t border-black/[0.04] dark:border-white/[0.06]">
-          {/* Inverted Concave Corner on Upper Right Side forming S-Shape */}
+        {/* Text Area: S-Shaped Curved Overlap Sheet with 3D Elevation */}
+        <div className="relative z-10 -mt-5 flex flex-col flex-1 rounded-tl-none rounded-tr-3xl bg-zinc-50 dark:bg-zinc-800 p-3.5 pt-4 shadow-[0_-8px_20px_rgba(0,0,0,0.12),0_-2px_6px_rgba(0,0,0,0.08),inset_0_1px_0_rgba(255,255,255,0.9)] dark:shadow-[0_-8px_24px_rgba(0,0,0,0.55),0_-2px_6px_rgba(0,0,0,0.35),inset_0_1px_0_rgba(255,255,255,0.12)] border-t border-black/[0.08] dark:border-white/[0.10]">
+          {/* Inverted Concave Corner on Upper Left Side with 3D Drop Shadow & Specular Bevel */}
           <svg 
-            className="absolute bottom-full right-0 w-6 h-6 pointer-events-none -mb-px" 
+            className="absolute bottom-full left-0 w-6 h-6 pointer-events-none -mb-px overflow-visible [filter:drop-shadow(0_-5px_8px_rgba(0,0,0,0.12))] dark:[filter:drop-shadow(0_-5px_10px_rgba(0,0,0,0.5))]" 
             viewBox="0 0 24 24" 
             fill="none" 
             xmlns="http://www.w3.org/2000/svg"
             aria-hidden="true"
           >
             <path 
-              d="M 0,24 A 24,24 0 0,0 24,0 L 24,24 Z" 
+              d="M 24,24 A 24,24 0 0,1 0,0 L 0,24 Z" 
               className="fill-zinc-50 dark:fill-zinc-800" 
             />
+            {/* Ambient contact edge */}
             <path 
-              d="M 0,24 A 24,24 0 0,0 24,0" 
-              className="stroke-black/[0.04] dark:stroke-white/[0.06]" 
+              d="M 24,24 A 24,24 0 0,1 0,0" 
+              className="stroke-black/[0.12] dark:stroke-black/60" 
+              strokeWidth="1.5" 
+              fill="none" 
+            />
+            {/* Crisp specular rim highlight */}
+            <path 
+              d="M 24,24 A 24,24 0 0,1 0,0" 
+              className="stroke-white/80 dark:stroke-white/20" 
               strokeWidth="1" 
               fill="none" 
             />

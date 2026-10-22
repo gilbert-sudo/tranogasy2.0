@@ -3,64 +3,103 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Search, MapPin, SlidersHorizontal, Bell, Building2, TreePine, Landmark, Waves, Globe, ChevronLeft, ChevronRight, User } from 'lucide-react';
+import {
+  Search,
+  MapPin,
+  Bell,
+  Building2,
+  Home,
+  Building,
+  Landmark,
+  Globe,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+  User,
+  Check,
+} from 'lucide-react';
 import DarkModeToggle from './DarkModeToggle';
 import { useModalStore } from '@/store/modalStore';
 import { useUserStore } from '@/store/userStore';
 
-// Different thresholds per breakpoint handled in JS via the hero height CSS var
-const SCROLL_THRESHOLD = 220;
+const SCROLL_THRESHOLD = 180;
 
-// Popular Madagascar places with icons and listing counts
-const PLACES = [
-  { name: 'Tous', icon: Globe,      count: 248 },
-  { name: 'Antananarivo', icon: Landmark,   count: 142 },
-  { name: 'Toamasina',   icon: Waves,       count:  38 },
-  { name: 'Antsirabe',   icon: TreePine,    count:  27 },
-  { name: 'Mahajanga',   icon: Waves,       count:  21 },
-  { name: 'Fianarantsoa',icon: TreePine,    count:  12 },
-  { name: 'Toliara',     icon: Waves,       count:   8 },
-  { name: 'Antsiranana', icon: Building2,   count:   5 },
+// Categories matching Image 2
+const CATEGORIES = [
+  { id: 'apartment', name: 'Apartment', icon: Building2 },
+  { id: 'home',      name: 'Home',      icon: Home },
+  { id: 'office',    name: 'Office',    icon: Building },
+  { id: 'villa',     name: 'Villa',     icon: Landmark },
+  { id: 'tous',      name: 'Tous',      icon: Globe },
+];
+
+// Available locations
+const CITIES = [
+  'Antananarivo, Madagascar',
+  'Toamasina, Madagascar',
+  'Antsirabe, Madagascar',
+  'Mahajanga, Madagascar',
+  'Fianarantsoa, Madagascar',
+  'Toliara, Madagascar',
+  'Antsiranana, Madagascar',
+  'Nosy Be, Madagascar',
 ];
 
 export default function LandingNav() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
-  const [activePlace, setActivePlace] = useState('Tous');
+  const [activeCategory, setActiveCategory] = useState('Apartment');
+  const [selectedLocation, setSelectedLocation] = useState('Antananarivo, Madagascar');
+  const [isLocationOpen, setIsLocationOpen] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
+  
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const locationDropdownRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(true);
+
   const openModal = useModalStore((state) => state.openModal);
   const { user, initialize } = useUserStore();
   const currentUser = user?.user || user;
   const isLoggedIn = !!currentUser;
+  const userName = currentUser?.username || currentUser?.firstName || 'Jemision';
 
   const checkScroll = useCallback(() => {
     if (scrollContainerRef.current) {
       const { scrollLeft, scrollWidth, clientWidth } = scrollContainerRef.current;
-      setCanScrollLeft(scrollLeft > 0);
-      setCanScrollRight(scrollLeft < scrollWidth - clientWidth - 1);
+      setCanScrollLeft(scrollLeft > 2);
+      setCanScrollRight(scrollLeft < scrollWidth - clientWidth - 2);
     }
   }, []);
 
   useEffect(() => {
     checkScroll();
     window.addEventListener('resize', checkScroll);
-    
-    // Initialize user from local storage if they chose 'Remember me'
     initialize();
 
-    return () => window.removeEventListener('resize', checkScroll);
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        locationDropdownRef.current &&
+        !locationDropdownRef.current.contains(event.target as Node)
+      ) {
+        setIsLocationOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      window.removeEventListener('resize', checkScroll);
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
   }, [checkScroll, initialize]);
 
-  const scrollPlaces = (direction: 'left' | 'right') => {
+  const scrollCategories = (direction: 'left' | 'right') => {
     if (scrollContainerRef.current) {
-      const scrollAmount = 300;
+      const scrollAmount = 260;
       scrollContainerRef.current.scrollBy({
         left: direction === 'left' ? -scrollAmount : scrollAmount,
-        behavior: 'smooth'
+        behavior: 'smooth',
       });
     }
   };
@@ -78,116 +117,155 @@ export default function LandingNav() {
 
   return (
     <>
-      {/* ── Fixed wrapper
-          Mobile:  260px expanded → 68px collapsed
-          md+:     340px expanded → 72px collapsed
-      ── */}
+      {/* ── Fixed Liquid Glass Header ── */}
       <header
         className="fixed inset-x-0 top-0 z-50 overflow-hidden"
         style={{
-          height: isScrolled
-            ? 'var(--nav-h, 68px)'
-            : 'var(--hero-h, 260px)',
-          transition: 'height 0.45s cubic-bezier(0.4, 0, 0.2, 1)',
+          height: isScrolled ? 'var(--nav-h, 64px)' : 'var(--hero-h, 320px)',
+          transition: 'height 0.4s cubic-bezier(0.2, 0.8, 0.2, 1)',
         } as React.CSSProperties}
       >
-        {/* Inject responsive CSS vars */}
+        {/* Responsive CSS vars */}
         <style>{`
           :root {
-            --hero-h: 260px;
-            --nav-h: 68px;
+            --hero-h: 320px;
+            --nav-h: 64px;
           }
           @media (min-width: 768px) {
             :root {
-              --hero-h: 340px;
-              --nav-h: 72px;
+              --hero-h: 350px;
+              --nav-h: 64px;
             }
           }
           @media (min-width: 1024px) {
             :root {
               --hero-h: 380px;
-              --nav-h: 72px;
+              --nav-h: 64px;
             }
           }
           .scrollbar-hide::-webkit-scrollbar { display: none; }
           .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-
-          /* Place chip hover glow */
-          .place-chip:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 14px rgba(124,189,30,0.35) !important;
-          }
-          .place-chip.active {
-            box-shadow: 0 4px 14px rgba(124,189,30,0.5) !important;
-          }
         `}</style>
 
-        {/* ── Background image — fades out on scroll ── */}
+        {/* ── Background image — fades smoothly on scroll ── */}
         <div
-          className="absolute inset-0"
-          style={{ opacity: 1 - scrollProgress, transition: 'opacity 0.3s' }}
+          className="absolute inset-0 overflow-hidden pointer-events-none transition-opacity duration-300"
+          style={{ opacity: 1 - scrollProgress }}
         >
           <Image
             src="/hero-bg.jpg"
             alt="Madagascar paysage immobilier"
             fill
             priority
-            className="object-cover object-center"
+            className="object-cover object-[center_35%] scale-105"
             sizes="100vw"
           />
-          {/* Gradient: darkens image, fades to page background at bottom */}
-          <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/35 to-zinc-50 dark:to-zinc-950" />
+
+          {/* Luxury vignette & gradient overlay */}
+          <div className="absolute inset-0 bg-gradient-to-b from-black/65 via-black/35 to-zinc-50 dark:to-zinc-950" />
+          <div className="absolute inset-0 bg-black/15 dark:bg-black/35" />
         </div>
 
-        {/* ── Frosted glass nav — fades in on scroll ── */}
+        {/* ── Frosted glass nav bar (Fades in on scroll) ── */}
         <div
-          className="absolute inset-0 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md border-b border-zinc-200/70 dark:border-zinc-800"
+          className="absolute inset-0 bg-white/85 dark:bg-zinc-900/85 backdrop-blur-xl border-b border-zinc-200/70 dark:border-zinc-800/70 shadow-sm"
           style={{ opacity: scrollProgress, transition: 'opacity 0.3s' }}
         />
 
-        {/* ══════════════════════════════════════════════════════
-            INNER CONTENT — centered, expanded, strictly symmetrical X margins
-        ══════════════════════════════════════════════════════ */}
-        <div className="relative z-10 h-full flex flex-col w-full max-w-[2000px] mx-auto px-4 sm:px-6 md:px-8 lg:px-28 xl:px-32 2xl:px-36">
-
-          {/* ── TOP ROW: logo | [scrolled: search] | actions ── */}
+        {/* ── Container ── */}
+        <div className={`relative z-10 h-full flex flex-col ${isScrolled ? 'justify-center' : ''} w-full max-w-[2000px] mx-auto px-5 sm:px-6 md:px-8 lg:px-28 xl:px-32 2xl:px-36`}>
+          
+          {/* ══════════════════════════════════════════════════════════
+              TOP ROW: Greeting / Location & Liquid Glass Bell + Actions
+          ══════════════════════════════════════════════════════════ */}
           <div
-            className="flex items-center"
+            className="flex items-center w-full"
             style={{
-              paddingTop: isScrolled ? '0' : '14px',
+              paddingTop: isScrolled ? '0' : '16px',
               height: isScrolled ? '100%' : 'auto',
               justifyContent: isScrolled ? 'flex-start' : 'space-between',
-              gap: isScrolled ? '12px' : '0',
-              transition: 'padding-top 0.45s',
+              gap: isScrolled ? '14px' : '0',
+              transition: 'padding-top 0.4s',
             }}
           >
-            {/* Logo */}
-            <Link href="/" className="flex items-center gap-2 flex-shrink-0">
-              <div
-                className="relative"
-                style={{
-                  width: isScrolled ? '28px' : '36px',
-                  height: isScrolled ? '28px' : '36px',
-                  transition: 'width 0.45s, height 0.45s',
-                }}
-              >
-                <Image src="/logo.png" alt="TranoGasy" fill className="object-contain" />
-              </div>
-              <span
-                className="font-extrabold tracking-tight"
-                style={{
-                  fontSize: isScrolled ? '1.15rem' : '1.4rem',
-                  transition: 'font-size 0.45s',
-                }}
-              >
-                <span style={{ color: '#7cbd1e' }}>Trano</span>
-                <span className={isScrolled ? 'text-zinc-900 dark:text-white' : 'text-white'}>
-                  Gasy.
+            {/* Scrolled Logo or Desktop Branded Logo */}
+            <div className={`items-center gap-2 flex-shrink-0 ${isScrolled ? 'flex' : 'hidden md:flex'}`}>
+              <Link href="/" className="flex items-center gap-2">
+                <div className="relative w-7 h-7 sm:w-8 sm:h-8">
+                  <Image src="/logo.png" alt="TranoGasy" fill className="object-contain" priority />
+                </div>
+                <span className="font-extrabold tracking-tight text-lg sm:text-xl leading-none">
+                  <span className="text-brand-green">Trano</span>
+                  <span className={isScrolled ? 'text-zinc-900 dark:text-white' : 'text-white drop-shadow-sm'}>
+                    Gasy.
+                  </span>
                 </span>
-              </span>
-            </Link>
+              </Link>
+            </div>
 
-            {/* ── CENTER: collapsed search bar (scrolled only) ── */}
+            {/* Expanded: Top Greeting + Location selector */}
+            <div
+              className={`flex flex-col min-w-0 ${isScrolled ? 'hidden' : 'flex'}`}
+              style={{
+                opacity: 1 - scrollProgress * 3,
+                transition: 'opacity 0.2s',
+              }}
+            >
+              {/* User greeting */}
+              <h2 className="text-[17px] sm:text-lg font-semibold text-white drop-shadow-md tracking-tight leading-snug">
+                Hello, {userName}
+              </h2>
+
+              {/* Location Selector */}
+              <div className="relative" ref={locationDropdownRef}>
+                <button
+                  type="button"
+                  onClick={() => setIsLocationOpen(!isLocationOpen)}
+                  className="flex items-center gap-1 text-[13px] font-medium text-white/85 hover:text-white drop-shadow-sm transition-colors mt-0.5 cursor-pointer group"
+                >
+                  <MapPin className="h-3.5 w-3.5 text-brand-green drop-shadow group-hover:scale-110 transition-transform flex-shrink-0" />
+                  <span className="truncate max-w-[190px] sm:max-w-[260px]">{selectedLocation}</span>
+                  <ChevronDown
+                    className={`h-3 w-3 text-white/80 transition-transform duration-200 ${
+                      isLocationOpen ? 'rotate-180' : ''
+                    }`}
+                  />
+                </button>
+
+                {/* Liquid Glass Location Dropdown */}
+                {isLocationOpen && (
+                  <div className="absolute left-0 top-full mt-2 w-64 rounded-2xl p-2 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-2xl border border-white/80 dark:border-white/10 shadow-[0_12px_40px_rgba(0,0,0,0.25)] z-50 animate-in fade-in zoom-in-95 duration-150">
+                    <div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-zinc-400">
+                      Sélectionner une ville
+                    </div>
+                    <div className="flex flex-col gap-0.5 max-h-56 overflow-y-auto scrollbar-hide">
+                      {CITIES.map((city) => (
+                        <button
+                          key={city}
+                          type="button"
+                          onClick={() => {
+                            setSelectedLocation(city);
+                            setIsLocationOpen(false);
+                          }}
+                          className={`flex items-center justify-between px-3 py-2 text-xs font-medium rounded-xl text-left transition-colors cursor-pointer ${
+                            selectedLocation === city
+                              ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white font-semibold'
+                              : 'text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
+                          }`}
+                        >
+                          <span className="truncate">{city}</span>
+                          {selectedLocation === city && (
+                            <Check className="h-3.5 w-3.5 text-zinc-900 dark:text-white flex-shrink-0" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* ── CENTER: Collapsed search bar (scrolled only) ── */}
             <div
               className="flex justify-center min-w-0"
               style={{
@@ -200,11 +278,11 @@ export default function LandingNav() {
               }}
             >
               <div
-                className={`flex items-center gap-2 rounded-full px-4 py-2 w-full
-                  bg-zinc-100 dark:bg-zinc-800
+                className={`flex items-center gap-2 rounded-full px-4 py-1.5 w-full
+                  bg-white/80 dark:bg-zinc-800/80 backdrop-blur-md
                   max-w-xs sm:max-w-sm md:max-w-md lg:max-w-lg xl:max-w-xl
                   shadow-sm min-w-0
-                  ${searchFocused ? 'ring-2 ring-brand-green' : 'ring-1 ring-zinc-200/70 dark:ring-zinc-700'}`}
+                  ${searchFocused ? 'ring-2 ring-zinc-400 dark:ring-zinc-600' : 'ring-1 ring-zinc-200/80 dark:ring-zinc-700/80'}`}
               >
                 <Search className="h-4 w-4 flex-shrink-0 text-zinc-400" />
                 <input
@@ -212,73 +290,81 @@ export default function LandingNav() {
                   placeholder="Rechercher une ville, quartier…"
                   onFocus={() => setSearchFocused(true)}
                   onBlur={() => setSearchFocused(false)}
-                  className="flex-1 bg-transparent text-sm text-zinc-700 dark:text-zinc-100 placeholder:text-zinc-400 outline-none min-w-0"
+                  className="flex-1 bg-transparent text-sm text-zinc-800 dark:text-zinc-100 placeholder:text-zinc-400 outline-none min-w-0"
                 />
                 <button
                   aria-label="Filtres"
-                  className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-brand-green text-white transition-transform active:scale-90 hover:brightness-110"
+                  className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 transition-transform active:scale-90"
                 >
-                  <SlidersHorizontal className="h-3.5 w-3.5" />
+                  <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="21" y1="6" x2="13" y2="6" /><line x1="9" y1="6" x2="3" y2="6" /><circle cx="11" cy="6" r="2" />
+                    <line x1="21" y1="12" x2="17" y2="12" /><line x1="13" y1="12" x2="3" y2="12" /><circle cx="15" cy="12" r="2" />
+                    <line x1="21" y1="18" x2="9" y2="18" /><line x1="5" y1="18" x2="3" y2="18" /><circle cx="7" cy="18" r="2" />
+                  </svg>
                 </button>
               </div>
             </div>
 
-            {/* Right actions */}
-            <div className="flex items-center gap-2 flex-shrink-0">
+            {/* ── RIGHT: Liquid Glass Bell + Actions ── */}
+            <div className="flex items-center gap-2.5 flex-shrink-0">
               <DarkModeToggle />
+
+              {/* Liquid Glass Circular Notification Button */}
               <button
                 id="notif-btn"
                 aria-label="Notifications"
-                className="relative flex h-9 w-9 items-center justify-center rounded-full transition-colors"
-                style={{
-                  background: isScrolled ? 'transparent' : 'rgba(255,255,255,0.12)',
-                  color: isScrolled ? undefined : 'white',
-                }}
+                className={`relative flex h-11 w-11 items-center justify-center rounded-full
+                  backdrop-blur-xl border transition-all cursor-pointer hover:scale-105 active:scale-95 ${
+                    isScrolled
+                      ? 'bg-zinc-100/80 dark:bg-zinc-800/80 border-zinc-200/80 dark:border-white/10 text-zinc-800 dark:text-zinc-200 shadow-sm'
+                      : 'bg-white/85 dark:bg-zinc-900/70 border-white/90 dark:border-white/15 text-zinc-900 dark:text-white shadow-[0_4px_20px_rgba(0,0,0,0.15)]'
+                  }`}
               >
                 <Bell className="h-5 w-5" />
-                <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-brand-red ring-2 ring-white dark:ring-zinc-900" />
+                <span className="absolute top-2.5 right-2.5 h-2 w-2 rounded-full bg-brand-red ring-2 ring-white dark:ring-zinc-800" />
               </button>
-              
-              {/* User Profile Avatar */}
+
+              {/* User Profile Avatar / Login */}
               {isLoggedIn ? (
-                <Link 
-                  href="/account" 
-                  className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-200 dark:bg-zinc-700 transition-colors hover:ring-2 hover:ring-brand-green overflow-hidden border border-zinc-300 dark:border-zinc-600 relative"
-                  style={{
-                    background: isScrolled ? undefined : 'rgba(255,255,255,0.2)',
-                    borderColor: isScrolled ? undefined : 'transparent',
-                    color: isScrolled ? undefined : 'white',
-                  }}
+                <Link
+                  href="/account"
+                  className={`flex h-11 w-11 items-center justify-center rounded-full
+                    backdrop-blur-xl border overflow-hidden hover:scale-105 active:scale-95 transition-all relative ${
+                      isScrolled
+                        ? 'bg-zinc-100/80 dark:bg-zinc-800/80 border-zinc-200/80 dark:border-white/10 shadow-sm'
+                        : 'bg-white/85 dark:bg-zinc-900/70 border-white/90 dark:border-white/15 shadow-[0_4px_20px_rgba(0,0,0,0.15)]'
+                    }`}
                 >
                   {currentUser?.avatar ? (
                     <Image src={currentUser.avatar} alt="Profile" fill className="object-cover" />
                   ) : (
-                    <span className="text-sm font-bold uppercase" style={{ color: isScrolled ? undefined : 'white' }}>
+                    <span className="text-sm font-bold uppercase text-zinc-800 dark:text-zinc-200">
                       {currentUser?.username?.charAt(0) || currentUser?.email?.charAt(0) || 'U'}
                     </span>
                   )}
                 </Link>
               ) : (
-                <button 
+                <button
                   onClick={() => openModal('login')}
-                  className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-200 dark:bg-zinc-700 transition-colors hover:ring-2 hover:ring-brand-green overflow-hidden border border-zinc-300 dark:border-zinc-600"
-                  style={{
-                    background: isScrolled ? undefined : 'rgba(255,255,255,0.2)',
-                    borderColor: isScrolled ? undefined : 'transparent',
-                    color: isScrolled ? undefined : 'white',
-                  }}
+                  aria-label="Connexion"
+                  className={`flex h-11 w-11 items-center justify-center rounded-full
+                    backdrop-blur-xl border hover:scale-105 active:scale-95 transition-all cursor-pointer ${
+                      isScrolled
+                        ? 'bg-zinc-100/80 dark:bg-zinc-800/80 border-zinc-200/80 dark:border-white/10 text-zinc-800 dark:text-zinc-200 shadow-sm'
+                        : 'bg-white/85 dark:bg-zinc-900/70 border-white/90 dark:border-white/15 text-zinc-900 dark:text-white shadow-[0_4px_20px_rgba(0,0,0,0.15)]'
+                    }`}
                 >
-                  <User className="h-5 w-5 text-zinc-600 dark:text-zinc-300" style={{ color: isScrolled ? undefined : 'white' }} />
+                  <User className="h-5 w-5" />
                 </button>
               )}
             </div>
           </div>
 
-          {/* ── HERO TEXT + SEARCH + PLACE CHIPS
-              All collapse to 0 height + opacity 0 when scrolled
-          ── */}
+          {/* ══════════════════════════════════════════════════════════
+              HERO BODY: Headline + Liquid Glass Search & Category Pills
+          ══════════════════════════════════════════════════════════ */}
           <div
-            className="flex flex-col flex-1 justify-end pb-3 w-full"
+            className={`flex flex-col flex-1 justify-end w-full ${isScrolled ? 'hidden' : 'pb-3'}`}
             style={{
               opacity: 1 - scrollProgress * 2.5,
               transform: `translateY(${scrollProgress * -16}px)`,
@@ -288,127 +374,145 @@ export default function LandingNav() {
               maxHeight: isScrolled ? 0 : '9999px',
             }}
           >
-            {/* Location pill */}
-            <div className="flex items-center gap-1.5 mb-1.5">
-              <MapPin className="h-3.5 w-3.5 text-brand-green flex-shrink-0" />
-              <span className="text-xs font-medium text-white/75 tracking-wide">
-                Antananarivo, Madagascar
-              </span>
-            </div>
-
-            {/* Headline — scales up on larger screens */}
-            <h1 className="font-black leading-tight text-white mb-3
-              text-[1.55rem]
-              sm:text-[1.9rem]
-              md:text-[2.4rem]
-              lg:text-[2.9rem]">
-              Trouvez votre{' '}
-              <span
-                style={{
-                  background: 'linear-gradient(90deg, #7cbd1e 0%, #a8e63d 100%)',
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                  backgroundClip: 'text',
-                }}
-              >
-                maison idéale
-              </span>
+            {/* Headline matching Image 2 typography and font weights */}
+            <h1 className="text-[26px] sm:text-[32px] md:text-[38px] lg:text-[42px] leading-[1.2] tracking-tight text-white mt-4 sm:mt-5 mb-4 sm:mb-5 drop-shadow-[0_2px_14px_rgba(0,0,0,0.55)]">
+              <span className="font-light text-white/95">Explore </span>
+              <span className="font-bold text-white">Modern Living</span>
+              <br />
+              <span className="font-bold text-white">Spaces Near You</span>
             </h1>
 
-            {/* Search bar */}
-            <div
-              className={`flex items-center gap-2 rounded-full px-4 py-3 mb-3
-                bg-white shadow-[0_8px_32px_rgba(0,0,0,0.18)]
-                ${searchFocused ? 'ring-2 ring-brand-green' : ''}
-                md:py-3.5`}
-            >
-              <Search className="h-4 w-4 flex-shrink-0 text-zinc-400 md:h-5 md:w-5" />
-              <input
-                ref={inputRef}
-                id="main-search"
-                type="text"
-                placeholder="Quartier, ville, type de bien…"
-                onFocus={() => setSearchFocused(true)}
-                onBlur={() => setSearchFocused(false)}
-                className="flex-1 bg-transparent text-sm text-zinc-700 placeholder:text-zinc-400 outline-none md:text-base"
-              />
+            {/* ── Search Bar Row: Pill Input + Separate Circular Filter Button ── */}
+            <div className="flex items-center gap-3 w-full mb-4 sm:mb-5">
+              {/* Search input pill */}
+              <div
+                className={`flex-1 flex items-center h-12 md:h-13 rounded-full px-4
+                  bg-white/90 dark:bg-zinc-900/85 backdrop-blur-xl
+                  border border-white/90 dark:border-white/15
+                  shadow-[0_8px_30px_rgba(0,0,0,0.16)] dark:shadow-[0_8px_30px_rgba(0,0,0,0.45)]
+                  transition-all ${
+                    searchFocused
+                      ? 'ring-2 ring-brand-green/80 bg-white dark:bg-zinc-900'
+                      : ''
+                  }`}
+              >
+                <Search className="h-5 w-5 text-zinc-400 dark:text-zinc-400 mr-2.5 flex-shrink-0" />
+                <input
+                  ref={inputRef}
+                  id="main-search"
+                  type="text"
+                  placeholder="Search"
+                  onFocus={() => setSearchFocused(true)}
+                  onBlur={() => setSearchFocused(false)}
+                  className="w-full bg-transparent text-[15px] md:text-base text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 font-normal outline-none"
+                />
+              </div>
+
+              {/* Separate circular filter button matching Image 2 */}
               <button
                 id="filter-btn"
                 aria-label="Filtres"
-                className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-brand-green text-white transition-transform active:scale-90 md:h-9 md:w-9 md:rounded-full"
+                className="flex h-12 w-12 md:h-13 md:w-13 flex-shrink-0 items-center justify-center rounded-full
+                  bg-white/90 dark:bg-zinc-900/85 backdrop-blur-xl
+                  border border-white/90 dark:border-white/15
+                  shadow-[0_8px_30px_rgba(0,0,0,0.16)] dark:shadow-[0_8px_30px_rgba(0,0,0,0.45)]
+                  text-zinc-700 dark:text-zinc-200 hover:scale-105 active:scale-95 transition-transform cursor-pointer"
               >
-                <SlidersHorizontal className="h-4 w-4" />
+                <svg
+                  className="h-5 w-5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <line x1="21" y1="6" x2="13" y2="6" />
+                  <line x1="9" y1="6" x2="3" y2="6" />
+                  <circle cx="11" cy="6" r="2" />
+                  <line x1="21" y1="12" x2="17" y2="12" />
+                  <line x1="13" y1="12" x2="3" y2="12" />
+                  <circle cx="15" cy="12" r="2" />
+                  <line x1="21" y1="18" x2="9" y2="18" />
+                  <line x1="5" y1="18" x2="3" y2="18" />
+                  <circle cx="7" cy="18" r="2" />
+                </svg>
               </button>
             </div>
 
-            {/* ── Place chips ── */}
+            {/* ── Category Pills Row matching Image 2 ── */}
             <div className="relative group flex items-center">
-              {/* Scroll Left Button */}
-              <div 
-                className={`hidden md:flex absolute -left-4 z-10 transition-opacity duration-300 ${
-                  canScrollLeft ? 'opacity-0 group-hover:opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+              {/* Scroll Left Button for desktop */}
+              <div
+                className={`hidden md:flex absolute -left-3 z-10 transition-opacity duration-300 ${
+                  canScrollLeft
+                    ? 'opacity-0 group-hover:opacity-100 pointer-events-auto'
+                    : 'opacity-0 pointer-events-none'
                 }`}
               >
                 <button
-                  onClick={() => scrollPlaces('left')}
-                  className="flex h-8 w-8 items-center justify-center rounded-full bg-white/95 text-zinc-700 shadow-[0_2px_8px_rgba(0,0,0,0.15)] transition-transform hover:scale-105"
+                  type="button"
+                  onClick={() => scrollCategories('left')}
+                  className="flex h-8 w-8 items-center justify-center rounded-full bg-white/95 dark:bg-zinc-800/95 backdrop-blur-md text-zinc-700 dark:text-zinc-200 shadow-md transition-transform hover:scale-105"
                   aria-label="Défiler vers la gauche"
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </button>
               </div>
 
-              <div 
+              {/* Category Pills list */}
+              <div
                 ref={scrollContainerRef}
                 onScroll={checkScroll}
-                className="flex gap-2 overflow-x-auto scrollbar-hide -mx-1 px-1 w-full"
+                className="flex items-center gap-2.5 overflow-x-auto scrollbar-hide py-1 -mx-1 px-1 w-full"
               >
-                {PLACES.map(({ name, icon: Icon, count }) => {
-                const isActive = activePlace === name;
-                return (
-                  <button
-                    key={name}
-                    id={`place-chip-${name.toLowerCase()}`}
-                    onClick={() => setActivePlace(name)}
-                    className={`place-chip${isActive ? ' active' : ''} flex-shrink-0 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-all active:scale-95 md:px-4 md:py-2 md:text-sm`}
-                    style={{
-                      background: isActive
-                        ? '#7cbd1e'
-                        : 'rgba(255,255,255,0.82)',
-                      color: isActive ? 'white' : '#3f3f46',
-                      boxShadow: isActive
-                        ? '0 2px 8px rgba(124,189,30,0.4)'
-                        : 'none',
-                    }}
-                  >
-                    {/* place icon */}
-                    <Icon className="h-3 w-3 flex-shrink-0" />
-                    {/* place name */}
-                    <span>{name}</span>
-                    {/* listing count badge */}
-                    <span
-                      className="inline-flex items-center justify-center rounded-full px-1.5 py-0 text-[10px] font-bold leading-4 min-w-[18px]"
-                      style={{
-                        background: isActive ? 'rgba(255,255,255,0.28)' : 'rgba(124,189,30,0.15)',
-                        color: isActive ? 'white' : '#5a9a10',
-                      }}
+                {CATEGORIES.map((cat) => {
+                  const isActive = activeCategory === cat.name;
+                  const Icon = cat.icon;
+                  return (
+                    <button
+                      key={cat.id}
+                      id={`category-pill-${cat.id}`}
+                      type="button"
+                      onClick={() => setActiveCategory(cat.name)}
+                      className={`h-11 px-2.5 pr-4.5 rounded-full flex items-center gap-2.5 flex-shrink-0 transition-all active:scale-95 cursor-pointer ${
+                        isActive
+                          ? 'bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 shadow-[0_4px_20px_rgba(0,0,0,0.3)]'
+                          : 'bg-white/85 dark:bg-zinc-900/80 backdrop-blur-xl border border-white/90 dark:border-white/15 text-zinc-800 dark:text-zinc-200 shadow-[0_4px_16px_rgba(0,0,0,0.08)] hover:bg-white dark:hover:bg-zinc-850'
+                      }`}
                     >
-                      {count}
-                    </span>
-                  </button>
-                );
-              })}
+                      {/* Circular icon badge inside pill */}
+                      <div
+                        className={`h-7 w-7 rounded-full flex items-center justify-center flex-shrink-0 transition-colors ${
+                          isActive
+                            ? 'bg-white dark:bg-zinc-900 text-zinc-950 dark:text-white'
+                            : 'bg-zinc-100/90 dark:bg-zinc-800/80 text-zinc-600 dark:text-zinc-300'
+                        }`}
+                      >
+                        <Icon className="h-4 w-4" />
+                      </div>
+
+                      {/* Pill text */}
+                      <span className={`text-sm ${isActive ? 'font-semibold' : 'font-medium'}`}>
+                        {cat.name}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
 
-              {/* Scroll Right Button */}
-              <div 
-                className={`hidden md:flex absolute -right-4 z-10 transition-opacity duration-300 ${
-                  canScrollRight ? 'opacity-0 group-hover:opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+              {/* Scroll Right Button for desktop */}
+              <div
+                className={`hidden md:flex absolute -right-3 z-10 transition-opacity duration-300 ${
+                  canScrollRight
+                    ? 'opacity-0 group-hover:opacity-100 pointer-events-auto'
+                    : 'opacity-0 pointer-events-none'
                 }`}
               >
                 <button
-                  onClick={() => scrollPlaces('right')}
-                  className="flex h-8 w-8 items-center justify-center rounded-full bg-white/95 text-zinc-700 shadow-[0_2px_8px_rgba(0,0,0,0.15)] transition-transform hover:scale-105"
+                  type="button"
+                  onClick={() => scrollCategories('right')}
+                  className="flex h-8 w-8 items-center justify-center rounded-full bg-white/95 dark:bg-zinc-800/95 backdrop-blur-md text-zinc-700 dark:text-zinc-200 shadow-md transition-transform hover:scale-105"
                   aria-label="Défiler vers la droite"
                 >
                   <ChevronRight className="h-4 w-4" />
@@ -416,16 +520,12 @@ export default function LandingNav() {
               </div>
             </div>
           </div>
-
-          {/* collapsed search moved into top row — nothing needed here */}
-
-
         </div>
       </header>
 
-      {/* ── Spacer matching the hero height — responsive via CSS var ── */}
+      {/* ── Spacer matching the hero height ── */}
       <div
-        style={{ height: 'var(--hero-h, 260px)' }}
+        style={{ height: 'var(--hero-h, 320px)' }}
         aria-hidden="true"
       />
     </>

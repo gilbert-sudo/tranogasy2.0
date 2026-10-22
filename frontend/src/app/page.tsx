@@ -1,5 +1,6 @@
 import LandingNav from '@/components/LandingNav';
 import PropertyCard from '@/components/PropertyCard';
+import TopPropertySection from '@/components/TopPropertySection';
 
 async function getProperties() {
   try {
@@ -31,25 +32,10 @@ export default async function Home() {
       <LandingNav />
 
       {/* ── Feed container — matches nav width with strictly symmetrical X margins ── */}
-      <div className="mx-auto w-full max-w-[2000px] px-4 sm:px-6 md:px-8 lg:px-28 xl:px-32 2xl:px-36 py-6">
+      <div className="mx-auto w-full max-w-[2000px] px-4 sm:px-6 md:px-8 lg:px-28 xl:px-32 2xl:px-36 py-4 sm:py-6">
 
-        {/* Tabs + Sort row */}
-        <div className="flex items-center justify-between border-b border-zinc-200 pb-4 dark:border-zinc-800 mb-6">
-          <div className="flex items-center gap-6">
-            <button className="text-sm font-bold text-brand-green border-b-2 border-brand-green pb-1 transition-colors">
-              Location
-            </button>
-            <button className="text-sm font-semibold text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors pb-1">
-              Vente
-            </button>
-          </div>
-          <select className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 py-1.5 pl-3 pr-8 text-sm text-zinc-700 dark:text-zinc-200 focus:border-brand-green focus:outline-none focus:ring-1 focus:ring-brand-green shadow-sm cursor-pointer">
-            <option>Trier par</option>
-            <option>Prix croissant</option>
-            <option>Prix décroissant</option>
-            <option>Plus récent</option>
-          </select>
-        </div>
+        {/* Top Property Section header matching target design */}
+        <TopPropertySection />
 
         {/* Property grid
             Mobile: 1 col | sm: 2 col | lg: 3 col | xl: 4 col | 2xl: 5 col | ultrawide: 6 col
