@@ -17,7 +17,7 @@ export default function Header() {
       <div className="mx-auto flex h-16 max-w-[2000px] items-center justify-between px-4 sm:px-6 md:px-8 lg:px-28 xl:px-32 2xl:px-36">
         <div className="flex items-center gap-2">
           <Link href="/" className="flex items-center gap-2">
-            <Image src="/logo.png" alt="TranoGasy Logo" width={32} height={32} />
+            <Image src="/assets/icon-512.png" alt="TranoGasy Logo" width={32} height={32} />
             <span className="text-xl font-bold tracking-tight leading-none text-zinc-900 dark:text-white">
               <span className="text-brand-green">Trano</span>Gasy.
             </span>
