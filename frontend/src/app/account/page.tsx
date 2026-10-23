@@ -15,9 +15,12 @@ import {
   LogOut,
   ChevronRight,
   Power,
+  Moon,
+  Sun,
 } from 'lucide-react';
 import { useUserStore } from '@/store/userStore';
 import Header from '@/components/Header';
+import DarkModeToggle from '@/components/DarkModeToggle';
 
 const MenuCard = ({ children }: { children: React.ReactNode }) => (
   <div className="bg-white dark:bg-zinc-900 rounded-3xl p-2 shadow-sm border border-zinc-100 dark:border-zinc-800 overflow-hidden">
@@ -210,6 +213,24 @@ export default function AccountPage() {
             <section>
               <h3 className="text-lg font-bold text-zinc-800 dark:text-zinc-200 mb-4 px-2">Paramètres</h3>
               <MenuCard>
+                {/* Theme Toggle Setting */}
+                <div className="flex items-center justify-between p-4 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors rounded-full border-b border-zinc-100 dark:border-zinc-800/50">
+                  <div className="flex items-center gap-4">
+                    <div className="text-zinc-500 dark:text-zinc-400">
+                      <Sun className="w-[22px] h-[22px] block dark:hidden" strokeWidth={1.5} />
+                      <Moon className="w-[22px] h-[22px] hidden dark:block" strokeWidth={1.5} />
+                    </div>
+                    <div>
+                      <span className="font-medium text-zinc-700 dark:text-zinc-200 block">
+                        Apparence & Thème
+                      </span>
+                      <span className="text-xs text-zinc-400 dark:text-zinc-500">
+                        Basculer entre mode clair et sombre
+                      </span>
+                    </div>
+                  </div>
+                  <DarkModeToggle />
+                </div>
                 <MenuItem icon={UserCircle} title="Paramètres du compte" href="#" />
                 <MenuItem icon={Bell} title="Paramètres de notification" href="#" />
                 <MenuItem icon={MessageSquare} title="Retours" href="#" showBorder={false} />

@@ -6,6 +6,7 @@ import Image from 'next/image';
 import {
   Search,
   MapPin,
+  Bell,
   Building2,
   Home,
   Building,
@@ -17,7 +18,6 @@ import {
   User,
   Check,
 } from 'lucide-react';
-import DarkModeToggle from './DarkModeToggle';
 import { useModalStore } from '@/store/modalStore';
 import { useUserStore } from '@/store/userStore';
 
@@ -169,26 +169,32 @@ export default function LandingNav() {
         />
 
         {/* ── Container ── */}
-        <div className={`relative z-10 h-full flex flex-col ${isScrolled ? 'justify-center' : ''} w-full max-w-[2000px] mx-auto px-5 sm:px-6 md:px-8 lg:px-28 xl:px-32 2xl:px-36`}>
+        <div className={`relative z-10 h-full flex flex-col ${isScrolled ? 'justify-center' : ''} w-full max-w-[2000px] mx-auto px-4 sm:px-6 md:px-8 lg:px-28 xl:px-32 2xl:px-36`}>
           
           {/* ══════════════════════════════════════════════════════════
               TOP ROW: Greeting / Location & Liquid Glass Bell + Actions
           ══════════════════════════════════════════════════════════ */}
           <div
-            className="flex items-center w-full"
+            className={`flex items-center w-full ${isScrolled ? 'gap-2 sm:gap-3.5 justify-start' : 'justify-between'}`}
             style={{
               paddingTop: isScrolled ? '0' : '16px',
               height: isScrolled ? '100%' : 'auto',
-              justifyContent: isScrolled ? 'flex-start' : 'space-between',
-              gap: isScrolled ? '14px' : '0',
               transition: 'padding-top 0.4s',
             }}
           >
             {/* Scrolled Logo or Desktop Branded Logo */}
-            <div className={`items-center gap-2 flex-shrink-0 ${isScrolled ? 'flex' : 'hidden md:flex'}`}>
-              <Link href="/" className="flex items-center gap-2">
-                <div className="relative w-7 h-7 sm:w-8 sm:h-8">
-                  <Image src="/assets/icon-512.png" alt="TranoGasy" fill className="object-contain" priority />
+            <div className={`items-center gap-2 flex-shrink-0 -ml-1 sm:ml-0 ${isScrolled ? 'flex' : 'hidden md:flex'}`}>
+              <Link href="/" className="flex items-center gap-2.5 group">
+                <div
+                  className="relative flex h-11 w-11 items-center justify-center rounded-full
+                    bg-white dark:bg-white backdrop-blur-xl
+                    border border-zinc-200/80 dark:border-white/20
+                    shadow-[0_4px_16px_rgba(0,0,0,0.06)] dark:shadow-[0_4px_16px_rgba(0,0,0,0.4)]
+                    hover:scale-105 active:scale-95 transition-all flex-shrink-0"
+                >
+                  <div className="relative w-[34px] h-[34px] rounded-full overflow-hidden">
+                    <Image src="/assets/icon-512.png" alt="TranoGasy" fill className="object-contain rounded-full" priority />
+                  </div>
                 </div>
                 <span className="font-extrabold tracking-tight text-lg sm:text-xl leading-none">
                   <span className="text-brand-green">Trano</span>
@@ -199,15 +205,24 @@ export default function LandingNav() {
 
             {/* Expanded: Top Greeting + Location selector with App Logo (Mobile only) */}
             <div
-              className={`items-center gap-2.5 sm:gap-3 min-w-0 md:hidden ${isScrolled ? 'hidden' : 'flex'}`}
+              className={`items-center gap-2.5 sm:gap-3 min-w-0 md:hidden -ml-1 sm:ml-0 ${isScrolled ? 'hidden' : 'flex'}`}
               style={{
                 opacity: 1 - scrollProgress * 3,
                 transition: 'opacity 0.2s',
               }}
             >
               {/* App Logo (Mobile only) */}
-              <Link href="/" className="relative w-8 h-8 sm:w-9 sm:h-9 flex-shrink-0 transition-transform active:scale-95">
-                <Image src="/assets/icon-512.png" alt="TranoGasy" fill className="object-contain" priority />
+              <Link
+                href="/"
+                className="relative flex h-11 w-11 items-center justify-center rounded-full
+                  bg-white dark:bg-white backdrop-blur-xl
+                  border border-zinc-200/80 dark:border-white/20
+                  shadow-[0_4px_16px_rgba(0,0,0,0.06)] dark:shadow-[0_4px_16px_rgba(0,0,0,0.4)]
+                  hover:scale-105 active:scale-95 transition-all flex-shrink-0"
+              >
+                <div className="relative w-[34px] h-[34px] rounded-full overflow-hidden">
+                  <Image src="/assets/icon-512.png" alt="TranoGasy" fill className="object-contain rounded-full" priority />
+                </div>
               </Link>
 
               {/* User greeting & Location */}
@@ -277,17 +292,13 @@ export default function LandingNav() {
             </div>
           </div>
 
-            {/* ── CENTER: Collapsed search bar (scrolled only) ── */}
+            {/* ── CENTER: Collapsed search bar (scrolled only - DESKTOP / TABLET) ── */}
             <div
-              className="flex justify-center min-w-0"
-              style={{
-                flex: isScrolled ? '1 1 0%' : '0 0 0px',
-                width: isScrolled ? undefined : 0,
-                overflow: 'hidden',
-                opacity: isScrolled ? 1 : 0,
-                transition: 'flex 0.4s, opacity 0.3s, width 0.4s',
-                pointerEvents: isScrolled ? 'auto' : 'none',
-              }}
+              className={`hidden md:flex justify-center items-center min-w-0 transition-all duration-300 ease-out ${
+                isScrolled
+                  ? 'opacity-100 scale-100 pointer-events-auto flex-1'
+                  : 'opacity-0 scale-90 pointer-events-none flex-0 w-0'
+              }`}
             >
               <div
                 className={`flex items-center gap-2 rounded-full px-4 py-1.5 w-full
@@ -306,7 +317,7 @@ export default function LandingNav() {
                 />
                 <button
                   aria-label="Filtres"
-                  className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 transition-transform active:scale-90"
+                  className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 transition-transform active:scale-90 cursor-pointer"
                 >
                   <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <line x1="21" y1="6" x2="13" y2="6" /><line x1="9" y1="6" x2="3" y2="6" /><circle cx="11" cy="6" r="2" />
@@ -317,24 +328,68 @@ export default function LandingNav() {
               </div>
             </div>
 
-            {/* ── RIGHT: Theme Toggle & Actions ── */}
-            <div className="flex items-center gap-2.5 flex-shrink-0">
-              <DarkModeToggle />
+            {/* ── RIGHT: Actions & Mobile Search Button ── */}
+            <div className={`flex items-center gap-1.5 sm:gap-2.5 flex-shrink-0 ${isScrolled ? 'ml-auto' : ''}`}>
+              {/* Liquid Glass Circular Notification Button matching Image 2 */}
+              <button
+                id="notif-btn"
+                aria-label="Notifications"
+                className="relative flex h-11 w-11 items-center justify-center rounded-full
+                  bg-white/75 dark:bg-zinc-800/70 backdrop-blur-xl
+                  border border-white/80 dark:border-white/10
+                  shadow-[0_4px_16px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_16px_rgba(0,0,0,0.3)]
+                  text-zinc-800 dark:text-zinc-200
+                  hover:scale-105 active:scale-95 transition-all cursor-pointer"
+              >
+                <Bell className="h-5 w-5" />
+                <span className="absolute top-2.5 right-2.5 h-2 w-2 rounded-full bg-brand-red ring-2 ring-white dark:ring-zinc-800" />
+              </button>
+
+              {/* Mobile-only Shiny Dark Search Button positioned between notification and avatar */}
+              <div
+                className={`flex md:hidden items-center transition-all duration-300 ease-out ${
+                  isScrolled
+                    ? 'opacity-100 scale-100 pointer-events-auto'
+                    : 'opacity-0 scale-90 pointer-events-none w-0 overflow-hidden'
+                }`}
+              >
+                <button
+                  type="button"
+                  id="mobile-top-nav-search-btn"
+                  aria-label="Rechercher"
+                  onClick={() => {
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                    setTimeout(() => inputRef.current?.focus(), 400);
+                  }}
+                  className="relative h-11 px-3.5 rounded-full flex items-center gap-2 flex-shrink-0 transition-all duration-200 active:scale-95 cursor-pointer
+                    bg-gradient-to-b from-zinc-800 via-zinc-900 to-black text-white
+                    border border-white/20 dark:border-white/25
+                    shadow-[0_4px_20px_rgba(0,0,0,0.35),inset_0_1px_1px_rgba(255,255,255,0.25)]
+                    hover:from-zinc-700 hover:to-zinc-950 hover:border-white/30
+                    group"
+                >
+                  <Search className="h-4 w-4 text-white/90 group-hover:text-brand-green group-hover:scale-110 transition-all duration-200 flex-shrink-0" />
+                  <span className="text-xs font-semibold tracking-tight text-white">
+                    Rechercher
+                  </span>
+                </button>
+              </div>
 
               {/* Mobile (always) or Scrolled Desktop: Standalone Circular User Profile Avatar / Login */}
-              <div className={`${isScrolled ? 'flex' : 'flex md:hidden'}`}>
+              <div className={`-mr-1 sm:mr-0 ${isScrolled ? 'flex' : 'flex md:hidden'}`}>
                 {isLoggedIn ? (
                   <Link
                     href="/account"
                     aria-label="Mon compte"
                     className="flex h-11 w-11 items-center justify-center rounded-full
                       bg-white/75 dark:bg-zinc-800/70 backdrop-blur-xl
-                      border border-white/80 dark:border-white/10
-                      shadow-[0_4px_16px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_16px_rgba(0,0,0,0.3)]
+                      border-2 border-white dark:border-zinc-700
+                      ring-1 ring-zinc-200/80 dark:ring-white/15
+                      shadow-[0_4px_16px_rgba(0,0,0,0.06)] dark:shadow-[0_4px_16px_rgba(0,0,0,0.35)]
                       overflow-hidden hover:scale-105 active:scale-95 transition-all relative"
                   >
                     {currentUser?.avatar ? (
-                      <Image src={currentUser.avatar} alt="Profile" fill className="object-cover" />
+                      <Image src={currentUser.avatar} alt="Profile" fill className="object-cover rounded-full" />
                     ) : (
                       <span className="text-sm font-bold uppercase text-zinc-800 dark:text-zinc-200">
                         {currentUser?.username?.charAt(0) || currentUser?.email?.charAt(0) || 'U'}
@@ -442,11 +497,12 @@ export default function LandingNav() {
                     aria-label="Mon compte"
                     className="flex h-8 w-8 items-center justify-center rounded-full
                       bg-zinc-100 dark:bg-zinc-700/80
-                      border border-zinc-200/80 dark:border-white/10
-                      shadow-inner overflow-hidden hover:scale-105 active:scale-95 transition-all relative flex-shrink-0"
+                      border-2 border-white dark:border-zinc-700
+                      ring-1 ring-zinc-200/80 dark:ring-white/15
+                      shadow-xs overflow-hidden hover:scale-105 active:scale-95 transition-all relative flex-shrink-0"
                   >
                     {currentUser?.avatar ? (
-                      <Image src={currentUser.avatar} alt="Profile" fill className="object-cover" />
+                      <Image src={currentUser.avatar} alt="Profile" fill className="object-cover rounded-full" />
                     ) : (
                       <span className="text-xs font-bold uppercase text-zinc-800 dark:text-zinc-200">
                         {currentUser?.username?.charAt(0) || currentUser?.email?.charAt(0) || 'U'}
