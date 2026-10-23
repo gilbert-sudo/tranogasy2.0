@@ -5,7 +5,7 @@ import { X, Phone, Copy, Check, MessageSquare, ShieldCheck, MapPin } from 'lucid
 import { FeedProperty } from './types';
 
 interface TikTokContactModalProps {
-  property: FeedProperty | null;
+  property: FeedProperty | any | null;
   onClose: () => void;
 }
 

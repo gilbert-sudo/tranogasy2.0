@@ -550,8 +550,7 @@ function PropertyDetailsContent({ property }: { property: any }) {
       </div>
       {/* MOBILE FIXED BOTTOM BAR */}
       <div 
-        className="lg:hidden fixed left-0 right-0 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-2xl border-t border-zinc-200/60 dark:border-zinc-800/60 shadow-[0_-8px_30px_rgba(0,0,0,0.1)] dark:shadow-[0_-8px_30px_rgba(0,0,0,0.4)] z-40 px-5 py-3 flex gap-2.5 transition-all"
-        style={{ bottom: 'calc(65px + env(safe-area-inset-bottom))' }}
+        className="lg:hidden fixed left-0 right-0 bottom-0 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-2xl border-t border-zinc-200/60 dark:border-zinc-800/60 shadow-[0_-8px_30px_rgba(0,0,0,0.1)] dark:shadow-[0_-8px_30px_rgba(0,0,0,0.4)] z-40 px-5 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] flex gap-2.5 transition-all"
       >
         <button 
           onClick={() => setShowContact(true)} 
