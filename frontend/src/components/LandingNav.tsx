@@ -602,7 +602,7 @@ export default function LandingNav() {
                       </div>
 
                       {/* Pill text */}
-                      <span className={`text-sm ${isActive ? 'font-semibold' : 'font-medium'}`}>
+                      <span className={`text-sm tracking-tight ${isActive ? 'font-bold' : 'font-medium'}`}>
                         {cat.name}
                       </span>
                     </button>

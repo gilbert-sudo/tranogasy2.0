@@ -389,7 +389,7 @@ export default function TikTokCommentsDrawer({
                         <button
                           type="button"
                           onClick={handleCancelEdit}
-                          className="px-2.5 py-1 rounded-lg text-[11px] font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors cursor-pointer"
+                          className="px-3 py-1 rounded-full text-xs font-semibold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors cursor-pointer"
                         >
                           Annuler
                         </button>
@@ -397,7 +397,7 @@ export default function TikTokCommentsDrawer({
                           type="button"
                           onClick={() => handleSaveEdit(comment._id)}
                           disabled={!editContent.trim() || isSavingEdit}
-                          className="px-3 py-1 rounded-lg text-[11px] font-bold bg-brand-green hover:bg-green-600 text-white flex items-center gap-1 transition-all cursor-pointer shadow-xs disabled:opacity-50"
+                          className="px-3.5 py-1 rounded-full text-xs font-bold bg-brand-green hover:bg-emerald-500 text-white flex items-center gap-1 transition-all cursor-pointer shadow-xs disabled:opacity-50"
                         >
                           <Check className="w-3.5 h-3.5" />
                           Enregistrer
@@ -412,22 +412,22 @@ export default function TikTokCommentsDrawer({
 
                   {/* Delete Confirmation Card */}
                   {isDeleting && (
-                    <div className="mt-2 p-2.5 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 flex items-center justify-between gap-2 text-xs animate-in fade-in duration-150">
-                      <span className="text-red-700 dark:text-red-400 font-medium text-[11px]">
+                    <div className="mt-2 p-2.5 rounded-2xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 flex items-center justify-between gap-2 text-xs animate-in fade-in duration-150">
+                      <span className="text-red-700 dark:text-red-400 font-bold text-xs">
                         Supprimer ce commentaire ?
                       </span>
                       <div className="flex items-center gap-1.5">
                         <button
                           type="button"
                           onClick={() => handleDeleteComment(comment._id)}
-                          className="px-2.5 py-1 rounded-lg bg-red-600 hover:bg-red-700 text-white font-bold text-[10px] transition-colors cursor-pointer"
+                          className="px-3 py-1 rounded-full bg-red-600 hover:bg-red-700 text-white font-bold text-xs transition-colors cursor-pointer shadow-xs"
                         >
                           Oui, supprimer
                         </button>
                         <button
                           type="button"
                           onClick={() => setDeletingCommentId(null)}
-                          className="px-2.5 py-1 rounded-lg bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 text-[10px] transition-colors cursor-pointer"
+                          className="px-3 py-1 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 text-xs font-semibold transition-colors cursor-pointer"
                         >
                           Annuler
                         </button>

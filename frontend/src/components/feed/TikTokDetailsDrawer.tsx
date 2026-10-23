@@ -255,8 +255,10 @@ export default function TikTokDetailsDrawer({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span
-              className={`px-3 py-1 rounded-full text-[11px] font-extrabold uppercase tracking-wider text-white ${
-                property.type === 'rent' ? 'bg-brand-green' : 'bg-brand-red'
+              className={`px-3 py-1 rounded-full text-[11px] font-extrabold uppercase tracking-wider shadow-sm ${
+                property.type === 'rent'
+                  ? 'bg-brand-green text-white'
+                  : 'bg-zinc-950 dark:bg-white text-white dark:text-zinc-950'
               }`}
             >
               {property.type === 'rent' ? 'Location' : 'Vente'}
@@ -285,7 +287,7 @@ export default function TikTokDetailsDrawer({
         {/* Location & Price */}
         <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
           <div className="flex items-center gap-1.5 text-zinc-600 dark:text-zinc-300 text-sm">
-            <MapPin className="w-4 h-4 text-brand-red shrink-0" />
+            <MapPin className="w-4 h-4 text-brand-green shrink-0" />
             <span className="capitalize font-medium">
               {property.city?.fokontany}, {property.city?.commune} {property.city?.district ? `(${property.city.district})` : ''}
             </span>
@@ -376,18 +378,18 @@ export default function TikTokDetailsDrawer({
       </div>
 
       {/* Advertiser Contact CTA Banner */}
-      <div className="pt-2 sticky bottom-0 bg-white dark:bg-zinc-900 pb-2 flex gap-3 z-10">
+      <div className="pt-2 sticky bottom-0 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md pb-2 flex gap-3 z-10">
         <button
           onClick={onOpenContact}
-          className="flex-1 py-3.5 rounded-full bg-brand-green hover:bg-green-600 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-brand-green/20 transition-all active:scale-95 cursor-pointer"
+          className="flex-1 py-3.5 rounded-full bg-zinc-950 hover:bg-zinc-800 dark:bg-white dark:hover:bg-zinc-100 text-white dark:text-zinc-950 font-black text-sm flex items-center justify-center gap-2 shadow-lg shadow-black/20 dark:shadow-white/10 backdrop-blur-md transition-all active:scale-95 cursor-pointer tracking-wide"
         >
-          <Phone className="w-4 h-4" />
+          <Phone className="w-4 h-4 text-brand-green" />
           Contacter l&apos;annonceur
         </button>
         {onOpenComments && (
           <button
             onClick={onOpenComments}
-            className="w-12 h-12 rounded-full border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 flex items-center justify-center text-zinc-700 dark:text-zinc-300 transition-colors cursor-pointer shrink-0"
+            className="w-12 h-12 rounded-full border border-zinc-200/80 dark:border-white/10 bg-zinc-100/80 dark:bg-zinc-800/80 backdrop-blur-md hover:bg-zinc-200 dark:hover:bg-zinc-700 flex items-center justify-center text-zinc-800 dark:text-zinc-200 transition-all active:scale-95 cursor-pointer shrink-0"
             title="Commentaires et avis"
           >
             <MessageCircle className="w-5 h-5" />
@@ -396,7 +398,7 @@ export default function TikTokDetailsDrawer({
         {onShare && (
           <button
             onClick={onShare}
-            className="w-12 h-12 rounded-full border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 flex items-center justify-center text-zinc-700 dark:text-zinc-300 transition-colors cursor-pointer shrink-0"
+            className="w-12 h-12 rounded-full border border-zinc-200/80 dark:border-white/10 bg-zinc-100/80 dark:bg-zinc-800/80 backdrop-blur-md hover:bg-zinc-200 dark:hover:bg-zinc-700 flex items-center justify-center text-zinc-800 dark:text-zinc-200 transition-all active:scale-95 cursor-pointer shrink-0"
           >
             <Share2 className="w-4 h-4" />
           </button>

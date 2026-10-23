@@ -69,31 +69,31 @@ function LoginForm({ openModal, closeModal }: { openModal: any, closeModal: any 
       </div>
 
       <div className="flex-grow bg-white dark:bg-zinc-900 w-full rounded-t-[2.5rem] md:rounded-none -mt-8 md:mt-0 relative z-10 px-8 pt-8 pb-4 flex flex-col overflow-y-auto">
-        <h1 className="text-[2rem] font-serif font-bold text-zinc-900 dark:text-white mb-6 tracking-tight">
-          Log-in
+        <h1 className="text-3xl font-black text-zinc-950 dark:text-white mb-6 tracking-tight">
+          Connexion
         </h1>
         
         <form onSubmit={handleSubmit} className="flex flex-col gap-5 flex-grow">
           <div className="relative">
-            <label className="text-[13px] font-bold text-zinc-900 dark:text-zinc-200 mb-1 block">Numéro de téléphone</label>
+            <label className="text-xs font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300 mb-1.5 block">Numéro de téléphone</label>
             <input
               type="tel"
               value={phoneNumber}
               onChange={handlePhoneNumberInput}
               placeholder="Votre numéro de téléphone"
-              className="w-full border-0 border-b border-zinc-300 dark:border-zinc-700 focus:border-brand-green focus:ring-0 px-0 py-2 text-sm text-zinc-600 dark:text-zinc-400 bg-transparent outline-none transition-colors"
+              className="w-full border-0 border-b border-zinc-300 dark:border-zinc-700 focus:border-brand-green focus:ring-0 px-0 py-2 text-sm text-zinc-700 dark:text-zinc-300 bg-transparent outline-none transition-colors"
               required
             />
           </div>
 
           <div className="relative">
-            <label className="text-[13px] font-bold text-zinc-900 dark:text-zinc-200 mb-1 block">Mot de passe</label>
+            <label className="text-xs font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300 mb-1.5 block">Mot de passe</label>
             <input
               type={showPassword ? "text" : "password"}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Votre mot de passe"
-              className="w-full border-0 border-b border-zinc-300 dark:border-zinc-700 focus:border-brand-green focus:ring-0 px-0 py-2 text-sm text-zinc-600 dark:text-zinc-400 bg-transparent outline-none transition-colors pr-10"
+              className="w-full border-0 border-b border-zinc-300 dark:border-zinc-700 focus:border-brand-green focus:ring-0 px-0 py-2 text-sm text-zinc-700 dark:text-zinc-300 bg-transparent outline-none transition-colors pr-10"
               required
             />
             <button
@@ -106,7 +106,7 @@ function LoginForm({ openModal, closeModal }: { openModal: any, closeModal: any 
           </div>
 
           <div className="flex justify-end items-center -mt-2">
-            <button type="button" className="text-[11px] font-semibold text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300 transition-colors">
+            <button type="button" className="text-xs font-semibold text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200 transition-colors">
               Mot de passe oublié ?
             </button>
           </div>
@@ -121,7 +121,7 @@ function LoginForm({ openModal, closeModal }: { openModal: any, closeModal: any 
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full bg-brand-green text-white font-semibold py-3.5 rounded-full hover:bg-emerald-600 transition-colors active:scale-[0.98] disabled:opacity-70 flex justify-center items-center"
+              className="w-full bg-zinc-950 hover:bg-zinc-800 dark:bg-white dark:hover:bg-zinc-100 text-white dark:text-zinc-950 font-black text-sm py-4 rounded-full shadow-lg shadow-black/20 dark:shadow-white/10 backdrop-blur-md transition-all active:scale-[0.98] disabled:opacity-70 flex justify-center items-center tracking-wide cursor-pointer"
             >
               {isLoading ? '...' : 'Se connecter'}
             </button>
@@ -185,55 +185,55 @@ function SignupForm({ openModal, closeModal }: { openModal: any, closeModal: any
           </div>
         </div>
 
-        <h1 className="text-2xl font-serif font-bold text-zinc-900 dark:text-white mb-4 tracking-tight text-center mt-3">
-          Sign-up
+        <h1 className="text-2xl font-black text-zinc-950 dark:text-white mb-4 tracking-tight text-center mt-3">
+          Inscription
         </h1>
         
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 flex-grow">
           <div className="relative">
-            <label className="text-[13px] font-bold text-zinc-900 dark:text-zinc-200 mb-1 block">Nom</label>
+            <label className="text-xs font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300 mb-1 block">Nom</label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Votre nom"
-              className="w-full border-0 border-b border-zinc-300 dark:border-zinc-700 focus:border-brand-green focus:ring-0 px-0 py-2 text-sm text-zinc-600 dark:text-zinc-400 bg-transparent outline-none transition-colors"
+              className="w-full border-0 border-b border-zinc-300 dark:border-zinc-700 focus:border-brand-green focus:ring-0 px-0 py-2 text-sm text-zinc-700 dark:text-zinc-300 bg-transparent outline-none transition-colors"
               required
             />
           </div>
 
           <div className="relative">
-            <label className="text-[13px] font-bold text-zinc-900 dark:text-zinc-200 mb-1 block">Email</label>
+            <label className="text-xs font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300 mb-1 block">Email</label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="Votre email"
-              className="w-full border-0 border-b border-zinc-300 dark:border-zinc-700 focus:border-brand-green focus:ring-0 px-0 py-2 text-sm text-zinc-600 dark:text-zinc-400 bg-transparent outline-none transition-colors"
+              className="w-full border-0 border-b border-zinc-300 dark:border-zinc-700 focus:border-brand-green focus:ring-0 px-0 py-2 text-sm text-zinc-700 dark:text-zinc-300 bg-transparent outline-none transition-colors"
               required
             />
           </div>
 
           <div className="relative">
-            <label className="text-[13px] font-bold text-zinc-900 dark:text-zinc-200 mb-1 block">Contact</label>
+            <label className="text-xs font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300 mb-1 block">Contact</label>
             <input
               type="tel"
               value={phoneNumber}
               onChange={handlePhoneNumberInput}
               placeholder="Votre numéro de téléphone"
-              className="w-full border-0 border-b border-zinc-300 dark:border-zinc-700 focus:border-brand-green focus:ring-0 px-0 py-2 text-sm text-zinc-600 dark:text-zinc-400 bg-transparent outline-none transition-colors"
+              className="w-full border-0 border-b border-zinc-300 dark:border-zinc-700 focus:border-brand-green focus:ring-0 px-0 py-2 text-sm text-zinc-700 dark:text-zinc-300 bg-transparent outline-none transition-colors"
               required
             />
           </div>
 
           <div className="relative">
-            <label className="text-[13px] font-bold text-zinc-900 dark:text-zinc-200 mb-1 block">Mot de passe</label>
+            <label className="text-xs font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300 mb-1 block">Mot de passe</label>
             <input
               type={showPassword ? "text" : "password"}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Votre mot de passe"
-              className="w-full border-0 border-b border-zinc-300 dark:border-zinc-700 focus:border-brand-green focus:ring-0 px-0 py-2 text-sm text-zinc-600 dark:text-zinc-400 bg-transparent outline-none transition-colors pr-10"
+              className="w-full border-0 border-b border-zinc-300 dark:border-zinc-700 focus:border-brand-green focus:ring-0 px-0 py-2 text-sm text-zinc-700 dark:text-zinc-300 bg-transparent outline-none transition-colors pr-10"
               required
             />
             <button
@@ -255,7 +255,7 @@ function SignupForm({ openModal, closeModal }: { openModal: any, closeModal: any
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full bg-brand-green text-white font-semibold py-3.5 rounded-full hover:bg-emerald-600 transition-colors active:scale-[0.98] disabled:opacity-70 flex justify-center items-center"
+              className="w-full bg-zinc-950 hover:bg-zinc-800 dark:bg-white dark:hover:bg-zinc-100 text-white dark:text-zinc-950 font-black text-sm py-4 rounded-full shadow-lg shadow-black/20 dark:shadow-white/10 backdrop-blur-md transition-all active:scale-[0.98] disabled:opacity-70 flex justify-center items-center tracking-wide cursor-pointer"
             >
               {isLoading ? '...' : "S'inscrire"}
             </button>

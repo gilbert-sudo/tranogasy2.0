@@ -343,7 +343,7 @@ function DashboardContent() {
           <button
             type="button"
             onClick={() => setActiveTab('create')}
-            className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-gradient-to-tr from-brand-green to-emerald-600 text-white font-semibold text-xs sm:text-sm shadow-md hover:scale-105 active:scale-95 transition-all cursor-pointer"
+            className="flex items-center gap-2 px-4 py-2 rounded-full bg-brand-green hover:bg-emerald-600 text-white font-bold text-xs sm:text-sm shadow-md shadow-brand-green/20 hover:scale-105 active:scale-95 transition-all cursor-pointer"
           >
             <Plus className="w-4 h-4" strokeWidth={2.5} />
             <span className="hidden sm:inline">Créer une annonce</span>
@@ -360,11 +360,11 @@ function DashboardContent() {
           <div className="mb-4 p-4 rounded-2xl bg-emerald-500 text-white shadow-lg flex items-center justify-between animate-in fade-in slide-in-from-top-2 duration-200">
             <div className="flex items-center gap-3">
               <CheckCircle2 className="w-5 h-5 shrink-0" />
-              <span className="text-sm font-medium">{successToast}</span>
+              <span className="text-sm font-semibold">{successToast}</span>
             </div>
             <button
               onClick={() => setSuccessToast(null)}
-              className="p-1 hover:bg-emerald-600 rounded-full transition-colors"
+              className="p-1 hover:bg-emerald-600 rounded-full transition-colors cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
@@ -379,7 +379,7 @@ function DashboardContent() {
                 <AlertCircle className="w-5 h-5" />
               </div>
               <div>
-                <p className="text-xs sm:text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                <p className="text-xs sm:text-sm font-bold text-zinc-900 dark:text-zinc-100">
                   Mode démonstration invité
                 </p>
                 <p className="text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400">
@@ -389,7 +389,7 @@ function DashboardContent() {
             </div>
             <button
               onClick={() => openModal('login')}
-              className="px-4 py-2 rounded-full bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 text-xs font-bold hover:scale-105 active:scale-95 transition-transform"
+              className="px-5 py-2 rounded-full bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 text-xs font-bold hover:scale-105 active:scale-95 transition-all shadow-sm cursor-pointer"
             >
               Se connecter
             </button>
@@ -397,14 +397,14 @@ function DashboardContent() {
         )}
 
         {/* Tab Navigation Pill Bar */}
-        <div className="flex items-center gap-2 p-1.5 rounded-full bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 shadow-sm w-full max-w-lg mb-6 mx-auto sm:mx-0">
+        <div className="flex items-center gap-1.5 p-1.5 rounded-full bg-white/75 dark:bg-zinc-900/80 backdrop-blur-xl border border-zinc-200/80 dark:border-white/10 shadow-sm w-full max-w-lg mb-6 mx-auto sm:mx-0">
           <button
             type="button"
             onClick={() => setActiveTab('overview')}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-full text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
+            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-full text-xs sm:text-sm transition-all cursor-pointer active:scale-95 ${
               activeTab === 'overview'
-                ? 'bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 shadow-md'
-                : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+                ? 'bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 font-bold shadow-sm'
+                : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-zinc-100 font-semibold'
             }`}
           >
             <LayoutDashboard className="w-4 h-4" />
@@ -414,10 +414,10 @@ function DashboardContent() {
           <button
             type="button"
             onClick={() => setActiveTab('listings')}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-full text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
+            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-full text-xs sm:text-sm transition-all cursor-pointer active:scale-95 ${
               activeTab === 'listings'
-                ? 'bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 shadow-md'
-                : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+                ? 'bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 font-bold shadow-sm'
+                : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-zinc-100 font-semibold'
             }`}
           >
             <Building2 className="w-4 h-4" />
@@ -427,10 +427,10 @@ function DashboardContent() {
           <button
             type="button"
             onClick={() => setActiveTab('create')}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-full text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
+            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-full text-xs sm:text-sm transition-all cursor-pointer active:scale-95 ${
               activeTab === 'create'
-                ? 'bg-gradient-to-tr from-brand-green to-emerald-600 text-white shadow-md'
-                : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+                ? 'bg-brand-green text-white font-bold shadow-sm'
+                : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-zinc-100 font-semibold'
             }`}
           >
             <Plus className="w-4 h-4" strokeWidth={2.5} />
@@ -678,10 +678,10 @@ function DashboardContent() {
                       key={st}
                       type="button"
                       onClick={() => setFilterStatus(st)}
-                      className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
+                      className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all cursor-pointer active:scale-95 ${
                         filterStatus === st
-                          ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 shadow-sm'
-                          : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                          ? 'bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 shadow-sm'
+                          : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700'
                       }`}
                     >
                       {labels[st]}
@@ -771,8 +771,8 @@ function DashboardContent() {
 
                       {/* Content Info */}
                       <div className="p-4 sm:p-5">
-                        <div className="flex items-center gap-1 text-[11px] font-medium text-zinc-500 dark:text-zinc-400 mb-1">
-                          <MapPin className="w-3.5 h-3.5 text-brand-red shrink-0" />
+                        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-zinc-500 dark:text-zinc-400 mb-1">
+                          <MapPin className="w-3.5 h-3.5 text-brand-green shrink-0" />
                           <span className="truncate">{prop.neighborhood}, {prop.city}</span>
                         </div>
 
@@ -791,20 +791,20 @@ function DashboardContent() {
                         {/* Performance Counters */}
                         <div className="grid grid-cols-3 gap-2 py-2 px-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50 text-center">
                           <div>
-                            <span className="text-[10px] text-zinc-400 block">Vues</span>
-                            <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">
+                            <span className="text-[10px] text-zinc-400 block font-medium">Vues</span>
+                            <span className="text-xs font-extrabold text-zinc-800 dark:text-zinc-200">
                               {prop.views}
                             </span>
                           </div>
                           <div>
-                            <span className="text-[10px] text-zinc-400 block">Favoris</span>
-                            <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">
+                            <span className="text-[10px] text-zinc-400 block font-medium">Favoris</span>
+                            <span className="text-xs font-extrabold text-brand-red">
                               {prop.favorites}
                             </span>
                           </div>
                           <div>
-                            <span className="text-[10px] text-zinc-400 block">Contacts</span>
-                            <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">
+                            <span className="text-[10px] text-zinc-400 block font-medium">Contacts</span>
+                            <span className="text-xs font-extrabold text-brand-green">
                               {prop.leads}
                             </span>
                           </div>
@@ -817,16 +817,16 @@ function DashboardContent() {
                       <button
                         type="button"
                         onClick={() => handleToggleStatus(prop.id)}
-                        className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white px-2 py-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                        className="text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white px-3 py-1.5 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all cursor-pointer active:scale-95"
                       >
                         {prop.status === 'active' ? 'Mettre en pause' : 'Mettre en ligne'}
                       </button>
 
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1.5">
                         <Link
                           href={`/properties/${prop.id}`}
                           aria-label="Voir l'annonce"
-                          className="p-2 rounded-xl text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                          className="p-2 rounded-full text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-950 dark:hover:text-white transition-all active:scale-90"
                           title="Voir l'annonce"
                         >
                           <ExternalLink className="w-4 h-4" />
@@ -835,7 +835,7 @@ function DashboardContent() {
                           type="button"
                           onClick={() => handleDeleteProperty(prop.id)}
                           aria-label="Supprimer"
-                          className="p-2 rounded-xl text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors cursor-pointer"
+                          className="p-2 rounded-full text-brand-red hover:bg-red-50 dark:hover:bg-red-950/30 transition-all cursor-pointer active:scale-90"
                           title="Supprimer l'annonce"
                         >
                           <Trash2 className="w-4 h-4" />

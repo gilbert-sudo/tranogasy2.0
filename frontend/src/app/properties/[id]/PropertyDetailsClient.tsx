@@ -189,16 +189,28 @@ function PropertyDetailsContent({ property }: { property: any }) {
       </div>
       
       {/* Mobile Top Actions */}
-      <div className="fixed top-0 left-0 right-0 z-50 pointer-events-none lg:hidden bg-gradient-to-b from-black/40 via-black/10 to-transparent pt-4 pb-10 px-4 flex justify-between items-start">
-        <button onClick={() => router.back()} className="pointer-events-auto h-10 w-10 rounded-full bg-white/90 dark:bg-zinc-800/90 backdrop-blur-md flex items-center justify-center text-zinc-900 dark:text-zinc-100 shadow-sm border border-black/5 dark:border-white/10 hover:scale-105 transition-transform">
+      <div className="fixed top-0 left-0 right-0 z-50 pointer-events-none lg:hidden bg-gradient-to-b from-black/50 via-black/15 to-transparent pt-4 pb-10 px-4 flex justify-between items-start">
+        <button 
+          onClick={() => router.back()} 
+          aria-label="Retour"
+          className="pointer-events-auto h-10 w-10 rounded-full bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl flex items-center justify-center text-zinc-900 dark:text-zinc-100 shadow-sm border border-white/60 dark:border-white/10 hover:scale-105 active:scale-90 transition-all cursor-pointer"
+        >
           <ChevronLeft className="h-6 w-6 pr-0.5" />
         </button>
         <div className="flex gap-2 pointer-events-auto">
-          <button onClick={handleShare} className="h-10 w-10 cursor-pointer rounded-full bg-white/90 dark:bg-zinc-800/90 backdrop-blur-md flex items-center justify-center text-zinc-900 dark:text-zinc-100 shadow-sm border border-black/5 dark:border-white/10 hover:scale-105 active:scale-75 transition-transform">
+          <button 
+            onClick={handleShare} 
+            aria-label="Partager"
+            className="h-10 w-10 cursor-pointer rounded-full bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl flex items-center justify-center text-zinc-900 dark:text-zinc-100 shadow-sm border border-white/60 dark:border-white/10 hover:scale-105 active:scale-90 transition-all"
+          >
             <Share2 className="h-4 w-4" />
           </button>
-          <button onClick={handleFavoriteClick} className={`h-10 w-10 cursor-pointer rounded-full bg-white/90 dark:bg-zinc-800/90 backdrop-blur-md flex items-center justify-center shadow-sm border border-black/5 dark:border-white/10 hover:scale-105 active:scale-75 transition-transform ${isFavorite ? 'text-brand-red' : 'text-zinc-600 dark:text-zinc-300'}`}>
-            <Heart className={`h-5 w-5 transition-transform duration-300 ${isFavorite ? 'fill-brand-red scale-110' : ''}`} />
+          <button 
+            onClick={handleFavoriteClick} 
+            aria-label="Ajouter aux favoris"
+            className={`h-10 w-10 cursor-pointer rounded-full bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl flex items-center justify-center shadow-sm border border-white/60 dark:border-white/10 hover:scale-105 active:scale-90 transition-all ${isFavorite ? 'text-brand-red' : 'text-zinc-700 dark:text-zinc-200'}`}
+          >
+            <Heart className={`h-5 w-5 transition-transform duration-300 ${isFavorite ? 'fill-brand-red scale-110 drop-shadow-[0_2px_6px_rgba(236,28,36,0.5)]' : ''}`} />
           </button>
         </div>
       </div>
@@ -308,7 +320,11 @@ function PropertyDetailsContent({ property }: { property: any }) {
   const renderIdentityAndStats = (isMobile: boolean) => (
     <div className={isMobile ? "lg:hidden px-4" : "hidden lg:block"}>
       <div className="flex items-center gap-3 mb-4">
-        <span className="px-3 py-1.5 bg-brand-green text-white rounded-full text-[10px] font-extrabold uppercase tracking-widest shadow-sm">
+        <span className={`px-3 py-1.5 rounded-full text-[10px] font-extrabold uppercase tracking-widest shadow-sm ${
+          property.type === 'rent'
+            ? 'bg-brand-green text-white'
+            : 'bg-zinc-950 text-white dark:bg-white dark:text-zinc-950'
+        }`}>
           {property.type === 'rent' ? 'En location' : 'En vente'}
         </span>
         <span className="text-xs font-bold text-zinc-400 uppercase tracking-widest">
@@ -321,8 +337,8 @@ function PropertyDetailsContent({ property }: { property: any }) {
       </h1>
       
       <div className="flex items-start gap-2.5 text-zinc-600 dark:text-zinc-300 mb-8">
-        <MapPin className="h-5 w-5 text-brand-red shrink-0 mt-0.5" />
-        <span className="font-medium text-base lg:text-lg">
+        <MapPin className="h-5 w-5 text-brand-green shrink-0 mt-0.5" />
+        <span className="font-semibold text-base lg:text-lg">
           {property.city?.fokontany} {property.city?.commune} {property.city?.district}
         </span>
       </div>
@@ -368,17 +384,28 @@ function PropertyDetailsContent({ property }: { property: any }) {
         
         {/* DESKTOP NAVIGATION */}
         <div className="hidden lg:flex items-center justify-between mb-8 sticky top-6 z-50">
-          <button onClick={() => router.back()} className="flex items-center gap-2 text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white font-bold text-sm transition-all bg-white/80 dark:bg-zinc-800/80 backdrop-blur-md hover:bg-zinc-50 dark:hover:bg-zinc-700 px-5 py-2.5 rounded-full border border-zinc-200/80 dark:border-zinc-700/80 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.1)] dark:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.4)]">
+          <button 
+            onClick={() => router.back()} 
+            className="flex items-center gap-2 text-zinc-700 dark:text-zinc-200 hover:text-zinc-950 dark:hover:text-white font-bold text-xs transition-all bg-white/75 dark:bg-zinc-900/80 backdrop-blur-2xl hover:bg-white dark:hover:bg-zinc-800 px-5 py-2.5 rounded-full border border-white/80 dark:border-white/10 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.08)] dark:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.4)] active:scale-95 cursor-pointer"
+          >
             <ChevronLeft className="h-4 w-4" />
             Retour à la recherche
           </button>
 
           <div className="flex items-center gap-3">
-            <button onClick={handleShare} className="h-11 w-11 cursor-pointer rounded-full bg-white/80 dark:bg-zinc-800/80 backdrop-blur-md flex items-center justify-center text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-700 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.1)] dark:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.4)] border border-zinc-200/80 dark:border-zinc-700/80 hover:scale-110 active:scale-75 transition-all">
+            <button 
+              onClick={handleShare} 
+              aria-label="Partager"
+              className="h-11 w-11 cursor-pointer rounded-full bg-white/75 dark:bg-zinc-900/80 backdrop-blur-2xl flex items-center justify-center text-zinc-700 dark:text-zinc-200 hover:text-zinc-950 dark:hover:text-white hover:bg-white dark:hover:bg-zinc-800 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.08)] dark:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.4)] border border-white/80 dark:border-white/10 hover:scale-105 active:scale-90 transition-all"
+            >
               <Share2 className="h-4 w-4" />
             </button>
-            <button onClick={handleFavoriteClick} className={`h-11 w-11 cursor-pointer rounded-full bg-white/80 dark:bg-zinc-800/80 backdrop-blur-md flex items-center justify-center hover:bg-red-50 dark:hover:bg-zinc-700 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.1)] dark:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.4)] border border-zinc-200/80 dark:border-zinc-700/80 hover:scale-110 active:scale-75 transition-all ${isFavorite ? 'text-brand-red' : 'text-zinc-600 dark:text-zinc-300 hover:text-brand-red'}`}>
-              <Heart className={`h-5 w-5 transition-transform duration-300 ${isFavorite ? 'fill-brand-red scale-110' : ''}`} />
+            <button 
+              onClick={handleFavoriteClick} 
+              aria-label="Ajouter aux favoris"
+              className={`h-11 w-11 cursor-pointer rounded-full bg-white/75 dark:bg-zinc-900/80 backdrop-blur-2xl flex items-center justify-center shadow-[0_4px_20px_-4px_rgba(0,0,0,0.08)] dark:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.4)] border border-white/80 dark:border-white/10 hover:scale-105 active:scale-90 transition-all ${isFavorite ? 'text-brand-red' : 'text-zinc-700 dark:text-zinc-200 hover:text-brand-red'}`}
+            >
+              <Heart className={`h-5 w-5 transition-transform duration-300 ${isFavorite ? 'fill-brand-red scale-110 drop-shadow-[0_2px_8px_rgba(236,28,36,0.45)]' : ''}`} />
             </button>
           </div>
         </div>
@@ -490,20 +517,29 @@ function PropertyDetailsContent({ property }: { property: any }) {
                  </div>
 
                  <div className="hidden lg:flex gap-3 relative z-10">
-                   <button onClick={() => setShowContact(true)} className="flex-1 bg-brand-green hover:bg-green-700 text-white rounded-full py-4 flex items-center justify-center gap-2 font-bold text-sm shadow-lg shadow-brand-green/20 hover:shadow-brand-green/30 hover:-translate-y-0.5 transition-all">
-                      <Phone className="h-5 w-5" />
-                      Voir contact
+                   <button 
+                     onClick={() => setShowContact(true)} 
+                     className="flex-1 bg-zinc-950 hover:bg-zinc-800 dark:bg-white dark:hover:bg-zinc-100 text-white dark:text-zinc-950 rounded-full py-3.5 px-6 flex items-center justify-center gap-2 font-black text-sm shadow-lg shadow-black/20 dark:shadow-white/10 active:scale-95 transition-all cursor-pointer"
+                   >
+                      <Phone className="h-4.5 w-4.5 text-brand-green" />
+                      Voir le contact
                    </button>
-                   <button className="h-[52px] w-[52px] shrink-0 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-800/50 flex items-center justify-center hover:bg-blue-100 dark:hover:bg-blue-900/50 hover:-translate-y-0.5 transition-all">
-                      <Send className="h-5 w-5 pr-0.5 pt-0.5" />
+                   <button 
+                     aria-label="Contacter par message direct"
+                     className="h-12 w-12 shrink-0 rounded-full bg-white/75 dark:bg-zinc-800/75 backdrop-blur-xl text-zinc-800 dark:text-zinc-200 border border-zinc-200/80 dark:border-white/10 flex items-center justify-center hover:border-brand-green hover:text-brand-green active:scale-95 transition-all shadow-xs cursor-pointer"
+                   >
+                      <Send className="h-4.5 w-4.5 pr-0.5 pt-0.5" />
                    </button>
-                   <button className="h-[52px] w-[52px] shrink-0 rounded-full bg-zinc-50 dark:bg-zinc-700/50 text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-600 flex items-center justify-center hover:bg-zinc-100 dark:hover:bg-zinc-700 hover:-translate-y-0.5 transition-all">
-                      <MessageCircle className="h-5 w-5" />
+                   <button 
+                     aria-label="Discuter"
+                     className="h-12 w-12 shrink-0 rounded-full bg-white/75 dark:bg-zinc-800/75 backdrop-blur-xl text-zinc-800 dark:text-zinc-200 border border-zinc-200/80 dark:border-white/10 flex items-center justify-center hover:border-brand-green hover:text-brand-green active:scale-95 transition-all shadow-xs cursor-pointer"
+                   >
+                      <MessageCircle className="h-4.5 w-4.5" />
                    </button>
                  </div>
                  
                  <div className="hidden lg:flex items-center justify-center gap-2 text-xs font-semibold text-zinc-400 mt-6">
-                   <FaShieldAlt className="h-3.5 w-3.5" />
+                   <FaShieldAlt className="h-3.5 w-3.5 text-brand-green" />
                    <span>Contact sécurisé via TranoGasy</span>
                  </div>
               </div>
@@ -514,18 +550,27 @@ function PropertyDetailsContent({ property }: { property: any }) {
       </div>
       {/* MOBILE FIXED BOTTOM BAR */}
       <div 
-        className="lg:hidden fixed left-0 right-0 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md border-t border-zinc-200/50 dark:border-zinc-800/50 shadow-[0_-8px_30px_rgba(0,0,0,0.08)] dark:shadow-[0_-8px_30px_rgba(0,0,0,0.3)] z-40 px-5 py-3.5 flex gap-3 transition-all"
+        className="lg:hidden fixed left-0 right-0 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-2xl border-t border-zinc-200/60 dark:border-zinc-800/60 shadow-[0_-8px_30px_rgba(0,0,0,0.1)] dark:shadow-[0_-8px_30px_rgba(0,0,0,0.4)] z-40 px-5 py-3 flex gap-2.5 transition-all"
         style={{ bottom: 'calc(65px + env(safe-area-inset-bottom))' }}
       >
-        <button onClick={() => setShowContact(true)} className="flex-1 bg-brand-green hover:bg-green-700 text-white rounded-full py-3.5 flex items-center justify-center gap-2 font-bold text-sm shadow-lg shadow-brand-green/20 hover:shadow-brand-green/30 hover:-translate-y-0.5 transition-all">
-           <Phone className="h-5 w-5" />
-           Voir contact
+        <button 
+          onClick={() => setShowContact(true)} 
+          className="flex-1 bg-zinc-950 hover:bg-zinc-800 dark:bg-white dark:hover:bg-zinc-100 text-white dark:text-zinc-950 rounded-full py-3 px-5 flex items-center justify-center gap-2 font-black text-xs sm:text-sm shadow-md shadow-black/20 dark:shadow-white/10 active:scale-95 transition-all cursor-pointer"
+        >
+           <Phone className="h-4.5 w-4.5 text-brand-green" />
+           Voir le contact
         </button>
-        <button className="h-[50px] w-[50px] shrink-0 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center shadow-sm hover:bg-blue-100 dark:hover:bg-blue-900/50 hover:-translate-y-0.5 transition-all">
-           <Send className="h-5 w-5 pr-0.5 pt-0.5" />
+        <button 
+          aria-label="Contacter par message direct"
+          className="h-11 w-11 shrink-0 bg-white/80 dark:bg-zinc-800/80 backdrop-blur-xl text-zinc-800 dark:text-zinc-200 border border-zinc-200/80 dark:border-white/10 rounded-full flex items-center justify-center shadow-xs hover:border-brand-green hover:text-brand-green active:scale-95 transition-all cursor-pointer"
+        >
+           <Send className="h-4 w-4 pr-0.5 pt-0.5" />
         </button>
-        <button className="h-[50px] w-[50px] shrink-0 bg-zinc-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 rounded-full flex items-center justify-center shadow-sm hover:bg-zinc-100 dark:hover:bg-zinc-700 hover:-translate-y-0.5 transition-all">
-           <MessageCircle className="h-5 w-5" />
+        <button 
+          aria-label="Discuter"
+          className="h-11 w-11 shrink-0 bg-white/80 dark:bg-zinc-800/80 backdrop-blur-xl text-zinc-800 dark:text-zinc-200 border border-zinc-200/80 dark:border-white/10 rounded-full flex items-center justify-center shadow-xs hover:border-brand-green hover:text-brand-green active:scale-95 transition-all cursor-pointer"
+        >
+           <MessageCircle className="h-4 w-4" />
         </button>
       </div>
 
@@ -560,7 +605,7 @@ function PropertyDetailsContent({ property }: { property: any }) {
                       <a 
                         key={idx}
                         href={`tel:${phone}`} 
-                        className="flex items-center justify-center py-4 rounded-full bg-zinc-50 dark:bg-zinc-800 text-brand-green border border-zinc-100 dark:border-zinc-700 font-black text-xl tracking-wider hover:bg-green-50 dark:hover:bg-zinc-700 hover:border-green-200 dark:hover:border-zinc-600 hover:shadow-sm transition-all"
+                        className="flex items-center justify-center py-4 rounded-full bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 border border-white/10 dark:border-zinc-200 font-black text-xl tracking-wider hover:bg-zinc-800 dark:hover:bg-zinc-100 hover:shadow-md transition-all"
                       >
                         {phone}
                       </a>
@@ -678,7 +723,7 @@ export default function PropertyDetailsClient({ propertyId }: { propertyId: stri
     return (
       <div className="min-h-screen bg-white dark:bg-zinc-900 flex flex-col items-center justify-center text-zinc-900 dark:text-white font-bold gap-4">
         {error || 'Propriété introuvable.'}
-        <button onClick={() => router.back()} className="px-4 py-2 bg-brand-green text-white rounded-full text-sm">Retour</button>
+        <button onClick={() => router.back()} className="px-5 py-2.5 bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 font-bold rounded-full text-sm shadow-sm hover:scale-105 active:scale-95 transition-all">Retour</button>
       </div>
     );
   }

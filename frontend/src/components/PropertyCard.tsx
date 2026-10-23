@@ -206,26 +206,28 @@ export default function PropertyCard({ property }: PropertyProps) {
               <button 
                 onMouseEnter={prevImage}
                 onClick={(e) => { e.preventDefault(); e.stopPropagation(); prevImage(e); }}
-                className={`absolute left-2 top-1/2 -translate-y-1/2 flex h-7 w-7 items-center justify-center rounded-full bg-white/70 text-zinc-700 shadow-sm backdrop-blur-sm transition-all hover:bg-white dark:bg-zinc-900/70 dark:text-zinc-300 dark:hover:bg-zinc-800 opacity-0 group-hover:opacity-100 ${currentIndex === 0 ? 'hidden' : ''}`}
+                className={`absolute left-2 top-1/2 -translate-y-1/2 flex h-7 w-7 items-center justify-center rounded-full bg-white/80 dark:bg-zinc-900/80 text-zinc-800 dark:text-zinc-200 border border-white/80 dark:border-white/10 shadow-sm backdrop-blur-md transition-all hover:scale-105 active:scale-90 opacity-0 group-hover:opacity-100 ${currentIndex === 0 ? 'hidden' : ''}`}
+                aria-label="Image précédente"
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
               <button 
                 onMouseEnter={nextImage}
                 onClick={(e) => { e.preventDefault(); e.stopPropagation(); nextImage(e); }}
-                className={`absolute right-2 top-1/2 -translate-y-1/2 flex h-7 w-7 items-center justify-center rounded-full bg-white/70 text-zinc-700 shadow-sm backdrop-blur-sm transition-all hover:bg-white dark:bg-zinc-900/70 dark:text-zinc-300 dark:hover:bg-zinc-800 opacity-0 group-hover:opacity-100 ${currentIndex === images.length - 1 ? 'hidden' : ''}`}
+                className={`absolute right-2 top-1/2 -translate-y-1/2 flex h-7 w-7 items-center justify-center rounded-full bg-white/80 dark:bg-zinc-900/80 text-zinc-800 dark:text-zinc-200 border border-white/80 dark:border-white/10 shadow-sm backdrop-blur-md transition-all hover:scale-105 active:scale-90 opacity-0 group-hover:opacity-100 ${currentIndex === images.length - 1 ? 'hidden' : ''}`}
+                aria-label="Image suivante"
               >
                 <ChevronRight className="h-4 w-4" />
               </button>
               
               {/* Dots */}
-              <div className="absolute bottom-7 left-1/2 flex -translate-x-1/2 items-center gap-1.5 z-10">
+              <div className="absolute bottom-7 left-1/2 flex -translate-x-1/2 items-center gap-1.5 z-10 px-2 py-0.5 rounded-full bg-black/30 backdrop-blur-sm border border-white/10">
                 {images.map((_, idx) => (
                   <div 
                     key={idx} 
                     onMouseEnter={() => setCurrentIndex(idx)}
                     onClick={(e) => { e.preventDefault(); e.stopPropagation(); setCurrentIndex(idx); }}
-                    className={`h-1.5 rounded-full transition-all cursor-pointer ${idx === currentIndex ? 'w-3 bg-white' : 'w-1.5 bg-white/50'}`}
+                    className={`h-1.5 rounded-full transition-all cursor-pointer ${idx === currentIndex ? 'w-3.5 bg-white shadow-xs' : 'w-1.5 bg-white/50'}`}
                   />
                 ))}
               </div>
@@ -236,14 +238,18 @@ export default function PropertyCard({ property }: PropertyProps) {
           <div className="absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-black/35 via-black/15 to-transparent pointer-events-none z-[5]" />
 
           {/* Badges */}
-          <div className="absolute top-3 left-3 rounded-full bg-brand-green px-2.5 py-0.5 text-[10px] font-bold text-white uppercase tracking-wide shadow-sm">
+          <div className={`absolute top-3 left-3 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider shadow-sm ${
+            property.type === 'rent'
+              ? 'bg-brand-green text-white'
+              : 'bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 shadow-xs'
+          }`}>
             {property.type === 'rent' ? 'Location' : 'Vente'}
           </div>
-          <div className="absolute top-3 right-3 rounded-full bg-black/60 px-2.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">
+          <div className="absolute top-3 right-3 rounded-full bg-black/60 px-2.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-md border border-white/10">
             {formatDateAgo(property.created_at)}
           </div>
 
-          {/* Favorite Button (Borderless & Backgroundless) */}
+          {/* Favorite Button (Borderless & Backgroundless with Red Heart) */}
           <button 
             onClick={handleFavoriteClick}
             className="group absolute bottom-6 right-3 z-20 flex h-9 w-9 cursor-pointer items-center justify-center p-0 transition-transform duration-200 active:scale-75 focus:outline-none"
@@ -291,22 +297,22 @@ export default function PropertyCard({ property }: PropertyProps) {
 
           {/* Top line: Title & Price */}
           <div className="flex items-start justify-between gap-2">
-            <h3 className="text-sm font-bold text-zinc-900 dark:text-white line-clamp-1 flex-1">
+            <h3 className="text-sm font-bold text-zinc-900 dark:text-white line-clamp-1 flex-1 tracking-tight">
               {property.title}
             </h3>
-            <p className="text-sm font-bold text-brand-green whitespace-nowrap">
+            <p className="text-sm font-black text-brand-green whitespace-nowrap tracking-tight">
               {displayPrice ? `${displayPrice.toLocaleString('fr-FR')} Ar` : 'Sur dmd'}
               {property.type === 'rent' && <span className="text-[10px] font-normal text-zinc-500">/mois</span>}
             </p>
           </div>
 
           {/* Second line: Type & Location */}
-          <div className="mt-1 flex items-center gap-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+          <div className="mt-1 flex items-center gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
             <span className="font-semibold">
               {property.houseType ? property.houseType.charAt(0).toUpperCase() + property.houseType.slice(1) : 'Propriété'}
             </span>
             <span>•</span>
-            <MapPin className="h-3 w-3 text-brand-red shrink-0" />
+            <MapPin className="h-3 w-3 text-brand-green shrink-0" />
             <span className="truncate">
               {property.city?.fokontany}, {property.city?.commune}
             </span>

@@ -255,15 +255,15 @@ export default function FavoritesPage() {
                     <button
                       key={cat.id}
                       onClick={() => setActiveCategory(cat.id)}
-                      className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                      className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border text-xs transition-all cursor-pointer whitespace-nowrap shrink-0 active:scale-95 ${
                         activeCategory === cat.id
-                          ? 'bg-brand-green text-white border-brand-green shadow-xs shadow-brand-green/30'
-                          : 'border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 hover:border-zinc-300'
+                          ? 'bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 border-transparent shadow-sm font-bold'
+                          : 'border-zinc-200/80 dark:border-white/10 bg-white/70 dark:bg-zinc-800/70 backdrop-blur-xl text-zinc-700 dark:text-zinc-300 hover:border-zinc-300 dark:hover:border-white/20 font-semibold'
                       }`}
                     >
                       <span>{cat.label}</span>
-                      <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
-                        activeCategory === cat.id ? 'bg-white/20 text-white' : 'bg-zinc-100 dark:bg-zinc-700 text-zinc-500 dark:text-zinc-400'
+                      <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                        activeCategory === cat.id ? 'bg-white/20 text-white dark:bg-black/20 dark:text-zinc-950' : 'bg-zinc-100 dark:bg-zinc-700 text-zinc-500 dark:text-zinc-400'
                       }`}>
                         {cat.count}
                       </span>
@@ -325,16 +325,16 @@ export default function FavoritesPage() {
                         <button
                           key={cat.id}
                           onClick={() => setActiveCategory(cat.id)}
-                          className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full border text-xs font-semibold shadow-xs hover:-translate-y-0.5 transition-all cursor-pointer whitespace-nowrap ${
+                          className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full border text-xs shadow-xs hover:scale-105 active:scale-95 transition-all cursor-pointer whitespace-nowrap ${
                             activeCategory === cat.id
-                              ? 'bg-brand-green text-white border-brand-green shadow-brand-green/20'
-                              : 'border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 hover:border-zinc-300 dark:hover:border-zinc-600'
+                              ? 'bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 border-transparent shadow-md font-bold'
+                              : 'border-zinc-200/80 dark:border-white/10 bg-white/70 dark:bg-zinc-800/70 backdrop-blur-xl text-zinc-700 dark:text-zinc-300 hover:border-zinc-300 dark:hover:border-white/20 font-semibold'
                           }`}
                         >
                           <span>{cat.label}</span>
-                          <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                          <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
                             activeCategory === cat.id
-                              ? 'bg-white/20 text-white'
+                              ? 'bg-white/20 text-white dark:bg-black/20 dark:text-zinc-950'
                               : 'bg-zinc-100 dark:bg-zinc-700 text-zinc-500 dark:text-zinc-400'
                           }`}>
                             {cat.count}
@@ -396,15 +396,15 @@ export default function FavoritesPage() {
                       <button
                         key={cat.id}
                         onClick={() => setActiveCategory(cat.id)}
-                        className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-[11px] font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                        className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-[11px] transition-all cursor-pointer whitespace-nowrap shrink-0 active:scale-95 ${
                           activeCategory === cat.id
-                            ? 'bg-brand-green text-white border-brand-green shadow-xs shadow-brand-green/30'
-                            : 'border-zinc-200/80 dark:border-zinc-700 bg-white/80 dark:bg-zinc-800/80 text-zinc-700 dark:text-zinc-200 hover:border-zinc-300'
+                            ? 'bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 border-transparent shadow-xs font-bold'
+                            : 'border-zinc-200/80 dark:border-white/10 bg-white/70 dark:bg-zinc-800/70 backdrop-blur-xl text-zinc-700 dark:text-zinc-300 hover:border-zinc-300 font-semibold'
                         }`}
                       >
                         <span>{cat.label}</span>
-                        <span className={`text-[9px] px-1.5 py-0.2 rounded-full ${
-                          activeCategory === cat.id ? 'bg-white/20 text-white' : 'bg-zinc-100 dark:bg-zinc-700 text-zinc-500 dark:text-zinc-400'
+                        <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-bold ${
+                          activeCategory === cat.id ? 'bg-white/20 text-white dark:bg-black/20 dark:text-zinc-950' : 'bg-zinc-100 dark:bg-zinc-700 text-zinc-500 dark:text-zinc-400'
                         }`}>
                           {cat.count}
                         </span>

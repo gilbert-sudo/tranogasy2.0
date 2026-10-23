@@ -23,27 +23,30 @@ export default function Header() {
             </span>
           </Link>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           <DarkModeToggle />
-          <button className="flex items-center gap-2 rounded-full border-2 border-brand-green px-4 py-1 text-sm font-medium text-brand-green transition hover:bg-brand-green hover:text-white dark:hover:bg-brand-green">
-            <span>Chercher</span>
-            <Search className="h-4 w-4" />
+          <button 
+            aria-label="Rechercher"
+            className="flex items-center gap-2 rounded-full bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 hover:bg-zinc-800 dark:hover:bg-zinc-100 backdrop-blur-xl border border-white/20 dark:border-black/10 px-4 py-1.5 text-xs font-black shadow-sm hover:scale-105 active:scale-95 transition-all cursor-pointer"
+          >
+            <span>Rechercher</span>
+            <Search className="h-3.5 w-3.5 text-brand-green" />
           </button>
           
           {/* User Profile Avatar */}
           {currentUser ? (
-            <Link href="/account" className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-200 dark:bg-zinc-700 transition-colors hover:ring-2 hover:ring-brand-green overflow-hidden border border-zinc-300 dark:border-zinc-600 relative">
+            <Link href="/account" className="flex h-9 w-9 items-center justify-center rounded-full bg-white/70 dark:bg-zinc-800/70 backdrop-blur-xl transition-all hover:scale-105 active:scale-95 hover:ring-2 hover:ring-brand-green overflow-hidden border border-zinc-200/80 dark:border-white/10 shadow-xs relative">
               {currentUser.avatar ? (
                 <Image src={currentUser.avatar} alt="Profile" fill className="object-cover" />
               ) : (
-                <span className="text-sm font-bold text-zinc-600 dark:text-zinc-300 uppercase">
+                <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200 uppercase">
                   {currentUser.username?.charAt(0) || currentUser.email?.charAt(0) || 'U'}
                 </span>
               )}
             </Link>
           ) : (
-            <button onClick={() => openModal('login')} className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-200 dark:bg-zinc-700 transition-colors hover:ring-2 hover:ring-brand-green overflow-hidden border border-zinc-300 dark:border-zinc-600">
-              <User className="h-5 w-5 text-zinc-600 dark:text-zinc-300" />
+            <button onClick={() => openModal('login')} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/70 dark:bg-zinc-800/70 backdrop-blur-xl transition-all hover:scale-105 active:scale-95 hover:ring-2 hover:ring-brand-green overflow-hidden border border-zinc-200/80 dark:border-white/10 shadow-xs cursor-pointer">
+              <User className="h-4 w-4 text-zinc-700 dark:text-zinc-200" />
             </button>
           )}
         </div>

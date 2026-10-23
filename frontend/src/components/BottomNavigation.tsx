@@ -132,7 +132,7 @@ export default function BottomNavigation() {
               className="flex items-center justify-between p-2.5 rounded-2xl hover:bg-emerald-50/80 dark:hover:bg-emerald-950/30 transition-all text-left group cursor-pointer border border-transparent hover:border-brand-green/20"
             >
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-brand-green to-emerald-500 text-white shadow-md shadow-brand-green/25 group-hover:scale-105 transition-transform">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 shadow-md group-hover:scale-105 transition-transform">
                   <Plus className="h-5 w-5" strokeWidth={2.5} />
                 </div>
                 <div>
@@ -154,11 +154,11 @@ export default function BottomNavigation() {
               className="flex items-center justify-between p-2.5 rounded-2xl hover:bg-zinc-100/80 dark:hover:bg-zinc-800/60 transition-all text-left group cursor-pointer"
             >
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-500/10 dark:bg-sky-500/20 text-sky-600 dark:text-sky-400 group-hover:scale-105 transition-transform">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 group-hover:bg-brand-green/15 group-hover:text-brand-green group-hover:scale-105 transition-all">
                   <LayoutDashboard className="h-5 w-5" strokeWidth={2} />
                 </div>
                 <div>
-                  <div className="text-xs font-bold text-zinc-900 dark:text-white">
+                  <div className="text-xs font-bold text-zinc-900 dark:text-white group-hover:text-brand-green transition-colors">
                     Tableau de bord
                   </div>
                   <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
@@ -166,7 +166,7 @@ export default function BottomNavigation() {
                   </div>
                 </div>
               </div>
-              <ChevronRight className="w-4 h-4 text-zinc-400 group-hover:text-zinc-700 dark:group-hover:text-zinc-200 group-hover:translate-x-0.5 transition-all shrink-0" />
+              <ChevronRight className="w-4 h-4 text-zinc-400 group-hover:text-brand-green group-hover:translate-x-0.5 transition-all shrink-0" />
             </button>
 
             {/* 3. My Listings */}
@@ -176,11 +176,11 @@ export default function BottomNavigation() {
               className="flex items-center justify-between p-2.5 rounded-2xl hover:bg-zinc-100/80 dark:hover:bg-zinc-800/60 transition-all text-left group cursor-pointer"
             >
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 group-hover:scale-105 transition-transform">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 group-hover:bg-brand-green/15 group-hover:text-brand-green group-hover:scale-105 transition-all">
                   <Building2 className="h-5 w-5" strokeWidth={2} />
                 </div>
                 <div>
-                  <div className="text-xs font-bold text-zinc-900 dark:text-white">
+                  <div className="text-xs font-bold text-zinc-900 dark:text-white group-hover:text-brand-green transition-colors">
                     Mes annonces
                   </div>
                   <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
@@ -188,46 +188,46 @@ export default function BottomNavigation() {
                   </div>
                 </div>
               </div>
-              <ChevronRight className="w-4 h-4 text-zinc-400 group-hover:text-zinc-700 dark:group-hover:text-zinc-200 group-hover:translate-x-0.5 transition-all shrink-0" />
+              <ChevronRight className="w-4 h-4 text-zinc-400 group-hover:text-brand-green group-hover:translate-x-0.5 transition-all shrink-0" />
             </button>
           </div>
         </div>
       )}
 
       {/* ── Fixed Navigation Bar ── */}
-      <nav className="fixed z-50 transition-all duration-300 bg-white/90 dark:bg-zinc-800/90 backdrop-blur-md border-zinc-200 dark:border-zinc-700 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] dark:shadow-[0_-4px_20px_rgba(0,0,0,0.2)]
-        bottom-0 left-0 w-full border-t pb-safe pt-2
-        md:bottom-6 md:left-1/2 md:-translate-x-1/2 md:w-[380px] md:rounded-[2rem] md:border md:pb-2 md:shadow-xl
+      <nav className="fixed z-50 transition-all duration-300 bg-white/75 dark:bg-zinc-900/80 backdrop-blur-2xl border-zinc-200/70 dark:border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.12)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.5)]
+        bottom-2 left-2 right-2 border rounded-full pb-safe pt-1.5
+        md:bottom-6 md:left-1/2 md:-translate-x-1/2 md:w-[390px] md:rounded-full md:pb-1.5 md:pt-1.5 md:shadow-2xl
         lg:top-1/2 lg:right-6 xl:right-8 2xl:right-9 lg:left-auto lg:bottom-auto lg:translate-x-0 lg:-translate-y-1/2 lg:w-[85px] lg:h-[410px] lg:rounded-[2.5rem] lg:pt-4 lg:pb-4 lg:px-0">
         
-        <div className="flex h-full items-center justify-around px-2 pb-2 md:pb-0 lg:flex-col lg:px-0 lg:py-2">
+        <div className="flex h-full items-center justify-around px-2 pb-1.5 md:pb-0 lg:flex-col lg:px-0 lg:py-2">
           
           {/* 1. Accueil */}
           <Link
             href="/"
             aria-label="Accueil"
-            className={`flex flex-col items-center gap-1 p-2 transition-all hover:scale-105 ${
+            className={`flex flex-col items-center gap-0.5 p-2 transition-all hover:scale-105 active:scale-95 ${
               pathname === '/' 
-                ? 'text-brand-red font-semibold' 
+                ? 'text-zinc-950 dark:text-white font-bold' 
                 : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'
             }`}
           >
-            <Home className="h-6 w-6" strokeWidth={pathname === '/' ? 2.5 : 2} />
-            <span className="text-[10px] font-medium">Accueil</span>
+            <Home className="h-5 w-5 sm:h-5.5 sm:w-5.5" strokeWidth={pathname === '/' ? 2.5 : 2} />
+            <span className="text-[10px] font-semibold tracking-tight">Accueil</span>
           </Link>
 
           {/* 2. Explorer */}
           <Link
             href="/explore"
             aria-label="Explorer"
-            className={`flex flex-col items-center gap-1 p-2 transition-all hover:scale-105 ${
+            className={`flex flex-col items-center gap-0.5 p-2 transition-all hover:scale-105 active:scale-95 ${
               pathname === '/explore' 
-                ? 'text-brand-red font-semibold' 
+                ? 'text-zinc-950 dark:text-white font-bold' 
                 : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'
             }`}
           >
-            <Compass className="h-6 w-6" strokeWidth={pathname === '/explore' ? 2.5 : 2} />
-            <span className="text-[10px] font-medium">Explorer</span>
+            <Compass className="h-5 w-5 sm:h-5.5 sm:w-5.5" strokeWidth={pathname === '/explore' ? 2.5 : 2} />
+            <span className="text-[10px] font-semibold tracking-tight">Explorer</span>
           </Link>
 
           {/* ══════════════════════════════════════════════════════════
@@ -246,16 +246,17 @@ export default function BottomNavigation() {
                 -translate-y-3.5 md:-translate-y-4 h-12 w-12 md:h-13 md:w-13
                 /* Desktop: Sits centered in dock with clean scaling */
                 lg:translate-y-0 lg:h-12 lg:w-12 lg:my-1
-                /* Vibrant Standout Gradient & Ring */
-                bg-gradient-to-tr from-brand-green via-[#7cbd1e] to-emerald-500 text-white
-                ring-4 ring-white dark:ring-zinc-800
-                shadow-[0_8px_22px_rgba(124,189,30,0.45)] dark:shadow-[0_8px_22px_rgba(124,189,30,0.3)]
+                /* Primary Black Liquid Glass Block Button */
+                bg-zinc-950 dark:bg-white text-white dark:text-zinc-950
+                border border-white/20 dark:border-black/10
+                ring-4 ring-white/90 dark:ring-zinc-900/90
+                shadow-[0_8px_24px_rgba(0,0,0,0.35)] dark:shadow-[0_8px_24px_rgba(0,0,0,0.6)]
                 hover:scale-110 active:scale-95
-                ${isMenuOpen ? 'rotate-45 ring-brand-green/50 shadow-[0_0_24px_rgba(124,189,30,0.6)]' : ''}
+                ${isMenuOpen ? 'rotate-45 ring-brand-green/50 shadow-[0_0_24px_rgba(0,0,0,0.7)]' : ''}
                 ${isDashboardActive && !isMenuOpen ? 'ring-brand-green/60' : ''}`}
             >
               <Plus 
-                className="h-6 w-6 text-white transition-transform duration-300" 
+                className="h-6 w-6 text-white dark:text-zinc-950 transition-transform duration-300" 
                 strokeWidth={2.8} 
               />
             </button>
@@ -264,7 +265,7 @@ export default function BottomNavigation() {
             <span className={`text-[10px] font-bold tracking-tight -mt-2 md:-mt-2 lg:mt-0.5 transition-colors ${
               isDashboardActive || isMenuOpen
                 ? 'text-brand-green dark:text-emerald-400'
-                : 'text-zinc-600 dark:text-zinc-300'
+                : 'text-zinc-800 dark:text-zinc-200'
             }`}>
               Publier
             </span>
@@ -274,14 +275,17 @@ export default function BottomNavigation() {
           <Link
             href="/favorites"
             aria-label="Favoris"
-            className={`flex flex-col items-center gap-1 p-2 transition-all hover:scale-105 ${
+            className={`flex flex-col items-center gap-0.5 p-2 transition-all hover:scale-105 active:scale-95 ${
               pathname === '/favorites' 
-                ? 'text-brand-red font-semibold' 
+                ? 'text-brand-red font-bold' 
                 : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'
             }`}
           >
-            <Heart className="h-6 w-6" strokeWidth={pathname === '/favorites' ? 2.5 : 2} />
-            <span className="text-[10px] font-medium">Favoris</span>
+            <Heart 
+              className={`h-5 w-5 sm:h-5.5 sm:w-5.5 ${pathname === '/favorites' ? 'fill-brand-red' : ''}`} 
+              strokeWidth={pathname === '/favorites' ? 2.5 : 2} 
+            />
+            <span className="text-[10px] font-semibold tracking-tight">Favoris</span>
           </Link>
 
           {/* 5. Compte */}
@@ -289,27 +293,27 @@ export default function BottomNavigation() {
             <Link
               href="/account"
               aria-label="Mon compte"
-              className={`flex flex-col items-center gap-1 p-2 transition-all hover:scale-105 ${
+              className={`flex flex-col items-center gap-0.5 p-2 transition-all hover:scale-105 active:scale-95 ${
                 pathname === '/account' 
-                  ? 'text-brand-red font-semibold' 
+                  ? 'text-zinc-950 dark:text-white font-bold' 
                   : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'
               }`}
             >
-              <User className="h-6 w-6" strokeWidth={pathname === '/account' ? 2.5 : 2} />
-              <span className="text-[10px] font-medium">Compte</span>
+              <User className="h-5 w-5 sm:h-5.5 sm:w-5.5" strokeWidth={pathname === '/account' ? 2.5 : 2} />
+              <span className="text-[10px] font-semibold tracking-tight">Compte</span>
             </Link>
           ) : (
             <button
               onClick={() => openModal('login')}
               aria-label="Se connecter"
-              className={`flex flex-col items-center gap-1 p-2 transition-all hover:scale-105 cursor-pointer ${
+              className={`flex flex-col items-center gap-0.5 p-2 transition-all hover:scale-105 active:scale-95 cursor-pointer ${
                 pathname === '/account' 
-                  ? 'text-brand-red font-semibold' 
+                  ? 'text-zinc-950 dark:text-white font-bold' 
                   : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'
               }`}
             >
-              <User className="h-6 w-6" strokeWidth={pathname === '/account' ? 2.5 : 2} />
-              <span className="text-[10px] font-medium">Compte</span>
+              <User className="h-5 w-5 sm:h-5.5 sm:w-5.5" strokeWidth={pathname === '/account' ? 2.5 : 2} />
+              <span className="text-[10px] font-semibold tracking-tight">Compte</span>
             </button>
           )}
 

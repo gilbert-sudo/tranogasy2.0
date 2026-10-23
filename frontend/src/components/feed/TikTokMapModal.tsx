@@ -36,7 +36,7 @@ export default function TikTokMapModal({ property, onClose }: TikTokMapModalProp
         {/* Header */}
         <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-3">
           <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-full bg-red-50 dark:bg-red-950/40 text-brand-red flex items-center justify-center">
+            <div className="w-10 h-10 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-brand-green flex items-center justify-center">
               <MapPin className="w-5 h-5" />
             </div>
             <div>
@@ -50,7 +50,7 @@ export default function TikTokMapModal({ property, onClose }: TikTokMapModalProp
           </div>
           <button
             onClick={onClose}
-            className="w-9 h-9 rounded-full bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 flex items-center justify-center text-zinc-600 dark:text-zinc-300 transition-colors"
+            className="w-9 h-9 rounded-full bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 flex items-center justify-center text-zinc-600 dark:text-zinc-300 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>

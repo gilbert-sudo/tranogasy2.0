@@ -261,8 +261,10 @@ export default function TikTokCard({
       {/* Top Header Badges */}
       <div className="absolute top-4 left-4 z-20 flex items-center gap-2">
         <span
-          className={`px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider text-white shadow-md ${
-            property.type === 'rent' ? 'bg-brand-green' : 'bg-brand-red'
+          className={`px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider shadow-md ${
+            property.type === 'rent'
+              ? 'bg-brand-green text-white'
+              : 'bg-zinc-950/80 backdrop-blur-md border border-white/20 text-white'
           }`}
         >
           {property.type === 'rent' ? 'Location' : 'Vente'}
@@ -322,7 +324,7 @@ export default function TikTokCard({
           <div className="w-11 h-11 md:w-12 md:h-12 rounded-full overflow-hidden border-2 border-white drop-shadow-[0_2px_6px_rgba(0,0,0,0.85)] bg-zinc-900 transition-transform group-hover:scale-105">
             <img src={avatar} alt={ownerName} className="w-full h-full object-cover" />
           </div>
-          <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-4.5 h-4.5 rounded-full bg-[#FF2D55] text-white flex items-center justify-center shadow-md border border-white">
+          <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-4.5 h-4.5 rounded-full bg-brand-green text-white flex items-center justify-center shadow-md border border-white">
             <Plus className="w-3 h-3 stroke-[3]" />
           </div>
         </div>
@@ -507,7 +509,7 @@ export default function TikTokCard({
 
           {/* Location line */}
           <div className="flex items-center gap-1.5 text-xs text-zinc-200 capitalize">
-            <MapPin className="w-3.5 h-3.5 text-brand-red shrink-0" />
+            <MapPin className="w-3.5 h-3.5 text-brand-green shrink-0" />
             <span className="truncate">
               {property.city?.fokontany}, {property.city?.commune}
             </span>
@@ -533,7 +535,7 @@ export default function TikTokCard({
 
             <button
               onClick={onOpenDetails}
-              className="text-xs text-white/80 hover:text-white underline cursor-pointer"
+              className="px-2.5 py-1 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/15 text-xs font-semibold text-white transition-all cursor-pointer"
             >
               voir plus...
             </button>

@@ -140,8 +140,8 @@ export default function ProfilePage() {
                     <Phone className="w-4 h-4 text-brand-green" />
                     +261 34 00 000 00
                   </div>
-                  <div className="flex items-center gap-1.5 bg-zinc-100 dark:bg-zinc-800 px-3 py-1.5 rounded-full">
-                    <MapPin className="w-4 h-4 text-brand-red" />
+                  <div className="flex items-center gap-1.5 bg-zinc-100 dark:bg-zinc-800 px-3 py-1.5 rounded-full text-xs font-semibold">
+                    <MapPin className="w-4 h-4 text-brand-green" />
                     Antananarivo, MG
                   </div>
                 </div>
@@ -149,10 +149,16 @@ export default function ProfilePage() {
 
               {/* Actions */}
               <div className="flex gap-3 md:pt-14 w-full md:w-auto mt-4 md:mt-0">
-                <button className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-brand-green text-white px-6 py-2.5 rounded-full font-semibold shadow-md shadow-brand-green/20 hover:bg-brand-green/90 transition-all active:scale-95">
+                <button 
+                  type="button"
+                  className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-brand-green hover:bg-emerald-600 text-white px-6 py-2.5 rounded-full font-bold text-xs sm:text-sm shadow-md shadow-brand-green/20 transition-all active:scale-95 cursor-pointer"
+                >
                   Contacter
                 </button>
-                <button className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 px-6 py-2.5 rounded-full font-semibold hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all active:scale-95 border border-zinc-200 dark:border-zinc-700">
+                <button 
+                  type="button"
+                  className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-white/80 dark:bg-zinc-800/80 backdrop-blur-xl text-zinc-800 dark:text-zinc-200 px-6 py-2.5 rounded-full font-bold text-xs sm:text-sm hover:border-brand-green hover:text-brand-green transition-all active:scale-95 border border-zinc-200/80 dark:border-white/10 shadow-xs cursor-pointer"
+                >
                   <Share2 className="w-4 h-4" />
                   <span className="md:hidden">Partager</span>
                 </button>
@@ -163,40 +169,42 @@ export default function ProfilePage() {
             <div className="grid grid-cols-3 border-y border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
               <div className="p-4 text-center border-r border-zinc-200 dark:border-zinc-800">
                 <div className="text-2xl font-black text-zinc-900 dark:text-white">2</div>
-                <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Maisons</div>
+                <div className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Maisons</div>
               </div>
               <div className="p-4 text-center border-r border-zinc-200 dark:border-zinc-800">
                 <div className="text-2xl font-black text-zinc-900 dark:text-white">0</div>
-                <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Terrains</div>
+                <div className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Terrains</div>
               </div>
               <div className="p-4 text-center">
                 <div className="text-2xl font-black text-brand-red">1.2k</div>
-                <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">J'aime</div>
+                <div className="text-xs font-bold text-zinc-500 uppercase tracking-wider">J'aime</div>
               </div>
             </div>
 
             {/* Tabs */}
             <div className="flex p-2 gap-2 border-b border-zinc-200 dark:border-zinc-800 overflow-x-auto hide-scrollbar">
               <button 
+                type="button"
                 onClick={() => setActiveTab('annonces')}
-                className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-semibold transition-all min-w-[120px] ${
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-full font-bold text-xs sm:text-sm transition-all min-w-[120px] cursor-pointer active:scale-95 ${
                   activeTab === 'annonces' 
-                    ? 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 shadow-sm' 
-                    : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                    ? 'bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 shadow-sm' 
+                    : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
                 }`}
               >
-                <Building2 className="w-5 h-5" />
+                <Building2 className="w-4 h-4" />
                 Annonces
               </button>
               <button 
+                type="button"
                 onClick={() => setActiveTab('favoris')}
-                className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-semibold transition-all min-w-[120px] ${
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-full font-bold text-xs sm:text-sm transition-all min-w-[120px] cursor-pointer active:scale-95 ${
                   activeTab === 'favoris' 
-                    ? 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 shadow-sm' 
-                    : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                    ? 'bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 shadow-sm' 
+                    : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
                 }`}
               >
-                <Heart className="w-5 h-5" />
+                <Heart className={`w-4 h-4 ${activeTab === 'favoris' ? 'fill-brand-red text-brand-red' : ''}`} />
                 Favoris
               </button>
             </div>
@@ -247,18 +255,22 @@ export default function ProfilePage() {
 
           {/* Logout / Settings */}
           <div className="mt-8 mb-12 flex flex-col sm:flex-row gap-4 justify-center">
-            <button className="flex items-center justify-center gap-2 px-6 py-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-full font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors shadow-sm">
-              <Settings className="w-5 h-5" />
+            <button 
+              type="button"
+              className="flex items-center justify-center gap-2 px-6 py-3 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border border-zinc-200/80 dark:border-white/10 rounded-full font-bold text-xs sm:text-sm text-zinc-700 dark:text-zinc-300 hover:bg-white dark:hover:bg-zinc-800 transition-all shadow-sm active:scale-95 cursor-pointer"
+            >
+              <Settings className="w-4.5 h-4.5" />
               Paramètres du compte
             </button>
             <button 
+              type="button"
               onClick={() => {
                 logout();
                 window.location.href = '/';
               }} 
-              className="flex items-center justify-center gap-2 px-6 py-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-full font-semibold text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors shadow-sm"
+              className="flex items-center justify-center gap-2 px-6 py-3 bg-zinc-950 hover:bg-zinc-900 text-white dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-100 rounded-full font-bold text-xs sm:text-sm transition-all shadow-md active:scale-95 cursor-pointer"
             >
-              <LogOut className="w-5 h-5" />
+              <LogOut className="w-4.5 h-4.5" />
               Se déconnecter
             </button>
           </div>

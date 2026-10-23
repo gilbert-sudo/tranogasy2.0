@@ -62,56 +62,56 @@ export default function SignupPage() {
             </div>
           </div>
 
-          <h1 className="text-2xl font-serif font-bold text-zinc-900 dark:text-white mb-4 tracking-tight text-center mt-3">
-            Sign-up
+          <h1 className="text-2xl font-black text-zinc-950 dark:text-white mb-4 tracking-tight text-center mt-3">
+            Inscription
           </h1>
           
           <form onSubmit={handleSubmit} className="flex flex-col gap-4 flex-grow">
             
             <div className="relative">
-              <label className="text-[13px] font-bold text-zinc-900 dark:text-zinc-200 mb-1 block">Nom</label>
+              <label className="text-xs font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300 mb-1 block">Nom</label>
               <input
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Votre nom"
-                className="w-full border-0 border-b border-zinc-300 dark:border-zinc-700 focus:border-brand-green focus:ring-0 px-0 py-2 text-sm text-zinc-600 dark:text-zinc-400 bg-transparent outline-none transition-colors"
+                className="w-full border-0 border-b border-zinc-300 dark:border-zinc-700 focus:border-brand-green focus:ring-0 px-0 py-2 text-sm text-zinc-700 dark:text-zinc-300 bg-transparent outline-none transition-colors"
                 required
               />
             </div>
 
             <div className="relative">
-              <label className="text-[13px] font-bold text-zinc-900 dark:text-zinc-200 mb-1 block">Email</label>
+              <label className="text-xs font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300 mb-1 block">Email</label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Votre email"
-                className="w-full border-0 border-b border-zinc-300 dark:border-zinc-700 focus:border-brand-green focus:ring-0 px-0 py-2 text-sm text-zinc-600 dark:text-zinc-400 bg-transparent outline-none transition-colors"
+                className="w-full border-0 border-b border-zinc-300 dark:border-zinc-700 focus:border-brand-green focus:ring-0 px-0 py-2 text-sm text-zinc-700 dark:text-zinc-300 bg-transparent outline-none transition-colors"
                 required
               />
             </div>
 
             <div className="relative">
-              <label className="text-[13px] font-bold text-zinc-900 dark:text-zinc-200 mb-1 block">Contact</label>
+              <label className="text-xs font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300 mb-1 block">Contact</label>
               <input
                 type="tel"
                 value={phoneNumber}
                 onChange={handlePhoneNumberInput}
                 placeholder="Votre numéro de téléphone"
-                className="w-full border-0 border-b border-zinc-300 dark:border-zinc-700 focus:border-brand-green focus:ring-0 px-0 py-2 text-sm text-zinc-600 dark:text-zinc-400 bg-transparent outline-none transition-colors"
+                className="w-full border-0 border-b border-zinc-300 dark:border-zinc-700 focus:border-brand-green focus:ring-0 px-0 py-2 text-sm text-zinc-700 dark:text-zinc-300 bg-transparent outline-none transition-colors"
                 required
               />
             </div>
 
             <div className="relative">
-              <label className="text-[13px] font-bold text-zinc-900 dark:text-zinc-200 mb-1 block">Mot de passe</label>
+              <label className="text-xs font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300 mb-1 block">Mot de passe</label>
               <input
                 type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Votre mot de passe"
-                className="w-full border-0 border-b border-zinc-300 dark:border-zinc-700 focus:border-brand-green focus:ring-0 px-0 py-2 text-sm text-zinc-600 dark:text-zinc-400 bg-transparent outline-none transition-colors pr-10"
+                className="w-full border-0 border-b border-zinc-300 dark:border-zinc-700 focus:border-brand-green focus:ring-0 px-0 py-2 text-sm text-zinc-700 dark:text-zinc-300 bg-transparent outline-none transition-colors pr-10"
                 required
               />
               <button
@@ -133,7 +133,7 @@ export default function SignupPage() {
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full bg-brand-green text-white font-semibold py-3.5 rounded-full hover:bg-emerald-600 transition-colors active:scale-[0.98] disabled:opacity-70 flex justify-center items-center"
+                className="w-full bg-zinc-950 hover:bg-zinc-800 dark:bg-white dark:hover:bg-zinc-100 text-white dark:text-zinc-950 font-black text-sm py-4 rounded-full shadow-lg shadow-black/20 dark:shadow-white/10 backdrop-blur-md transition-all active:scale-[0.98] disabled:opacity-70 flex justify-center items-center tracking-wide cursor-pointer"
               >
                 {isLoading ? '...' : "S'inscrire"}
               </button>

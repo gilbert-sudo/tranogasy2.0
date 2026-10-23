@@ -14,6 +14,7 @@ import {
   Trash2,
   LogOut,
   ChevronRight,
+  Power,
 } from 'lucide-react';
 import { useUserStore } from '@/store/userStore';
 import Header from '@/components/Header';
@@ -74,7 +75,7 @@ export default function AccountPage() {
   const currentUser = user?.user || user;
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] dark:bg-zinc-950 pb-24 font-sans selection:bg-brand-red/20">
+    <div className="min-h-screen bg-[#F8F9FA] dark:bg-zinc-950 pb-24 font-sans selection:bg-brand-green/20">
       
       {/* Header Mobile / Desktop Header */}
       <div className="sticky top-0 z-50">
@@ -100,48 +101,73 @@ export default function AccountPage() {
           <div className="lg:col-span-4 lg:sticky lg:top-[160px] lg:self-start lg:flex lg:flex-col gap-8">
             
             {/* Profile Section */}
-            <div className="bg-white dark:bg-zinc-900 rounded-3xl lg:rounded-[2.5rem] p-4 lg:p-6 shadow-sm border border-zinc-100 dark:border-zinc-800 flex flex-row lg:flex-col items-center lg:text-center relative overflow-hidden gap-4 lg:gap-0">
-              <div className="hidden lg:block absolute top-0 left-0 w-full h-24 bg-gradient-to-br from-brand-green/20 to-brand-red/10 dark:from-brand-green/10 dark:to-brand-red/5"></div>
+            <div className="bg-white dark:bg-zinc-900 rounded-3xl lg:rounded-[2.5rem] p-4 lg:p-6 shadow-sm border border-zinc-100 dark:border-zinc-800 flex flex-row lg:flex-col items-center justify-between lg:justify-start lg:text-center relative overflow-hidden gap-3 sm:gap-4 lg:gap-0">
+              <div className="hidden lg:block absolute top-0 left-0 w-full h-24 bg-gradient-to-br from-brand-green/20 to-emerald-500/5 dark:from-brand-green/10 dark:to-transparent"></div>
               
-              <div className="relative w-16 h-16 lg:w-24 lg:h-24 shrink-0 rounded-full border-2 lg:border-4 border-white dark:border-zinc-900 shadow-md overflow-hidden bg-zinc-200 dark:bg-zinc-800 lg:mt-4 lg:mb-4 z-10">
-                {currentUser?.avatar ? (
-                  <Image 
-                    src={currentUser.avatar} 
-                    alt="Profile" 
-                    fill 
-                    className="object-cover"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center bg-zinc-800 text-white text-2xl lg:text-3xl font-bold uppercase">
-                    {currentUser?.username?.charAt(0) || currentUser?.email?.charAt(0) || 'U'}
+              {/* User Avatar + Details */}
+              <div className="flex items-center gap-3 sm:gap-4 lg:flex-col lg:gap-0 min-w-0 flex-1 lg:flex-initial">
+                <div className="relative w-16 h-16 lg:w-24 lg:h-24 shrink-0 rounded-full border-2 lg:border-4 border-white dark:border-zinc-900 shadow-md overflow-hidden bg-zinc-200 dark:bg-zinc-800 lg:mt-4 lg:mb-4 z-10">
+                  {currentUser?.avatar ? (
+                    <Image 
+                      src={currentUser.avatar} 
+                      alt="Profile" 
+                      fill 
+                      className="object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-zinc-800 text-white text-2xl lg:text-3xl font-bold uppercase">
+                      {currentUser?.username?.charAt(0) || currentUser?.email?.charAt(0) || 'U'}
+                    </div>
+                  )}
+                </div>
+                <div className="z-10 flex flex-col items-start lg:items-center min-w-0 flex-1">
+                  <h2 className="text-base sm:text-xl lg:text-2xl font-bold text-zinc-900 dark:text-white truncate max-w-full">
+                    {currentUser?.username || 'Utilisateur'}
+                  </h2>
+                  <p className="text-xs lg:text-sm font-medium text-zinc-500 dark:text-zinc-400 mt-0.5 lg:mt-1 truncate max-w-full">
+                    {currentUser?.phone || 'Aucun numéro renseigné'}
+                  </p>
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 mt-2 lg:mt-4 rounded-full bg-zinc-100 dark:bg-zinc-800 text-[10px] lg:text-xs font-bold text-zinc-700 dark:text-zinc-300 shrink-0">
+                    <span className="w-1.5 h-1.5 lg:w-2 lg:h-2 rounded-full bg-brand-green animate-pulse"></span>
+                    Compte actif
                   </div>
-                )}
-              </div>
-              <div className="z-10 flex flex-col items-start lg:items-center">
-                <h2 className="text-xl lg:text-2xl font-bold text-zinc-900 dark:text-white line-clamp-1">
-                  {currentUser?.username || 'Utilisateur'}
-                </h2>
-                <p className="text-xs lg:text-sm font-medium text-zinc-500 dark:text-zinc-400 mt-0.5 lg:mt-1">
-                  {currentUser?.phone || 'Aucun numéro renseigné'}
-                </p>
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 mt-2 lg:mt-4 rounded-full bg-zinc-100 dark:bg-zinc-800 text-[10px] lg:text-xs font-semibold text-zinc-600 dark:text-zinc-300">
-                  <span className="w-1.5 h-1.5 lg:w-2 lg:h-2 rounded-full bg-emerald-500"></span>
-                  Compte actif
                 </div>
               </div>
+
+              {/* Disconnect Pill Button for Mobile matching LandingNav */}
+              <button
+                type="button"
+                onClick={handleLogout}
+                aria-label="Se déconnecter"
+                className="lg:hidden h-11 px-2.5 pr-4 rounded-full flex items-center gap-2.5 flex-shrink-0 transition-all active:scale-95 cursor-pointer bg-zinc-50/90 dark:bg-zinc-800/80 backdrop-blur-xl border border-zinc-200/80 dark:border-white/15 text-zinc-800 dark:text-zinc-200 shadow-[0_2px_10px_rgba(0,0,0,0.06),0_1px_3px_rgba(0,0,0,0.04)] dark:shadow-[0_4px_16px_rgba(0,0,0,0.35)] hover:bg-white dark:hover:bg-zinc-800 hover:border-zinc-300 dark:hover:border-white/25 hover:text-brand-red dark:hover:text-red-400 group"
+              >
+                {/* Circular icon badge inside pill */}
+                <div className="h-7 w-7 rounded-full flex items-center justify-center flex-shrink-0 transition-colors bg-white dark:bg-zinc-700/80 border border-zinc-200/60 dark:border-white/10 text-zinc-700 dark:text-zinc-200 shadow-xs group-hover:bg-red-500/10 group-hover:text-red-500 group-hover:border-red-500/20 dark:group-hover:bg-red-500/20 dark:group-hover:text-red-400">
+                  <Power className="h-4 w-4" />
+                </div>
+
+                {/* Pill text */}
+                <span className="text-sm tracking-tight font-semibold">
+                  Déconnexion
+                </span>
+              </button>
             </div>
 
             {/* Actions (Desktop only - mobile puts this at the bottom) */}
             <div className="hidden lg:flex flex-col gap-3">
-              <button className="w-full flex items-center justify-center gap-2 py-3.5 bg-transparent border-2 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 font-semibold rounded-full hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-all active:scale-[0.98]">
-                <Trash2 className="w-5 h-5" strokeWidth={2} />
+              <button 
+                type="button"
+                className="w-full flex items-center justify-center gap-2 py-3.5 bg-transparent border-2 border-brand-red/35 text-brand-red font-bold text-xs sm:text-sm rounded-full hover:bg-red-50 dark:hover:bg-red-950/20 active:scale-95 transition-all cursor-pointer"
+              >
+                <Trash2 className="w-4.5 h-4.5" strokeWidth={2} />
                 Supprimer mon compte
               </button>
               <button 
+                type="button"
                 onClick={handleLogout}
-                className="w-full flex items-center justify-center gap-2 py-3.5 bg-[#D65B4A] text-white font-semibold rounded-full shadow-md hover:bg-[#C24D3D] transition-all active:scale-[0.98]"
+                className="w-full flex items-center justify-center gap-2 py-3.5 bg-zinc-950 hover:bg-zinc-900 text-white dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-100 font-bold text-xs sm:text-sm rounded-full shadow-md active:scale-95 transition-all cursor-pointer"
               >
-                <LogOut className="w-5 h-5" strokeWidth={2} />
+                <LogOut className="w-4.5 h-4.5" strokeWidth={2} />
                 Se déconnecter
               </button>
             </div>
@@ -200,16 +226,20 @@ export default function AccountPage() {
             </section>
 
             {/* Actions (Mobile only) */}
-            <section className="pt-6 space-y-4 lg:hidden">
-              <button className="w-full flex items-center justify-center gap-2 py-4 bg-transparent border-2 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 font-semibold rounded-full hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-all active:scale-[0.98]">
-                <Trash2 className="w-5 h-5" strokeWidth={2} />
+            <section className="pt-6 space-y-3.5 lg:hidden">
+              <button 
+                type="button"
+                className="w-full flex items-center justify-center gap-2 py-3.5 bg-transparent border-2 border-brand-red/35 text-brand-red font-bold text-xs sm:text-sm rounded-full hover:bg-red-50 dark:hover:bg-red-950/20 active:scale-95 transition-all cursor-pointer"
+              >
+                <Trash2 className="w-4.5 h-4.5" strokeWidth={2} />
                 Supprimer mon compte
               </button>
               <button 
+                type="button"
                 onClick={handleLogout}
-                className="w-full flex items-center justify-center gap-2 py-4 bg-[#D65B4A] text-white font-semibold rounded-full shadow-md hover:bg-[#C24D3D] transition-all active:scale-[0.98]"
+                className="w-full flex items-center justify-center gap-2 py-3.5 bg-zinc-950 hover:bg-zinc-900 text-white dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-100 font-bold text-xs sm:text-sm rounded-full shadow-md active:scale-95 transition-all cursor-pointer"
               >
-                <LogOut className="w-5 h-5" strokeWidth={2} />
+                <LogOut className="w-4.5 h-4.5" strokeWidth={2} />
                 Se déconnecter
               </button>
             </section>
