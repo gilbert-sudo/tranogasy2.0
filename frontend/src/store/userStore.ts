@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { useFavoriteStore } from './favoriteStore';
 
 interface UserStore {
   user: any | null;
@@ -12,6 +13,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
   setUser: (user) => set({ user }),
   logout: () => {
     set({ user: null });
+    useFavoriteStore.getState().clearFavorites();
     if (typeof window !== 'undefined') {
       localStorage.removeItem('user');
     }

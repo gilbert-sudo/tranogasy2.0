@@ -1,29 +1,56 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import dynamic from 'next/dynamic';
 import { ChevronUp, ChevronDown, Check, Sparkles } from 'lucide-react';
 
 import { FeedProperty } from './types';
 import TikTokCard from './TikTokCard';
-import TikTokDetailsDrawer, { TikTokDetailsSkeleton } from './TikTokDetailsDrawer';
-import TikTokContactModal from './TikTokContactModal';
-import TikTokMapModal from './TikTokMapModal';
-import TikTokCommentsDrawer from './TikTokCommentsDrawer';
+import { TikTokDetailsSkeleton } from './TikTokDetailsDrawer';
 import TikTokSkeleton from './TikTokSkeleton';
 import { usePropertyStore } from '@/store/propertyStore';
+
+// Code-split heavy modals and drawers so they load on demand
+const TikTokDetailsDrawer = dynamic(() => import('./TikTokDetailsDrawer'), {
+  ssr: false,
+  loading: () => <TikTokDetailsSkeleton onClose={() => {}} />,
+});
+
+const TikTokContactModal = dynamic(() => import('./TikTokContactModal'), {
+  ssr: false,
+});
+
+const TikTokMapModal = dynamic(() => import('./TikTokMapModal'), {
+  ssr: false,
+});
+
+const TikTokCommentsDrawer = dynamic(() => import('./TikTokCommentsDrawer'), {
+  ssr: false,
+});
 
 interface TranogasyFeedProps {
   initialProperties?: FeedProperty[];
 }
 
 export default function TranogasyFeed({ initialProperties = [] }: TranogasyFeedProps) {
-  const [properties, setProperties] = useState<FeedProperty[]>(initialProperties);
+  const storeExploreProps = usePropertyStore((state) => state.exploreProperties);
+  const storeExplorePage = usePropertyStore((state) => state.explorePage);
+  const storeExploreHasMore = usePropertyStore((state) => state.exploreHasMore);
+  const setExploreData = usePropertyStore((state) => state.setExploreData);
+  const appendExploreProperties = usePropertyStore((state) => state.appendExploreProperties);
+
+  // Fallback to Zustand cached explore data if initialProperties is empty
+  const effectiveInitial = initialProperties.length > 0 
+    ? initialProperties 
+    : storeExploreProps;
+
+  const [properties, setProperties] = useState<FeedProperty[]>(effectiveInitial);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [scrollDirection, setScrollDirection] = useState<'down' | 'up'>('down');
   const prevIndexRef = useRef(currentIndex);
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
-  const [isLoading, setIsLoading] = useState(initialProperties.length === 0);
+  const [page, setPage] = useState(storeExplorePage || 1);
+  const [hasMore, setHasMore] = useState(storeExploreHasMore !== undefined ? storeExploreHasMore : true);
+  const [isLoading, setIsLoading] = useState(effectiveInitial.length === 0);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
 
@@ -36,7 +63,6 @@ export default function TranogasyFeed({ initialProperties = [] }: TranogasyFeedP
 
   const containerRef = useRef<HTMLDivElement>(null);
   const isScrollingRef = useRef(false);
-  const addProperties = usePropertyStore((state) => state.addProperties);
 
   // Screen size detection for responsive desktop layout
   useEffect(() => {
@@ -48,13 +74,40 @@ export default function TranogasyFeed({ initialProperties = [] }: TranogasyFeedP
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Fetch initial properties with retry on cold start
+  // Sync initial properties to state and Zustand store
+  useEffect(() => {
+    if (initialProperties.length > 0) {
+      setProperties(initialProperties);
+      setExploreData(initialProperties, 1, true);
+      setIsLoading(false);
+    }
+  }, [initialProperties, setExploreData]);
+
+  // Fetch initial properties with retry on cold start only if nothing in store
   useEffect(() => {
     let retryTimer: NodeJS.Timeout | null = null;
     let attempts = 0;
 
+    const storeState = usePropertyStore.getState();
+    const CACHE_TTL = 3 * 60 * 1000;
+    const isCacheValid = 
+      storeState.exploreProperties.length > 0 &&
+      storeState.exploreLastFetched !== null &&
+      (Date.now() - storeState.exploreLastFetched < CACHE_TTL);
+
+    if (isCacheValid) {
+      setProperties(storeState.exploreProperties);
+      setPage(storeState.explorePage);
+      setHasMore(storeState.exploreHasMore);
+      setIsLoading(false);
+      return;
+    }
+
     const fetchInitial = async () => {
-      setIsLoading(true);
+      // If we don't have properties in store, display loading
+      if (usePropertyStore.getState().exploreProperties.length === 0) {
+        setIsLoading(true);
+      }
       try {
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
         const res = await fetch(`${apiUrl}/properties?page=1&limit=10`);
@@ -62,8 +115,10 @@ export default function TranogasyFeed({ initialProperties = [] }: TranogasyFeedP
           const data = await res.json();
           const fetched = data.properties || [];
           setProperties(fetched);
-          addProperties(fetched);
-          setHasMore(data.page < data.totalPages);
+          const hasMorePages = data.page < data.totalPages;
+          setHasMore(hasMorePages);
+          setPage(1);
+          setExploreData(fetched, 1, hasMorePages);
           setIsLoading(false);
           return;
         }
@@ -79,16 +134,14 @@ export default function TranogasyFeed({ initialProperties = [] }: TranogasyFeedP
       }
     };
 
-    if (initialProperties.length === 0) {
+    if (initialProperties.length === 0 && storeState.exploreProperties.length === 0) {
       fetchInitial();
-    } else {
-      addProperties(initialProperties);
     }
 
     return () => {
       if (retryTimer) clearTimeout(retryTimer);
     };
-  }, [initialProperties, addProperties]);
+  }, [initialProperties, setExploreData]);
 
   // Load more properties when approaching end of list
   const loadMoreProperties = useCallback(async () => {
@@ -102,10 +155,11 @@ export default function TranogasyFeed({ initialProperties = [] }: TranogasyFeedP
         const data = await res.json();
         const newProps = data.properties || [];
         if (newProps.length > 0) {
+          const hasMorePages = nextPage < data.totalPages;
           setProperties((prev) => [...prev, ...newProps]);
-          addProperties(newProps);
+          appendExploreProperties(newProps, nextPage, hasMorePages);
           setPage(nextPage);
-          setHasMore(nextPage < data.totalPages);
+          setHasMore(hasMorePages);
         } else {
           setHasMore(false);
         }
@@ -115,7 +169,7 @@ export default function TranogasyFeed({ initialProperties = [] }: TranogasyFeedP
     } finally {
       setIsLoadingMore(false);
     }
-  }, [page, hasMore, isLoadingMore, addProperties]);
+  }, [page, hasMore, isLoadingMore, appendExploreProperties]);
 
   // Track scroll direction whenever currentIndex changes
   useEffect(() => {

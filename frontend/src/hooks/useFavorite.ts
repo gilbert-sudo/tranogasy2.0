@@ -6,6 +6,7 @@ export function useFavorite() {
   const { 
     favorites, 
     favoritePropertiesData, 
+    lastFetched,
     setFavorite, 
     setFavorites, 
     setFavoritePropertiesData 
@@ -35,17 +36,32 @@ export function useFavorite() {
 
   const checkFavorite = useCallback(async (propertyId: string, userId: string) => {
     if (!userId || !propertyId) return;
-    if (favorites[propertyId] !== undefined) return;
+    // If favorite status is already cached in Zustand, skip backend request entirely!
+    if (useFavoriteStore.getState().favorites[propertyId] !== undefined) return;
     try {
       const data = await favoriteService.checkFavorite(userId, propertyId);
       setFavorite(propertyId, data.isFavorite);
     } catch (e) {
       // Quietly ignore network failures so cards render smoothly
     }
-  }, [favorites, setFavorite]);
+  }, [setFavorite]);
 
-  const fetchFavorites = useCallback(async (userId: string) => {
+  const fetchFavorites = useCallback(async (userId: string, force = false) => {
     if (!userId) return [];
+    
+    // Cache check: If we already have favorite data fetched in the last 2 minutes, return immediately from store
+    const storeState = useFavoriteStore.getState();
+    const CACHE_TTL = 2 * 60 * 1000; // 2 minutes
+    const isCacheValid = 
+      !force && 
+      storeState.favoritePropertiesData !== null && 
+      storeState.lastFetched !== null && 
+      (Date.now() - storeState.lastFetched < CACHE_TTL);
+
+    if (isCacheValid) {
+      return storeState.favoritePropertiesData || [];
+    }
+
     setIsLoading(true);
     setError(null);
     try {
@@ -62,7 +78,7 @@ export function useFavorite() {
     } catch (e: any) {
       console.error("Failed to fetch favorites:", e);
       setError(e.message || "Impossible de charger les favoris.");
-      return [];
+      return storeState.favoritePropertiesData || [];
     } finally {
       setIsLoading(false);
     }
@@ -71,6 +87,7 @@ export function useFavorite() {
   return {
     favorites,
     favoritePropertiesData,
+    lastFetched,
     isLoading,
     error,
     toggleFavorite,

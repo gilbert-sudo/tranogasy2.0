@@ -99,7 +99,7 @@ interface PropertyProps {
   };
 }
 
-export default function PropertyCard({ property }: PropertyProps) {
+export default function PropertyCard({ property, priority = false }: PropertyProps & { priority?: boolean }) {
   const addProperty = usePropertyStore(state => state.addProperty);
   const user = useUserStore(state => state.user);
   const { favorites, checkFavorite, toggleFavorite } = useFavorite();
@@ -193,11 +193,22 @@ export default function PropertyCard({ property }: PropertyProps) {
             className="flex h-full w-full transition-transform duration-300 ease-in-out"
             style={{ transform: `translateX(-${currentIndex * 100}%)` }}
           >
-            {images.map((img, idx) => (
-              <div key={idx} className="relative h-full w-full shrink-0">
-                <Image src={img} alt={`${property.title} - Image ${idx + 1}`} fill className="object-cover" />
-              </div>
-            ))}
+            {images.map((img, idx) => {
+              const isFirst = idx === 0;
+              return (
+                <div key={idx} className="relative h-full w-full shrink-0">
+                  <Image 
+                    src={img} 
+                    alt={`${property.title} - Image ${idx + 1}`} 
+                    fill 
+                    sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1536px) 33vw, 20vw"
+                    priority={priority && isFirst}
+                    loading={priority && isFirst ? 'eager' : 'lazy'}
+                    className="object-cover" 
+                  />
+                </div>
+              );
+            })}
           </div>
 
           {/* Carousel Controls */}

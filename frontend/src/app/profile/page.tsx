@@ -72,11 +72,13 @@ export default function ProfilePage() {
   const currentUser = userStore?.user || userStore;
   const logout = useUserStore(state => state.logout);
   const { favorites, favoritePropertiesData, fetchFavorites } = useFavorite();
-  const [loadingFavorites, setLoadingFavorites] = useState(!favoritePropertiesData);
+  const [loadingFavorites, setLoadingFavorites] = useState(favoritePropertiesData === null);
 
   useEffect(() => {
     if (activeTab === 'favoris' && currentUser) {
-      if (!favoritePropertiesData) setLoadingFavorites(true);
+      if (favoritePropertiesData === null) {
+        setLoadingFavorites(true);
+      }
       fetchFavorites(currentUser._id).then(() => {
         setLoadingFavorites(false);
       });

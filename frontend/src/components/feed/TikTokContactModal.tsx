@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Image from 'next/image';
 import { X, Phone, Copy, Check, MessageSquare, ShieldCheck, MapPin } from 'lucide-react';
 import { FeedProperty } from './types';
 
@@ -63,8 +64,8 @@ export default function TikTokContactModal({ property, onClose }: TikTokContactM
 
         {/* Property Brief Preview */}
         <div className="flex items-center gap-3 pr-8">
-          <div className="w-14 h-14 rounded-xl overflow-hidden bg-zinc-100 dark:bg-zinc-800 shrink-0 border border-zinc-200 dark:border-zinc-700">
-            <img src={firstImage} alt={property.title} className="w-full h-full object-cover" />
+          <div className="w-14 h-14 rounded-xl overflow-hidden bg-zinc-100 dark:bg-zinc-800 shrink-0 border border-zinc-200 dark:border-zinc-700 relative">
+            <Image src={firstImage} alt={property.title} fill sizes="56px" className="object-cover" />
           </div>
           <div className="min-w-0">
             <h4 className="text-sm font-bold text-zinc-900 dark:text-white truncate">
@@ -90,11 +91,15 @@ export default function TikTokContactModal({ property, onClose }: TikTokContactM
 
         {/* Advertiser info */}
         <div className="flex items-center gap-3 p-3 bg-zinc-50 dark:bg-zinc-800/60 rounded-2xl border border-zinc-100 dark:border-zinc-700/60">
-          <img
-            src={avatar}
-            alt={property.owner?.username || 'Annonceur'}
-            className="w-11 h-11 rounded-full object-cover border border-zinc-200 dark:border-zinc-600 shrink-0"
-          />
+          <div className="w-11 h-11 rounded-full overflow-hidden border border-zinc-200 dark:border-zinc-600 shrink-0 relative">
+            <Image
+              src={avatar}
+              alt={property.owner?.username || 'Annonceur'}
+              fill
+              sizes="44px"
+              className="object-cover"
+            />
+          </div>
           <div className="min-w-0 flex-1">
             <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
               Annonceur vérifié

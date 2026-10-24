@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { 
   ChevronLeft, 
@@ -30,7 +31,8 @@ export default function FavoritesPage() {
   const { favorites, favoritePropertiesData, fetchFavorites } = useFavorite();
   const openModal = useModalStore((state) => state.openModal);
 
-  const [loading, setLoading] = useState(!favoritePropertiesData);
+  // If favorites already cached in Zustand store, no need to show loading spinner!
+  const [loading, setLoading] = useState(favoritePropertiesData === null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<FilterCategory>('all');
   const [sortBy, setSortBy] = useState<SortOption>('newest');
@@ -450,12 +452,16 @@ export default function FavoritesPage() {
                 </div>
               </div>
 
-              <img 
-                src={NO_FAVORITE_IMG} 
-                alt="Vos favoris TranoGasy" 
-                decoding="async"
-                className="w-full h-full object-contain select-none pointer-events-none"
-              />
+              <div className="relative w-full h-full">
+                <Image 
+                  src={NO_FAVORITE_IMG} 
+                  alt="Vos favoris TranoGasy" 
+                  fill
+                  sizes="(max-width: 768px) 100vw, 500px"
+                  priority
+                  className="object-contain select-none pointer-events-none"
+                />
+              </div>
             </div>
 
             {/* MINIMAL CONCISE TEXT & PRIMARY CTA */}
@@ -510,8 +516,8 @@ export default function FavoritesPage() {
             {/* PROPERTY CARDS GRID */}
             {filteredProperties.length > 0 ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 min-[2100px]:grid-cols-6 gap-6 pt-2">
-                {filteredProperties.map((prop) => (
-                  <PropertyCard key={prop._id} property={prop} />
+                {filteredProperties.map((prop, idx) => (
+                  <PropertyCard key={prop._id} property={prop} priority={idx < 4} />
                 ))}
               </div>
             ) : (
@@ -556,12 +562,16 @@ export default function FavoritesPage() {
                 </div>
               </div>
 
-              <img 
-                src={NO_FAVORITE_IMG} 
-                alt="Aucun coup de cœur" 
-                decoding="async"
-                className="w-full h-full object-contain select-none pointer-events-none"
-              />
+              <div className="relative w-full h-full">
+                <Image 
+                  src={NO_FAVORITE_IMG} 
+                  alt="Aucun coup de cœur" 
+                  fill
+                  sizes="(max-width: 768px) 100vw, 500px"
+                  priority
+                  className="object-contain select-none pointer-events-none"
+                />
+              </div>
             </div>
 
             <div className="w-full max-w-md mx-auto px-6 py-2 sm:py-6 flex-1 min-h-0 flex flex-col items-center justify-center text-center">

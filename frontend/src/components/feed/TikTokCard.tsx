@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import Image from 'next/image';
 import {
   Heart,
   MapPin,
@@ -236,13 +237,17 @@ export default function TikTokCard({
               className="absolute inset-0 bg-cover bg-center filter blur-3xl scale-110 opacity-35 pointer-events-none transition-all duration-500"
               style={{ backgroundImage: `url(${images[imageIndex]})` }}
             />
-            <img
-              src={images[imageIndex]}
-              alt={property.title}
-              className="relative z-[1] w-full h-full object-contain drop-shadow-md transition-opacity duration-300"
-              loading={isActive ? "eager" : "lazy"}
-              decoding="async"
-            />
+            <div className="relative z-[1] w-full h-full">
+              <Image
+                src={images[imageIndex]}
+                alt={property.title}
+                fill
+                sizes="(max-width: 1024px) 100vw, 550px"
+                className="object-contain drop-shadow-md transition-opacity duration-300"
+                priority={isActive}
+                loading={isActive ? "eager" : "lazy"}
+              />
+            </div>
           </>
         ) : (
           <div className="flex flex-col items-center justify-center text-zinc-500 gap-2">
@@ -321,8 +326,8 @@ export default function TikTokCard({
       <div className="absolute bottom-20 md:bottom-24 right-2.5 md:right-3.5 z-20 flex flex-col items-center gap-4.5">
         {/* Advertiser Avatar with Plus Badge */}
         <div className="relative group cursor-pointer mb-1" onClick={onOpenContact}>
-          <div className="w-11 h-11 md:w-12 md:h-12 rounded-full overflow-hidden border-2 border-white drop-shadow-[0_2px_6px_rgba(0,0,0,0.85)] bg-zinc-900 transition-transform group-hover:scale-105">
-            <img src={avatar} alt={ownerName} className="w-full h-full object-cover" />
+          <div className="w-11 h-11 md:w-12 md:h-12 rounded-full overflow-hidden border-2 border-white drop-shadow-[0_2px_6px_rgba(0,0,0,0.85)] bg-zinc-900 transition-transform group-hover:scale-105 relative">
+            <Image src={avatar} alt={ownerName} fill sizes="48px" className="object-cover" />
           </div>
           <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-4.5 h-4.5 rounded-full bg-brand-green text-white flex items-center justify-center shadow-md border border-white">
             <Plus className="w-3 h-3 stroke-[3]" />

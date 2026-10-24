@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import Image from 'next/image';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { X, Share2, Phone, MapPin, Heart, ChevronLeft, BedDouble, Expand, Home, Utensils, Droplets, Grid2X2, ChevronRight, MessageCircle, Send } from 'lucide-react';
 import {
@@ -16,12 +17,32 @@ import {
 import { MdOutlineLiving, MdBalcony, MdLandscape, MdOutlineFiberSmartRecord } from "react-icons/md";
 import { TbAirConditioning, TbBuildingCastle, TbWash } from "react-icons/tb";
 import { TfiLayoutSidebarLeft } from "react-icons/tfi";
-import PropertyLocationDisplayer from '@/components/map/PropertyLocationDisplayer';
-import TikTokCommentsDrawer from '@/components/feed/TikTokCommentsDrawer';
-import TikTokContactModal from '@/components/feed/TikTokContactModal';
 import { useUserStore } from '@/store/userStore';
 import { useProperty } from '@/hooks/useProperty';
 import { useFavorite } from '@/hooks/useFavorite';
+
+// Dynamically code-split Google Maps and interactive drawers
+const PropertyLocationDisplayer = dynamic(
+  () => import('@/components/map/PropertyLocationDisplayer'),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="w-full h-full min-h-[300px] bg-zinc-100 dark:bg-zinc-800 animate-pulse rounded-2xl flex items-center justify-center text-zinc-400 text-xs font-semibold">
+        Chargement de la carte...
+      </div>
+    ),
+  }
+);
+
+const TikTokCommentsDrawer = dynamic(
+  () => import('@/components/feed/TikTokCommentsDrawer'),
+  { ssr: false }
+);
+
+const TikTokContactModal = dynamic(
+  () => import('@/components/feed/TikTokContactModal'),
+  { ssr: false }
+);
 
 const FEATURE_ICONS: Record<string, { icon: React.ElementType, label: string }> = {
   electricityJirama: { icon: FaPlugCircleBolt, label: "Électricité JIRAMA" },
@@ -212,7 +233,15 @@ function PropertyDetailsContent({ property }: { property: any }) {
       >
         {images.map((img: string, idx: number) => (
           <div key={idx} className="w-full flex-shrink-0 h-full relative snap-center" onClick={() => setLightboxIndex(idx)}>
-            <Image src={img} fill className="object-cover" alt={`Photo ${idx+1}`} priority={idx === 0} />
+            <Image 
+              src={img} 
+              fill 
+              sizes="100vw"
+              className="object-cover" 
+              alt={`Photo ${idx+1}`} 
+              priority={idx === 0} 
+              loading={idx === 0 ? 'eager' : 'lazy'}
+            />
           </div>
         ))}
       </div>
@@ -269,7 +298,14 @@ function PropertyDetailsContent({ property }: { property: any }) {
           className="hidden lg:block w-full min-w-[340px] xl:min-w-[420px] min-h-[360px] xl:min-h-[420px] max-h-[80vh] aspect-[16/10] relative rounded-2xl lg:rounded-3xl overflow-hidden cursor-pointer group shadow-xs mb-6" 
           onClick={() => setLightboxIndex(0)}
         >
-          <Image src={images[0]} fill className="object-cover group-hover:scale-105 transition-transform duration-700" alt="Principale" priority />
+          <Image 
+            src={images[0]} 
+            fill 
+            sizes="(max-width: 1280px) 50vw, 600px"
+            className="object-cover group-hover:scale-105 transition-transform duration-700" 
+            alt="Principale" 
+            priority 
+          />
           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-500" />
         </div>
       );
@@ -289,7 +325,14 @@ function PropertyDetailsContent({ property }: { property: any }) {
         rows.push(
           <div key={`row-${rowIndex}`} className="flex gap-[3px] w-full flex-1 min-h-[160px] max-h-[38vh]">
             <div className="flex-1 relative cursor-pointer group overflow-hidden" onClick={() => setLightboxIndex(i)}>
-              <Image src={rowImages[0]} fill className="object-cover group-hover:scale-105 transition-transform duration-700" alt={`Photo ${i + 1}`} />
+              <Image 
+                src={rowImages[0]} 
+                fill 
+                sizes="(max-width: 1280px) 50vw, 600px"
+                className="object-cover group-hover:scale-105 transition-transform duration-700" 
+                alt={`Photo ${i + 1}`} 
+                priority={i === 0}
+              />
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-500" />
             </div>
           </div>
@@ -299,11 +342,25 @@ function PropertyDetailsContent({ property }: { property: any }) {
         rows.push(
           <div key={`row-${rowIndex}`} className="flex gap-[3px] w-full flex-[1.2] min-h-[170px] max-h-[40vh]">
             <div className="flex-[4] relative cursor-pointer group overflow-hidden" onClick={() => setLightboxIndex(i)}>
-              <Image src={rowImages[0]} fill className="object-cover group-hover:scale-105 transition-transform duration-700" alt={`Photo ${i + 1}`} />
+              <Image 
+                src={rowImages[0]} 
+                fill 
+                sizes="(max-width: 1280px) 25vw, 300px"
+                className="object-cover group-hover:scale-105 transition-transform duration-700" 
+                alt={`Photo ${i + 1}`} 
+                priority={i === 0}
+              />
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-500" />
             </div>
             <div className="flex-[6] relative cursor-pointer group overflow-hidden" onClick={() => setLightboxIndex(i + 1)}>
-              <Image src={rowImages[1]} fill className="object-cover group-hover:scale-105 transition-transform duration-700" alt={`Photo ${i + 2}`} />
+              <Image 
+                src={rowImages[1]} 
+                fill 
+                sizes="(max-width: 1280px) 30vw, 360px"
+                className="object-cover group-hover:scale-105 transition-transform duration-700" 
+                alt={`Photo ${i + 2}`} 
+                priority={i === 0}
+              />
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-500" />
               {i + 1 === 6 && images.length > 7 && (
                 <div className="absolute inset-0 bg-black/50 hover:bg-black/60 transition-colors flex flex-col items-center justify-center text-white text-center backdrop-blur-[2px]">
@@ -323,7 +380,14 @@ function PropertyDetailsContent({ property }: { property: any }) {
               const isLast = globalIdx === 6 && images.length > 7;
               return (
                 <div key={globalIdx} className="flex-1 relative cursor-pointer group overflow-hidden" onClick={() => setLightboxIndex(globalIdx)}>
-                  <Image src={img} fill className="object-cover group-hover:scale-105 transition-transform duration-700" alt={`Photo ${globalIdx + 1}`} />
+                  <Image 
+                    src={img} 
+                    fill 
+                    sizes="(max-width: 1280px) 18vw, 220px"
+                    className="object-cover group-hover:scale-105 transition-transform duration-700" 
+                    alt={`Photo ${globalIdx + 1}`} 
+                    loading="lazy"
+                  />
                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-500" />
                   {isLast && (
                     <div className="absolute inset-0 bg-black/50 hover:bg-black/60 transition-colors flex flex-col items-center justify-center text-white text-center backdrop-blur-[2px]">
@@ -537,18 +601,17 @@ function PropertyDetailsContent({ property }: { property: any }) {
                  <div className="absolute top-0 right-0 w-28 h-28 bg-brand-green/5 rounded-bl-full pointer-events-none"></div>
                  
                  <div className="flex items-center gap-3.5 mb-5 relative z-10 bg-zinc-50/70 dark:bg-zinc-700/50 p-3 sm:p-3.5 rounded-xl border border-zinc-100/60 dark:border-zinc-600/50">
-                   <div className="h-11 w-11 rounded-full overflow-hidden bg-white dark:bg-zinc-700 border border-zinc-200 dark:border-zinc-600 shrink-0 shadow-2xs">
-                      <img 
+                   <div className="h-11 w-11 rounded-full overflow-hidden bg-white dark:bg-zinc-700 border border-zinc-200 dark:border-zinc-600 shrink-0 shadow-2xs relative">
+                      <Image 
                         src={
                           property.owner?.role === "admin"
                             ? (property.sources?.avatar || "/icon-logo.png")
                             : (property.owner?.avatar || "https://ui-avatars.com/api/?name=User&background=random")
                         }
                         alt="Avatar" 
-                        className="w-full h-full object-cover" 
-                        onError={(e) => {
-                          e.currentTarget.src = "https://ui-avatars.com/api/?name=User&background=random";
-                        }}
+                        fill
+                        sizes="44px"
+                        className="object-cover" 
                       />
                    </div>
                    <div className="flex flex-col min-w-0">
@@ -739,19 +802,24 @@ function PropertyDetailsContent({ property }: { property: any }) {
                }
             }}
           >
-            {images.map((src: string, idx: number) => (
-              <div key={idx} className="min-w-full h-full flex items-center justify-center snap-center snap-always relative px-4 md:px-24">
-                <div className="relative w-full max-w-6xl h-[85vh]">
-                  <Image
-                    src={src}
-                    alt={`Photo ${idx + 1}`}
-                    fill
-                    className={`object-contain transition-transform duration-700 ${idx === lightboxIndex ? 'scale-100 opacity-100' : 'scale-95 opacity-50'}`}
-                    priority={idx === lightboxIndex || idx === lightboxIndex + 1 || idx === lightboxIndex - 1}
-                  />
+            {images.map((src: string, idx: number) => {
+              const isNearby = Math.abs(idx - (lightboxIndex || 0)) <= 1;
+              return (
+                <div key={idx} className="min-w-full h-full flex items-center justify-center snap-center snap-always relative px-4 md:px-24">
+                  <div className="relative w-full max-w-6xl h-[85vh]">
+                    <Image
+                      src={src}
+                      alt={`Photo ${idx + 1}`}
+                      fill
+                      sizes="(max-width: 1280px) 90vw, 1152px"
+                      className={`object-contain transition-transform duration-700 ${idx === lightboxIndex ? 'scale-100 opacity-100' : 'scale-95 opacity-50'}`}
+                      priority={isNearby}
+                      loading={isNearby ? 'eager' : 'lazy'}
+                    />
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Counter */}

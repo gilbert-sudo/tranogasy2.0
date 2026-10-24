@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useRef, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import { X, MapPin, Phone, Share2, BedDouble, Home, Utensils, Droplets, Grid2X2, Expand, MessageCircle } from 'lucide-react';
 import {
   FaCar, FaMotorcycle, FaWifi, FaParking, FaShieldAlt, FaSwimmingPool, FaHotTub, FaBed
@@ -15,7 +16,17 @@ import { MdOutlineLiving, MdBalcony, MdLandscape, MdOutlineFiberSmartRecord } fr
 import { TbAirConditioning, TbBuildingCastle, TbWash } from "react-icons/tb";
 import { TfiLayoutSidebarLeft } from "react-icons/tfi";
 
-import PropertyLocationDisplayer from '@/components/map/PropertyLocationDisplayer';
+const PropertyLocationDisplayer = dynamic(
+  () => import('@/components/map/PropertyLocationDisplayer'),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="w-full h-full min-h-[220px] bg-zinc-100 dark:bg-zinc-800 animate-pulse rounded-2xl flex items-center justify-center text-zinc-400 text-xs font-semibold">
+        Chargement de la carte...
+      </div>
+    ),
+  }
+);
 import { FeedProperty } from './types';
 
 const FEATURE_DEFINITIONS: Record<string, { icon: React.ElementType; label: string }> = {

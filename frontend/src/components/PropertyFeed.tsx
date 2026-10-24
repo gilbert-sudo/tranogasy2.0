@@ -4,24 +4,64 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import PropertyCard from '@/components/PropertyCard';
 import PropertyCardSkeleton from '@/components/PropertyCardSkeleton';
 import { Loader2, RefreshCw, ServerCrash, Sparkles } from 'lucide-react';
+import { usePropertyStore } from '@/store/propertyStore';
 
 interface PropertyFeedProps {
   initialProperties?: any[];
 }
 
 export default function PropertyFeed({ initialProperties = [] }: PropertyFeedProps) {
-  const [properties, setProperties] = useState<any[]>(initialProperties);
-  const [isLoading, setIsLoading] = useState<boolean>(initialProperties.length === 0);
+  const storeFeed = usePropertyStore((state) => state.feedProperties);
+  const feedLastFetched = usePropertyStore((state) => state.feedLastFetched);
+  const setFeedProperties = usePropertyStore((state) => state.setFeedProperties);
+
+  // Initialize with initialProperties if provided, or fallback to Zustand store cache
+  const effectiveInitial = initialProperties.length > 0 
+    ? initialProperties 
+    : storeFeed;
+
+  const [properties, setProperties] = useState<any[]>(effectiveInitial);
+  // Only loading if neither initialProperties nor store cache has data
+  const [isLoading, setIsLoading] = useState<boolean>(effectiveInitial.length === 0);
   const [isWakingUp, setIsWakingUp] = useState<boolean>(false);
   const [retryCount, setRetryCount] = useState<number>(0);
   const [hasFailed, setHasFailed] = useState<boolean>(false);
 
   const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const fetchProperties = useCallback(async (isAutoRetry = false) => {
+  // Synchronize incoming SSR initialProperties to Zustand store
+  useEffect(() => {
+    if (initialProperties.length > 0) {
+      setFeedProperties(initialProperties);
+      setProperties(initialProperties);
+      setIsLoading(false);
+    }
+  }, [initialProperties, setFeedProperties]);
+
+  // Synchronize store feed changes to local component state
+  useEffect(() => {
+    if (storeFeed.length > 0 && properties.length === 0) {
+      setProperties(storeFeed);
+      setIsLoading(false);
+    }
+  }, [storeFeed, properties.length]);
+
+  const fetchProperties = useCallback(async (isAutoRetry = false, force = false) => {
+    // If not forcing and store has fresh data (under 3 minutes), use store
+    const storeState = usePropertyStore.getState();
+    const CACHE_TTL = 3 * 60 * 1000;
+    if (!force && storeState.feedProperties.length > 0 && storeState.feedLastFetched && (Date.now() - storeState.feedLastFetched < CACHE_TTL)) {
+      setProperties(storeState.feedProperties);
+      setIsLoading(false);
+      return;
+    }
+
     try {
       if (!isAutoRetry) {
-        setIsLoading(true);
+        // If we already have items shown, keep them visible while background fetching
+        if (properties.length === 0) {
+          setIsLoading(true);
+        }
         setHasFailed(false);
       }
 
@@ -45,6 +85,7 @@ export default function PropertyFeed({ initialProperties = [] }: PropertyFeedPro
       const fetched = data.properties || [];
 
       setProperties(fetched);
+      setFeedProperties(fetched);
       setIsLoading(false);
       setIsWakingUp(false);
       setRetryCount(0);
@@ -53,17 +94,18 @@ export default function PropertyFeed({ initialProperties = [] }: PropertyFeedPro
       console.warn('Backend wake-up / request error:', error);
 
       // If we don't have properties loaded yet, consider the server sleeping
-      setIsWakingUp(true);
+      if (properties.length === 0 && storeFeed.length === 0) {
+        setIsWakingUp(true);
+      }
 
       setRetryCount((prev) => {
         const next = prev + 1;
-        // Keep retrying automatically up to 10 attempts (about 40-50s for Render cold start)
+        // Keep retrying automatically up to 12 attempts
         if (next < 12) {
           retryTimeoutRef.current = setTimeout(() => {
             fetchProperties(true);
           }, 3500);
         } else {
-          // Exceeded retry count, show friendly manual retry button
           setIsLoading(false);
           setIsWakingUp(false);
           setHasFailed(true);
@@ -71,11 +113,12 @@ export default function PropertyFeed({ initialProperties = [] }: PropertyFeedPro
         return next;
       });
     }
-  }, []);
+  }, [properties.length, storeFeed.length, setFeedProperties]);
 
-  // When initialProperties is empty (e.g. Next.js SSR couldn't connect or cold started), start client polling immediately
+  // When both initialProperties and store are empty, initiate fetch
   useEffect(() => {
-    if (initialProperties.length === 0) {
+    const storeState = usePropertyStore.getState();
+    if (initialProperties.length === 0 && storeState.feedProperties.length === 0) {
       fetchProperties();
     }
     return () => {
@@ -84,6 +127,7 @@ export default function PropertyFeed({ initialProperties = [] }: PropertyFeedPro
       }
     };
   }, [initialProperties, fetchProperties]);
+
 
   // Loading state (showing skeletons + cold start alert banner)
   if (isLoading || isWakingUp) {
@@ -167,8 +211,8 @@ export default function PropertyFeed({ initialProperties = [] }: PropertyFeedPro
 
   return (
     <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 min-[2100px]:grid-cols-6">
-      {properties.map((property: any) => (
-        <PropertyCard key={property._id} property={property} />
+      {properties.map((property: any, index: number) => (
+        <PropertyCard key={property._id} property={property} priority={index < 4} />
       ))}
     </div>
   );
