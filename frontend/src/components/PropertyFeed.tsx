@@ -46,6 +46,37 @@ export default function PropertyFeed({ initialProperties = [] }: PropertyFeedPro
     }
   }, [storeFeed, properties.length]);
 
+  // Progressive rendering for mobile performance: render initial batch, then reveal more on scroll
+  const INITIAL_BATCH = 6;
+  const BATCH_STEP = 6;
+  const [visibleCount, setVisibleCount] = useState<number>(INITIAL_BATCH);
+  const observerRef = useRef<HTMLDivElement | null>(null);
+
+  // Reset or adjust visible count when dataset changes
+  useEffect(() => {
+    setVisibleCount(INITIAL_BATCH);
+  }, [properties.length]);
+
+  // IntersectionObserver to progressively mount cards as user scrolls
+  useEffect(() => {
+    if (visibleCount >= properties.length) return;
+
+    const target = observerRef.current;
+    if (!target) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setVisibleCount((prev) => Math.min(prev + BATCH_STEP, properties.length));
+        }
+      },
+      { rootMargin: '300px 0px' }
+    );
+
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [visibleCount, properties.length]);
+
   const fetchProperties = useCallback(async (isAutoRetry = false, force = false) => {
     // If not forcing and store has fresh data (under 3 minutes), use store
     const storeState = usePropertyStore.getState();
@@ -209,11 +240,27 @@ export default function PropertyFeed({ initialProperties = [] }: PropertyFeedPro
     );
   }
 
+  const visibleProperties = properties.slice(0, visibleCount);
+
   return (
-    <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 min-[2100px]:grid-cols-6">
-      {properties.map((property: any, index: number) => (
-        <PropertyCard key={property._id} property={property} priority={index < 4} />
-      ))}
+    <div className="flex flex-col gap-8">
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 min-[2100px]:grid-cols-6">
+        {visibleProperties.map((property: any, index: number) => (
+          <div
+            key={property._id}
+            className="[content-visibility:auto] [contain-intrinsic-size:1px_430px]"
+          >
+            <PropertyCard property={property} priority={index < 2} />
+          </div>
+        ))}
+      </div>
+
+      {/* Progressive loading sentinel */}
+      {visibleCount < properties.length && (
+        <div ref={observerRef} className="py-6 flex justify-center items-center">
+          <Loader2 className="w-6 h-6 animate-spin text-zinc-400 dark:text-zinc-500" />
+        </div>
+      )}
     </div>
   );
 }

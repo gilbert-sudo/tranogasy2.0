@@ -195,17 +195,24 @@ export default function PropertyCard({ property, priority = false }: PropertyPro
           >
             {images.map((img, idx) => {
               const isFirst = idx === 0;
+              // Only load the current image or adjacent slides when interacting to avoid downloading 3x images per card upfront
+              const shouldRenderImage = isFirst || Math.abs(idx - currentIndex) <= 1;
+
               return (
                 <div key={idx} className="relative h-full w-full shrink-0">
-                  <Image 
-                    src={img} 
-                    alt={`${property.title} - Image ${idx + 1}`} 
-                    fill 
-                    sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1536px) 33vw, 20vw"
-                    priority={priority && isFirst}
-                    loading={priority && isFirst ? 'eager' : 'lazy'}
-                    className="object-cover" 
-                  />
+                  {shouldRenderImage ? (
+                    <Image 
+                      src={img} 
+                      alt={`${property.title} - Image ${idx + 1}`} 
+                      fill 
+                      sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1536px) 33vw, 20vw"
+                      priority={priority && isFirst}
+                      loading={priority && isFirst ? 'eager' : 'lazy'}
+                      className="object-cover" 
+                    />
+                  ) : (
+                    <div className="w-full h-full bg-zinc-200 dark:bg-zinc-700" />
+                  )}
                 </div>
               );
             })}
