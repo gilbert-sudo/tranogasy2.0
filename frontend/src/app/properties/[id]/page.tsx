@@ -5,7 +5,7 @@ export default async function PropertyPage({ params }: { params: Promise<{ id: s
   const resolvedParams = await params;
 
   return (
-    <div className="min-h-screen bg-white dark:bg-zinc-900 pb-20">
+    <div className="min-h-screen bg-white dark:bg-zinc-900">
       <PropertyDetailsClient propertyId={resolvedParams.id} />
     </div>
   );

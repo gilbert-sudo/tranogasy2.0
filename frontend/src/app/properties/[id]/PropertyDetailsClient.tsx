@@ -17,6 +17,8 @@ import { MdOutlineLiving, MdBalcony, MdLandscape, MdOutlineFiberSmartRecord } fr
 import { TbAirConditioning, TbBuildingCastle, TbWash } from "react-icons/tb";
 import { TfiLayoutSidebarLeft } from "react-icons/tfi";
 import PropertyLocationDisplayer from '@/components/map/PropertyLocationDisplayer';
+import TikTokCommentsDrawer from '@/components/feed/TikTokCommentsDrawer';
+import TikTokContactModal from '@/components/feed/TikTokContactModal';
 import { useUserStore } from '@/store/userStore';
 import { useProperty } from '@/hooks/useProperty';
 import { useFavorite } from '@/hooks/useFavorite';
@@ -74,6 +76,7 @@ function formatDateAgo(dateString?: string) {
 function PropertyDetailsContent({ property }: { property: any }) {
   const router = useRouter();
   const [showContact, setShowContact] = useState(false);
+  const [showComments, setShowComments] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [currentMobileImageIndex, setCurrentMobileImageIndex] = useState(0);
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
@@ -127,6 +130,21 @@ function PropertyDetailsContent({ property }: { property: any }) {
 
   const displayPrice = property?.type === 'rent' ? property?.rent : property?.price;
 
+  const formatCompactPrice = (val: number | string | undefined | null) => {
+    if (!val) return 'Sur demande';
+    const num = Number(val);
+    if (isNaN(num)) return val;
+    if (num >= 1_000_000) {
+      const millions = num / 1_000_000;
+      return `${millions % 1 === 0 ? millions : Number(millions.toFixed(1))}M`;
+    }
+    if (num >= 1_000) {
+      const thousands = num / 1_000;
+      return `${thousands % 1 === 0 ? thousands : Number(thousands.toFixed(1))}k`;
+    }
+    return num.toLocaleString('en-US');
+  };
+
   const activeFeatures = property?.features 
     ? Object.entries(property.features).filter(([_, value]) => value).map(([key]) => key)
     : [];
@@ -140,6 +158,17 @@ function PropertyDetailsContent({ property }: { property: any }) {
           lng: 47.52370521426201,
         };
   const useCircle = property?.coords ? false : true;
+
+  const handleDirectMessage = () => {
+    const phone = property?.phone1 || property?.phone2 || property?.phone3 || property?.owner?.phone;
+    if (phone) {
+      const cleanPhone = String(phone).replace(/\s+/g, '');
+      const defaultText = encodeURIComponent(`Bonjour, je suis intéressé(e) par votre bien "${property?.title || 'TranoGasy'}" vu sur TranoGasy.`);
+      window.location.href = `sms:${cleanPhone}?body=${defaultText}`;
+    } else {
+      setShowContact(true);
+    }
+  };
 
   const handleShare = async () => {
     try {
@@ -236,7 +265,10 @@ function PropertyDetailsContent({ property }: { property: any }) {
 
     if (images.length === 1) {
       return (
-        <div className="hidden lg:block w-full h-[400px] xl:h-[500px] relative rounded-[2rem] overflow-hidden cursor-pointer group shadow-sm mb-6" onClick={() => setLightboxIndex(0)}>
+        <div 
+          className="hidden lg:block w-full min-w-[340px] xl:min-w-[420px] min-h-[360px] xl:min-h-[420px] max-h-[80vh] aspect-[16/10] relative rounded-2xl lg:rounded-3xl overflow-hidden cursor-pointer group shadow-xs mb-6" 
+          onClick={() => setLightboxIndex(0)}
+        >
           <Image src={images[0]} fill className="object-cover group-hover:scale-105 transition-transform duration-700" alt="Principale" priority />
           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-500" />
         </div>
@@ -255,7 +287,7 @@ function PropertyDetailsContent({ property }: { property: any }) {
       
       if (rowImages.length === 1) {
         rows.push(
-          <div key={`row-${rowIndex}`} className="flex gap-[2px] h-[220px] xl:h-[260px] w-full">
+          <div key={`row-${rowIndex}`} className="flex gap-[3px] w-full flex-1 min-h-[160px] max-h-[38vh]">
             <div className="flex-1 relative cursor-pointer group overflow-hidden" onClick={() => setLightboxIndex(i)}>
               <Image src={rowImages[0]} fill className="object-cover group-hover:scale-105 transition-transform duration-700" alt={`Photo ${i + 1}`} />
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-500" />
@@ -263,9 +295,9 @@ function PropertyDetailsContent({ property }: { property: any }) {
           </div>
         );
       } else if (rowImages.length === 2) {
-        // Recreate the 40% / 60% split seen in the old app for 2-item rows
+        // Dynamic proportion: 40% / 60% split
         rows.push(
-          <div key={`row-${rowIndex}`} className="flex gap-[2px] h-[220px] xl:h-[260px] w-full">
+          <div key={`row-${rowIndex}`} className="flex gap-[3px] w-full flex-[1.2] min-h-[170px] max-h-[40vh]">
             <div className="flex-[4] relative cursor-pointer group overflow-hidden" onClick={() => setLightboxIndex(i)}>
               <Image src={rowImages[0]} fill className="object-cover group-hover:scale-105 transition-transform duration-700" alt={`Photo ${i + 1}`} />
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-500" />
@@ -275,17 +307,17 @@ function PropertyDetailsContent({ property }: { property: any }) {
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-500" />
               {i + 1 === 6 && images.length > 7 && (
                 <div className="absolute inset-0 bg-black/50 hover:bg-black/60 transition-colors flex flex-col items-center justify-center text-white text-center backdrop-blur-[2px]">
-                  <Grid2X2 className="h-7 w-7 mb-2" />
-                  <span className="font-bold text-sm tracking-wide">+{images.length - 7} photos</span>
+                  <Grid2X2 className="h-6 w-6 mb-1.5" />
+                  <span className="font-bold text-xs sm:text-sm tracking-wide">+{images.length - 7} photos</span>
                 </div>
               )}
             </div>
           </div>
         );
       } else if (rowImages.length === 3) {
-        // Recreate the 33% / 33% / 33% split for 3-item rows
+        // Dynamic 3-item row: equal 1/3 split
         rows.push(
-          <div key={`row-${rowIndex}`} className="flex gap-[2px] h-[150px] xl:h-[180px] w-full">
+          <div key={`row-${rowIndex}`} className="flex gap-[3px] w-full flex-1 min-h-[130px] max-h-[32vh]">
             {rowImages.map((img: string, idx: number) => {
               const globalIdx = i + idx;
               const isLast = globalIdx === 6 && images.length > 7;
@@ -295,8 +327,8 @@ function PropertyDetailsContent({ property }: { property: any }) {
                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-500" />
                   {isLast && (
                     <div className="absolute inset-0 bg-black/50 hover:bg-black/60 transition-colors flex flex-col items-center justify-center text-white text-center backdrop-blur-[2px]">
-                      <Grid2X2 className="h-7 w-7 mb-2" />
-                      <span className="font-bold text-sm tracking-wide">+{images.length - 7} photos</span>
+                      <Grid2X2 className="h-6 w-6 mb-1.5" />
+                      <span className="font-bold text-xs sm:text-sm tracking-wide">+{images.length - 7} photos</span>
                     </div>
                   )}
                 </div>
@@ -311,7 +343,7 @@ function PropertyDetailsContent({ property }: { property: any }) {
     }
 
     return (
-      <div className="hidden lg:flex flex-col gap-[2px] w-full rounded-[2rem] overflow-hidden shadow-sm">
+      <div className="hidden lg:flex flex-col gap-[3px] w-full min-w-[340px] xl:min-w-[420px] min-h-[360px] xl:min-h-[420px] max-h-[80vh] rounded-2xl lg:rounded-3xl overflow-hidden shadow-xs border border-zinc-200/60 dark:border-white/10">
         {rows}
       </div>
     );
@@ -332,42 +364,43 @@ function PropertyDetailsContent({ property }: { property: any }) {
         </span>
       </div>
       
-      <h1 className="text-2xl lg:text-3xl xl:text-4xl font-extrabold text-zinc-900 dark:text-white leading-tight mb-4 tracking-tight">
+      <h1 className="text-xl sm:text-2xl lg:text-3xl font-extrabold text-zinc-900 dark:text-white leading-tight mb-2.5 lg:mb-3 tracking-tight">
         {property.title}
       </h1>
       
-      <div className="flex items-start gap-2.5 text-zinc-600 dark:text-zinc-300 mb-8">
-        <MapPin className="h-5 w-5 text-brand-green shrink-0 mt-0.5" />
-        <span className="font-semibold text-base lg:text-lg">
+      <div className="flex items-start gap-2 text-zinc-600 dark:text-zinc-300 mb-5 lg:mb-6">
+        <MapPin className="h-4.5 w-4.5 text-brand-green shrink-0 mt-0.5" />
+        <span className="font-semibold text-sm sm:text-base">
           {property.city?.fokontany} {property.city?.commune} {property.city?.district}
         </span>
       </div>
 
-      <div className="mb-10">
-        <div className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-widest mb-2">
+      <div className="mb-5 lg:mb-6">
+        <div className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-widest mb-1">
           {property.type === 'rent' ? 'Loyer Mensuel' : 'Prix de Vente'}
         </div>
         <div className="flex items-baseline gap-1 text-brand-green">
-          <span className="text-4xl lg:text-5xl font-black tracking-tighter">
+          <span className="text-xl sm:text-2xl lg:text-3xl font-black tracking-tight">
             {displayPrice ? displayPrice.toLocaleString('en-US') : 'Sur demande'}
           </span>
           {displayPrice && (
-            <span className="text-xl lg:text-2xl font-bold ml-1">
+            <span className="text-xs sm:text-sm lg:text-base font-bold ml-1">
               AR{property.type === 'rent' ? '/mois' : ''}
             </span>
           )}
         </div>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 gap-3 mb-8">
+      {/* COMPACT STATS GRID */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3 gap-2 sm:gap-2.5 mb-6 lg:mb-8">
         {stats.map((stat, idx) => (stat.value && stat.value !== '-' && stat.value !== 0) ? (
-          <div key={idx} className="flex items-center gap-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl p-4 border border-zinc-100/80 dark:border-zinc-700/50 hover:border-zinc-200 dark:hover:border-zinc-600 transition-colors shadow-sm">
-            <div className="h-10 w-10 rounded-full bg-white dark:bg-zinc-800 shadow-sm flex items-center justify-center shrink-0 border border-black/[0.02] dark:border-white/5">
-               <stat.icon className="h-5 w-5 text-zinc-700 dark:text-zinc-300" />
+          <div key={idx} className="flex items-center gap-2.5 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl p-2.5 sm:p-3 border border-zinc-100/80 dark:border-zinc-700/50 hover:border-zinc-200 dark:hover:border-zinc-600 transition-colors shadow-2xs">
+            <div className="h-8 w-8 rounded-full bg-white dark:bg-zinc-800 shadow-2xs flex items-center justify-center shrink-0 border border-black/[0.04] dark:border-white/5">
+               <stat.icon className="h-4 w-4 text-zinc-700 dark:text-zinc-300" />
             </div>
-            <div className="flex flex-col">
-              <span className="font-black text-zinc-900 dark:text-white text-lg leading-none">{stat.value}</span>
-              <span className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-widest mt-1.5">{stat.label}</span>
+            <div className="flex flex-col min-w-0">
+              <span className="font-black text-zinc-900 dark:text-white text-base leading-none truncate">{stat.value}</span>
+              <span className="text-[9px] sm:text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mt-1 truncate">{stat.label}</span>
             </div>
           </div>
         ) : null)}
@@ -376,41 +409,52 @@ function PropertyDetailsContent({ property }: { property: any }) {
   );
 
   return (
-    <div className="bg-white dark:bg-zinc-900 min-h-screen">
+    <div className="relative min-h-screen bg-white dark:bg-zinc-950">
+      {/* ── Subtle Blue Liquid Glass Background (Capped at 30% intensity) ── */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none select-none z-0">
+        {/* Soft base liquid gradient */}
+        <div className="absolute inset-0 bg-gradient-to-b from-sky-50/30 via-zinc-50/20 to-white dark:from-[#090d16]/30 dark:via-[#0c1322]/20 dark:to-zinc-950" />
+
+        {/* Ambient liquid glass glow orbs (subtle & diffused) */}
+        <div className="absolute -top-24 -left-20 w-[480px] h-[480px] rounded-full bg-sky-200/25 dark:bg-sky-900/15 blur-3xl" />
+        <div className="absolute top-28 right-0 w-[420px] h-[420px] rounded-full bg-emerald-200/20 dark:bg-emerald-900/10 blur-3xl" />
+        <div className="absolute top-[420px] left-1/4 w-[500px] h-[500px] rounded-full bg-indigo-100/20 dark:bg-indigo-950/15 blur-3xl" />
+      </div>
+
       {/* MOBILE GALLERY */}
       {renderMobileGallery()}
 
-      <div className="max-w-[2000px] mx-auto px-4 sm:px-6 md:px-8 lg:px-28 xl:px-32 2xl:px-36 lg:py-6">
+      <div className="relative z-10 max-w-[1680px] mx-auto px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 2xl:px-20 lg:py-4 pb-0 lg:pb-6">
         
-        {/* DESKTOP NAVIGATION */}
-        <div className="hidden lg:flex items-center justify-between mb-8 sticky top-6 z-50">
+        {/* DESKTOP NAVIGATION (STICKY ON SCROLL) */}
+        <div className="hidden lg:flex items-center justify-between mb-4 lg:mb-5 sticky top-5 z-50 pointer-events-none">
           <button 
             onClick={() => router.back()} 
-            className="flex items-center gap-2 text-zinc-700 dark:text-zinc-200 hover:text-zinc-950 dark:hover:text-white font-bold text-xs transition-all bg-white/75 dark:bg-zinc-900/80 backdrop-blur-2xl hover:bg-white dark:hover:bg-zinc-800 px-5 py-2.5 rounded-full border border-white/80 dark:border-white/10 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.08)] dark:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.4)] active:scale-95 cursor-pointer"
+            className="pointer-events-auto flex items-center gap-2.5 text-zinc-800 dark:text-zinc-100 hover:text-zinc-950 dark:hover:text-white font-bold text-sm transition-all bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl hover:bg-white dark:hover:bg-zinc-800 px-5 py-3 rounded-full border border-zinc-200/90 dark:border-white/15 shadow-[0_8px_30px_rgba(0,0,0,0.12)] dark:shadow-[0_12px_36px_rgba(0,0,0,0.6)] active:scale-95 cursor-pointer"
           >
-            <ChevronLeft className="h-4 w-4" />
-            Retour à la recherche
+            <ChevronLeft className="h-4.5 w-4.5" />
+            Retour
           </button>
 
-          <div className="flex items-center gap-3">
+          <div className="pointer-events-auto flex items-center gap-3">
             <button 
               onClick={handleShare} 
               aria-label="Partager"
-              className="h-11 w-11 cursor-pointer rounded-full bg-white/75 dark:bg-zinc-900/80 backdrop-blur-2xl flex items-center justify-center text-zinc-700 dark:text-zinc-200 hover:text-zinc-950 dark:hover:text-white hover:bg-white dark:hover:bg-zinc-800 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.08)] dark:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.4)] border border-white/80 dark:border-white/10 hover:scale-105 active:scale-90 transition-all"
+              className="h-12 w-12 cursor-pointer rounded-full bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl flex items-center justify-center text-zinc-800 dark:text-zinc-100 hover:text-zinc-950 dark:hover:text-white hover:bg-white dark:hover:bg-zinc-800 shadow-[0_8px_30px_rgba(0,0,0,0.12)] dark:shadow-[0_12px_36px_rgba(0,0,0,0.6)] border border-zinc-200/90 dark:border-white/15 hover:scale-105 active:scale-90 transition-all"
             >
-              <Share2 className="h-4 w-4" />
+              <Share2 className="h-4.5 w-4.5" />
             </button>
             <button 
               onClick={handleFavoriteClick} 
               aria-label="Ajouter aux favoris"
-              className={`h-11 w-11 cursor-pointer rounded-full bg-white/75 dark:bg-zinc-900/80 backdrop-blur-2xl flex items-center justify-center shadow-[0_4px_20px_-4px_rgba(0,0,0,0.08)] dark:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.4)] border border-white/80 dark:border-white/10 hover:scale-105 active:scale-90 transition-all ${isFavorite ? 'text-brand-red' : 'text-zinc-700 dark:text-zinc-200 hover:text-brand-red'}`}
+              className={`h-12 w-12 cursor-pointer rounded-full bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl flex items-center justify-center shadow-[0_8px_30px_rgba(0,0,0,0.12)] dark:shadow-[0_12px_36px_rgba(0,0,0,0.6)] border border-zinc-200/90 dark:border-white/15 hover:scale-105 active:scale-90 transition-all ${isFavorite ? 'text-brand-red' : 'text-zinc-800 dark:text-zinc-100 hover:text-brand-red'}`}
             >
               <Heart className={`h-5 w-5 transition-transform duration-300 ${isFavorite ? 'fill-brand-red scale-110 drop-shadow-[0_2px_8px_rgba(236,28,36,0.45)]' : ''}`} />
             </button>
           </div>
         </div>
 
-        <div className="flex flex-col lg:flex-row gap-8 lg:gap-12 xl:gap-16">
+        <div className="flex flex-col lg:flex-row gap-5 lg:gap-8 xl:gap-10">
           
           {/* LEFT COLUMN: Gallery, Description, Features, Map */}
           <div className="w-full lg:w-[55%] xl:w-[65%]">
@@ -422,24 +466,24 @@ function PropertyDetailsContent({ property }: { property: any }) {
             {renderDesktopGallery()}
 
             {/* CONTENT UNDER GALLERY */}
-            <div className="px-4 lg:px-0 mt-10 lg:mt-16 space-y-12 lg:space-y-16">
+            <div className="px-4 lg:px-0 mt-6 lg:mt-8 space-y-6 lg:space-y-8">
               
               {/* Features */}
               {activeFeatures.length > 0 && (
                 <div className="scroll-mt-24">
-                  <h3 className="text-xl lg:text-2xl font-bold text-zinc-900 dark:text-white mb-6 lg:mb-8 flex items-center gap-4">
+                  <h3 className="text-lg lg:text-xl font-bold text-zinc-900 dark:text-white mb-3 lg:mb-4 flex items-center gap-3">
                      Équipements et atouts
                      <div className="h-px bg-zinc-100 dark:bg-zinc-800 flex-1"></div>
                   </h3>
-                  <div className="flex flex-wrap gap-2.5 lg:gap-3">
+                  <div className="flex flex-wrap gap-2 lg:gap-2.5">
                     {activeFeatures.map(key => {
                        const feature = FEATURE_ICONS[key];
                        if (!feature) return null;
                        const Icon = feature.icon;
                        return (
-                        <div key={key} className="flex items-center gap-2.5 px-4 py-2.5 rounded-full border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800/80 shadow-[0_2px_8px_-4px_rgba(0,0,0,0.05)] hover:border-zinc-300 dark:hover:border-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-700 hover:-translate-y-0.5 transition-all cursor-default">
-                          <Icon className="h-4 w-4 text-zinc-700 dark:text-zinc-300" />
-                          <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">{feature.label}</span>
+                        <div key={key} className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800/80 shadow-[0_2px_8px_-4px_rgba(0,0,0,0.05)] hover:border-zinc-300 dark:hover:border-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-700 hover:-translate-y-0.5 transition-all cursor-default">
+                          <Icon className="h-3.5 w-3.5 text-zinc-700 dark:text-zinc-300" />
+                          <span className="text-xs sm:text-sm font-semibold text-zinc-700 dark:text-zinc-200">{feature.label}</span>
                         </div>
                        )
                     })}
@@ -449,31 +493,31 @@ function PropertyDetailsContent({ property }: { property: any }) {
 
               {/* Description */}
               <div className="scroll-mt-24">
-                <h3 className="text-xl lg:text-2xl font-bold text-zinc-900 dark:text-white mb-6 lg:mb-8 flex items-center gap-4">
+                <h3 className="text-lg lg:text-xl font-bold text-zinc-900 dark:text-white mb-3 lg:mb-4 flex items-center gap-3">
                    À propos de ce bien
                    <div className="h-px bg-zinc-100 dark:bg-zinc-800 flex-1"></div>
                 </h3>
-                <div className={`text-zinc-600 dark:text-zinc-300 text-base leading-relaxed whitespace-pre-wrap font-medium ${!isDescriptionExpanded ? 'line-clamp-6 md:line-clamp-none' : ''}`}>
+                <div className={`text-zinc-600 dark:text-zinc-300 text-sm sm:text-base leading-relaxed whitespace-pre-wrap font-medium ${!isDescriptionExpanded ? 'line-clamp-6 md:line-clamp-none' : ''}`}>
                   {property.description}
                 </div>
                 {property.description && property.description.length > 300 && (
                   <button 
                     onClick={() => setIsDescriptionExpanded(!isDescriptionExpanded)}
-                    className="mt-4 font-bold text-brand-green hover:text-green-700 text-sm flex items-center gap-1 md:hidden"
+                    className="mt-3 font-bold text-brand-green hover:text-green-700 text-xs sm:text-sm flex items-center gap-1 md:hidden"
                   >
                     {isDescriptionExpanded ? 'Voir moins' : 'Lire la suite'}
-                    <ChevronRight className={`h-4 w-4 transition-transform ${isDescriptionExpanded ? '-rotate-90' : 'rotate-90'}`} />
+                    <ChevronRight className={`h-3.5 w-3.5 transition-transform ${isDescriptionExpanded ? '-rotate-90' : 'rotate-90'}`} />
                   </button>
                 )}
               </div>
 
               {/* Location */}
               <div className="scroll-mt-24">
-                 <h3 className="text-xl lg:text-2xl font-bold text-zinc-900 dark:text-white mb-6 lg:mb-8 flex items-center gap-4">
+                 <h3 className="text-lg lg:text-xl font-bold text-zinc-900 dark:text-white mb-3 lg:mb-4 flex items-center gap-3">
                    Localisation
                    <div className="h-px bg-zinc-100 dark:bg-zinc-800 flex-1"></div>
                  </h3>
-                 <div className="h-[250px] lg:h-[350px] rounded-[2rem] overflow-hidden border border-zinc-100 dark:border-zinc-700 shadow-inner relative z-0">
+                 <div className="h-[220px] lg:h-[280px] rounded-2xl lg:rounded-3xl overflow-hidden border border-zinc-100 dark:border-zinc-700 shadow-inner relative z-0">
                    <PropertyLocationDisplayer position={position} circle={useCircle} />
                  </div>
               </div>
@@ -482,18 +526,18 @@ function PropertyDetailsContent({ property }: { property: any }) {
 
           {/* RIGHT COLUMN: Desktop Identity & Sticky Contact Card */}
           <div className="w-full lg:w-[45%] xl:w-[35%] shrink-0 px-4 lg:px-0">
-            <div className="lg:sticky lg:top-24 space-y-8">
+            <div className="lg:sticky lg:top-20 space-y-4 lg:space-y-5">
               
               {/* Desktop Identity */}
               {renderIdentityAndStats(false)}
 
               {/* Contact Action Area */}
-              <div className="bg-white dark:bg-zinc-800 rounded-[2rem] border border-zinc-100 dark:border-zinc-700 p-6 lg:p-8 shadow-2xl shadow-black/[0.03] relative overflow-hidden">
+              <div className="bg-white dark:bg-zinc-800 rounded-2xl lg:rounded-3xl border border-zinc-100 dark:border-zinc-700 p-4 sm:p-5 lg:p-6 shadow-xl shadow-black/[0.03] relative overflow-hidden">
                  {/* Subtle background accent */}
-                 <div className="absolute top-0 right-0 w-32 h-32 bg-brand-green/5 rounded-bl-full -mr-4 -mt-4 pointer-events-none"></div>
+                 <div className="absolute top-0 right-0 w-28 h-28 bg-brand-green/5 rounded-bl-full pointer-events-none"></div>
                  
-                 <div className="flex items-center gap-4 lg:mb-8 relative z-10 bg-zinc-50/50 dark:bg-zinc-700/50 p-4 rounded-2xl border border-zinc-100/50 dark:border-zinc-600/50">
-                   <div className="h-14 w-14 rounded-full overflow-hidden bg-white dark:bg-zinc-700 border border-zinc-200 dark:border-zinc-600 shrink-0 shadow-sm">
+                 <div className="flex items-center gap-3.5 mb-5 relative z-10 bg-zinc-50/70 dark:bg-zinc-700/50 p-3 sm:p-3.5 rounded-xl border border-zinc-100/60 dark:border-zinc-600/50">
+                   <div className="h-11 w-11 rounded-full overflow-hidden bg-white dark:bg-zinc-700 border border-zinc-200 dark:border-zinc-600 shrink-0 shadow-2xs">
                       <img 
                         src={
                           property.owner?.role === "admin"
@@ -509,37 +553,46 @@ function PropertyDetailsContent({ property }: { property: any }) {
                    </div>
                    <div className="flex flex-col min-w-0">
                       <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-0.5">Annonceur</span>
-                      <span className="font-bold text-zinc-900 dark:text-white text-base truncate">
+                      <span className="font-bold text-zinc-900 dark:text-white text-sm sm:text-base truncate">
                         {property.owner?.role === "admin" ? (property.sources?.username || "TranoGasy") : (property.owner?.username || "Utilisateur")}
                       </span>
                       <span className="text-xs text-brand-green font-semibold mt-0.5">Annonce {formatDateAgo(property.created_at)}</span>
                    </div>
                  </div>
 
-                 <div className="hidden lg:flex gap-3 relative z-10">
+                 <div className="hidden lg:flex items-center gap-2 relative z-10">
                    <button 
-                     onClick={() => setShowContact(true)} 
-                     className="flex-1 bg-zinc-950 hover:bg-zinc-800 dark:bg-white dark:hover:bg-zinc-100 text-white dark:text-zinc-950 rounded-full py-3.5 px-6 flex items-center justify-center gap-2 font-black text-sm shadow-lg shadow-black/20 dark:shadow-white/10 active:scale-95 transition-all cursor-pointer"
+                     type="button"
+                     onClick={() => setShowContact(true)}
+                     className="h-10 px-3.5 pr-4 rounded-full flex items-center gap-2 flex-1 justify-center transition-all active:scale-95 cursor-pointer bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 shadow-[0_4px_16px_rgba(0,0,0,0.18)]"
                    >
-                      <Phone className="h-4.5 w-4.5 text-brand-green" />
-                      Voir le contact
+                     <div className="h-6 w-6 rounded-full flex items-center justify-center flex-shrink-0 transition-colors bg-white dark:bg-zinc-900 text-zinc-950 dark:text-white">
+                       <Phone className="h-3.5 w-3.5" />
+                     </div>
+                     <span className="text-xs sm:text-sm tracking-tight font-bold whitespace-nowrap">
+                       Voir le contact
+                     </span>
                    </button>
                    <button 
+                     type="button"
+                     onClick={handleDirectMessage}
                      aria-label="Contacter par message direct"
-                     className="h-12 w-12 shrink-0 rounded-full bg-white/75 dark:bg-zinc-800/75 backdrop-blur-xl text-zinc-800 dark:text-zinc-200 border border-zinc-200/80 dark:border-white/10 flex items-center justify-center hover:border-brand-green hover:text-brand-green active:scale-95 transition-all shadow-xs cursor-pointer"
+                     className="h-10 w-10 shrink-0 rounded-full bg-white/75 dark:bg-zinc-800/75 backdrop-blur-xl text-zinc-800 dark:text-zinc-200 border border-zinc-200/80 dark:border-white/10 flex items-center justify-center hover:border-brand-green hover:text-brand-green active:scale-95 transition-all shadow-2xs cursor-pointer"
                    >
-                      <Send className="h-4.5 w-4.5 pr-0.5 pt-0.5" />
+                      <Send className="h-4 w-4 pr-0.5 pt-0.5" />
                    </button>
                    <button 
-                     aria-label="Discuter"
-                     className="h-12 w-12 shrink-0 rounded-full bg-white/75 dark:bg-zinc-800/75 backdrop-blur-xl text-zinc-800 dark:text-zinc-200 border border-zinc-200/80 dark:border-white/10 flex items-center justify-center hover:border-brand-green hover:text-brand-green active:scale-95 transition-all shadow-xs cursor-pointer"
+                     type="button"
+                     onClick={() => setShowComments(true)}
+                     aria-label="Commentaires"
+                     className="h-10 w-10 shrink-0 rounded-full bg-white/75 dark:bg-zinc-800/75 backdrop-blur-xl text-zinc-800 dark:text-zinc-200 border border-zinc-200/80 dark:border-white/10 flex items-center justify-center hover:border-brand-green hover:text-brand-green active:scale-95 transition-all shadow-2xs cursor-pointer"
                    >
-                      <MessageCircle className="h-4.5 w-4.5" />
+                      <MessageCircle className="h-4 w-4" />
                    </button>
                  </div>
                  
-                 <div className="hidden lg:flex items-center justify-center gap-2 text-xs font-semibold text-zinc-400 mt-6">
-                   <FaShieldAlt className="h-3.5 w-3.5 text-brand-green" />
+                 <div className="hidden lg:flex items-center justify-center gap-1.5 text-[11px] font-semibold text-zinc-400 mt-4">
+                   <FaShieldAlt className="h-3 w-3 text-brand-green" />
                    <span>Contact sécurisé via TranoGasy</span>
                  </div>
               </div>
@@ -550,74 +603,76 @@ function PropertyDetailsContent({ property }: { property: any }) {
       </div>
       {/* MOBILE FIXED BOTTOM BAR */}
       <div 
-        className="lg:hidden fixed left-0 right-0 bottom-0 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-2xl border-t border-zinc-200/60 dark:border-zinc-800/60 shadow-[0_-8px_30px_rgba(0,0,0,0.1)] dark:shadow-[0_-8px_30px_rgba(0,0,0,0.4)] z-40 px-5 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] flex gap-2.5 transition-all"
+        className="lg:hidden fixed left-0 right-0 bottom-0 z-40 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border-t border-zinc-200/80 dark:border-white/10 px-4 py-3 pb-[calc(0.85rem+env(safe-area-inset-bottom))] shadow-[0_-4px_20px_rgba(0,0,0,0.06)] dark:shadow-[0_-4px_20px_rgba(0,0,0,0.4)] flex items-center justify-between gap-3"
       >
-        <button 
-          onClick={() => setShowContact(true)} 
-          className="flex-1 bg-zinc-950 hover:bg-zinc-800 dark:bg-white dark:hover:bg-zinc-100 text-white dark:text-zinc-950 rounded-full py-3 px-5 flex items-center justify-center gap-2 font-black text-xs sm:text-sm shadow-md shadow-black/20 dark:shadow-white/10 active:scale-95 transition-all cursor-pointer"
-        >
-           <Phone className="h-4.5 w-4.5 text-brand-green" />
-           Voir le contact
-        </button>
-        <button 
-          aria-label="Contacter par message direct"
-          className="h-11 w-11 shrink-0 bg-white/80 dark:bg-zinc-800/80 backdrop-blur-xl text-zinc-800 dark:text-zinc-200 border border-zinc-200/80 dark:border-white/10 rounded-full flex items-center justify-center shadow-xs hover:border-brand-green hover:text-brand-green active:scale-95 transition-all cursor-pointer"
-        >
-           <Send className="h-4 w-4 pr-0.5 pt-0.5" />
-        </button>
-        <button 
-          aria-label="Discuter"
-          className="h-11 w-11 shrink-0 bg-white/80 dark:bg-zinc-800/80 backdrop-blur-xl text-zinc-800 dark:text-zinc-200 border border-zinc-200/80 dark:border-white/10 rounded-full flex items-center justify-center shadow-xs hover:border-brand-green hover:text-brand-green active:scale-95 transition-all cursor-pointer"
-        >
-           <MessageCircle className="h-4 w-4" />
-        </button>
-      </div>
-
-      {/* MODALS */}
-      {showContact && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowContact(false)}>
-          <div className="bg-white dark:bg-zinc-900 rounded-[2rem] p-6 md:p-8 shadow-2xl max-w-sm w-full relative transform transition-all animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
-            <button 
-              onClick={() => setShowContact(false)}
-              className="absolute top-4 right-4 h-10 w-10 flex items-center justify-center rounded-full bg-zinc-50 dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-500 dark:text-zinc-400 transition-colors"
-            >
-              <X className="h-5 w-5" />
-            </button>
-            
-            <div className="text-center mb-8 pt-4">
-              <div className="h-20 w-20 mx-auto rounded-full bg-green-50 dark:bg-brand-green/20 flex items-center justify-center mb-5 border border-green-100 dark:border-brand-green/30 shadow-sm">
-                <Phone className="h-8 w-8 text-brand-green" />
-              </div>
-              <h3 className="text-2xl font-black text-zinc-900 dark:text-white tracking-tight">Contactez l'annonceur</h3>
-              <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-2 font-medium">
-                Mentionnez que vous avez vu l'annonce sur TranoGasy pour un meilleur accueil.
-              </p>
-            </div>
-            
-            <div className="space-y-3">
-              {(property.phone1 || property.phone2 || property.phone3 || property.owner?.phone) ? (
-                <>
-                  {[property.phone1, property.phone2, property.phone3, property.owner?.phone]
-                    .filter(Boolean)
-                    .filter((v, i, a) => a.indexOf(v) === i)
-                    .map((phone, idx) => (
-                      <a 
-                        key={idx}
-                        href={`tel:${phone}`} 
-                        className="flex items-center justify-center py-4 rounded-full bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 border border-white/10 dark:border-zinc-200 font-black text-xl tracking-wider hover:bg-zinc-800 dark:hover:bg-zinc-100 hover:shadow-md transition-all"
-                      >
-                        {phone}
-                      </a>
-                    ))}
-                </>
-              ) : (
-                <div className="text-center py-6 text-zinc-500 font-semibold bg-zinc-50 dark:bg-zinc-800 rounded-2xl border border-zinc-100 dark:border-zinc-700">
-                  Aucun numéro de téléphone fourni
-                </div>
-              )}
-            </div>
+        {/* Left: Price Section */}
+        <div className="flex flex-col min-w-0 pr-1">
+          <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider leading-none mb-1">
+            {property.type === 'rent' ? 'Loyer Mensuel' : 'Prix de vente'}
+          </span>
+          <div className="flex items-baseline gap-1 text-zinc-950 dark:text-white">
+            <span className="text-xl sm:text-2xl font-black tracking-tight">
+              {formatCompactPrice(displayPrice)}
+            </span>
+            {displayPrice && (
+              <span className="text-xs font-bold text-zinc-400 dark:text-zinc-400">
+                AR{property.type === 'rent' ? '/mois' : ''}
+              </span>
+            )}
           </div>
         </div>
+
+        {/* Right: Action Buttons Group (Message, Comment, Call) */}
+        <div className="flex items-center gap-2.5 shrink-0">
+          {/* Message / SMS */}
+          <button 
+            type="button"
+            onClick={handleDirectMessage}
+            aria-label="Envoyer un message"
+            className="h-13 w-13 rounded-full flex items-center justify-center bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-100 border border-zinc-200/80 dark:border-white/10 active:scale-95 transition-all cursor-pointer shadow-xs"
+          >
+            <Send className="h-5 w-5 pr-0.5 pt-0.5" />
+          </button>
+
+          {/* Comment Drawer Button */}
+          <button 
+            type="button"
+            onClick={() => setShowComments(true)}
+            aria-label="Commentaires"
+            className="h-13 w-13 rounded-full flex items-center justify-center bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-100 border border-zinc-200/80 dark:border-white/10 active:scale-95 transition-all cursor-pointer shadow-xs"
+          >
+            <MessageCircle className="h-5 w-5" />
+          </button>
+
+          {/* Contact / Call Button */}
+          <button 
+            type="button"
+            onClick={() => setShowContact(true)}
+            className="h-13 pl-3.5 pr-5.5 rounded-full flex items-center gap-2.5 shrink-0 transition-all active:scale-95 cursor-pointer bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 shadow-[0_4px_16px_rgba(0,0,0,0.18)]"
+          >
+            <div className="h-8.5 w-8.5 rounded-full flex items-center justify-center shrink-0 transition-colors bg-white dark:bg-zinc-900 text-zinc-950 dark:text-white">
+              <Phone className="h-4 w-4" />
+            </div>
+            <span className="text-sm font-bold tracking-tight whitespace-nowrap">
+              Contact
+            </span>
+          </button>
+        </div>
+      </div>
+
+      {/* COMMENTS DRAWER */}
+      <TikTokCommentsDrawer
+        property={property}
+        isOpen={showComments}
+        onClose={() => setShowComments(false)}
+      />
+
+      {/* CONTACT MODAL */}
+      {showContact && (
+        <TikTokContactModal
+          property={property}
+          onClose={() => setShowContact(false)}
+        />
       )}
 
       {/* LIGHTBOX VIEWER */}
