@@ -48,31 +48,46 @@ export default function TranogasyFeed({ initialProperties = [] }: TranogasyFeedP
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Fetch initial properties if not provided
+  // Fetch initial properties with retry on cold start
   useEffect(() => {
-    if (initialProperties.length === 0) {
-      const fetchInitial = async () => {
-        setIsLoading(true);
-        try {
-          const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
-          const res = await fetch(`${apiUrl}/properties?page=1&limit=10`);
-          if (res.ok) {
-            const data = await res.json();
-            const fetched = data.properties || [];
-            setProperties(fetched);
-            addProperties(fetched);
-            setHasMore(data.page < data.totalPages);
-          }
-        } catch (e) {
-          console.error('Failed to fetch initial properties:', e);
-        } finally {
+    let retryTimer: NodeJS.Timeout | null = null;
+    let attempts = 0;
+
+    const fetchInitial = async () => {
+      setIsLoading(true);
+      try {
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+        const res = await fetch(`${apiUrl}/properties?page=1&limit=10`);
+        if (res.ok) {
+          const data = await res.json();
+          const fetched = data.properties || [];
+          setProperties(fetched);
+          addProperties(fetched);
+          setHasMore(data.page < data.totalPages);
+          setIsLoading(false);
+          return;
+        }
+        throw new Error('Response not OK');
+      } catch (e) {
+        console.warn('Backend cold start in explore feed, retrying...', e);
+        attempts++;
+        if (attempts < 10) {
+          retryTimer = setTimeout(fetchInitial, 3500);
+        } else {
           setIsLoading(false);
         }
-      };
+      }
+    };
+
+    if (initialProperties.length === 0) {
       fetchInitial();
     } else {
       addProperties(initialProperties);
     }
+
+    return () => {
+      if (retryTimer) clearTimeout(retryTimer);
+    };
   }, [initialProperties, addProperties]);
 
   // Load more properties when approaching end of list

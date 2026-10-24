@@ -1,13 +1,13 @@
 import LandingNav from '@/components/LandingNav';
-import PropertyCard from '@/components/PropertyCard';
 import TopPropertySection from '@/components/TopPropertySection';
+import PropertyFeed from '@/components/PropertyFeed';
 
 async function getProperties() {
   try {
     const rawUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
     const apiUrl = rawUrl.replace(/\/$/, '');
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3000);
+    const timeoutId = setTimeout(() => controller.abort(), 3500);
 
     const res = await fetch(`${apiUrl}/properties?limit=20`, {
       next: { revalidate: 60 },
@@ -37,27 +37,10 @@ export default async function Home() {
         {/* Top Property Section header matching target design */}
         <TopPropertySection />
 
-        {/* Property grid
-            Mobile: 1 col | sm: 2 col | lg: 3 col | xl: 4 col | 2xl: 5 col | ultrawide: 6 col
-        */}
-        <div className="grid grid-cols-1 gap-5
-          sm:grid-cols-2
-          lg:grid-cols-3
-          xl:grid-cols-4
-          2xl:grid-cols-5
-          min-[2100px]:grid-cols-6">
-          {properties.length > 0 ? (
-            properties.map((property: any) => (
-              <PropertyCard key={property._id} property={property} />
-            ))
-          ) : (
-            <div className="col-span-full py-16 text-center text-zinc-400 dark:text-zinc-500">
-              <p className="text-lg font-medium">Aucune propriété trouvée.</p>
-              <p className="text-sm mt-1">Vérifiez que le backend est en cours d&apos;exécution.</p>
-            </div>
-          )}
-        </div>
+        {/* Property feed with cold start detection, auto-retry polling, and card skeletons */}
+        <PropertyFeed initialProperties={properties} />
       </div>
     </div>
   );
 }
+
