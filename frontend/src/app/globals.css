@@ -129,6 +129,31 @@
   animation: feedShimmerSweep 0.6s ease-out forwards;
 }
 
+/* Crispy smooth slide animation for dashboard tab transitions */
+@keyframes tabContentSlide {
+  0% {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-tab-content {
+  animation: tabContentSlide 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Prevent browser rectangular tap highlights and focus box flash */
+button, [role="tab"] {
+  -webkit-tap-highlight-color: transparent !important;
+}
+button:focus, [role="tab"]:focus, button:focus-visible, [role="tab"]:focus-visible {
+  outline: none !important;
+  box-shadow: none;
+}
+
 :root {
   --background: #f4f4f5;
   --foreground: rgba(0,0,0,0.8);
