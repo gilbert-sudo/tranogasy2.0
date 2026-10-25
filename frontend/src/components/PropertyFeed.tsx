@@ -3,36 +3,43 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import PropertyCard from '@/components/PropertyCard';
 import PropertyCardSkeleton from '@/components/PropertyCardSkeleton';
-import { Loader2, RefreshCw, ServerCrash, Sparkles } from 'lucide-react';
+import { Loader2, RefreshCw, ServerCrash, Sparkles, CheckCircle2 } from 'lucide-react';
 
 interface PropertyFeedProps {
   initialProperties?: any[];
 }
 
+const PAGE_LIMIT = 8;
+
 export default function PropertyFeed({ initialProperties = [] }: PropertyFeedProps) {
   const [properties, setProperties] = useState<any[]>(initialProperties);
-  const [isLoading, setIsLoading] = useState<boolean>(initialProperties.length === 0);
+  const [page, setPage] = useState<number>(initialProperties.length > 0 ? 1 : 0);
+  const [hasMore, setHasMore] = useState<boolean>(initialProperties.length >= PAGE_LIMIT);
+  const [isLoadingInitial, setIsLoadingInitial] = useState<boolean>(initialProperties.length === 0);
+  const [isLoadingMore, setIsLoadingMore] = useState<boolean>(false);
   const [isWakingUp, setIsWakingUp] = useState<boolean>(false);
   const [retryCount, setRetryCount] = useState<number>(0);
   const [hasFailed, setHasFailed] = useState<boolean>(false);
 
+  const observerRef = useRef<HTMLDivElement | null>(null);
   const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isFetchingRef = useRef<boolean>(false);
 
-  const fetchProperties = useCallback(async (isAutoRetry = false) => {
+  // Fetch initial page if SSR didn't return properties
+  const fetchInitialProperties = useCallback(async (isAutoRetry = false) => {
     try {
       if (!isAutoRetry) {
-        setIsLoading(true);
+        setIsLoadingInitial(true);
         setHasFailed(false);
       }
 
       const rawUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
       const apiUrl = rawUrl.replace(/\/$/, '');
 
-      // Controller with 15s timeout
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-      const res = await fetch(`${apiUrl}/properties?limit=20`, {
+      const res = await fetch(`${apiUrl}/properties?page=1&limit=${PAGE_LIMIT}`, {
         cache: 'no-store',
         signal: controller.signal,
       }).finally(() => clearTimeout(timeoutId));
@@ -45,26 +52,24 @@ export default function PropertyFeed({ initialProperties = [] }: PropertyFeedPro
       const fetched = data.properties || [];
 
       setProperties(fetched);
-      setIsLoading(false);
+      setPage(1);
+      setHasMore(fetched.length === PAGE_LIMIT && (data.page < data.totalPages || !data.totalPages));
+      setIsLoadingInitial(false);
       setIsWakingUp(false);
       setRetryCount(0);
       setHasFailed(false);
     } catch (error) {
       console.warn('Backend wake-up / request error:', error);
-
-      // If we don't have properties loaded yet, consider the server sleeping
       setIsWakingUp(true);
 
       setRetryCount((prev) => {
         const next = prev + 1;
-        // Keep retrying automatically up to 10 attempts (about 40-50s for Render cold start)
         if (next < 12) {
           retryTimeoutRef.current = setTimeout(() => {
-            fetchProperties(true);
+            fetchInitialProperties(true);
           }, 3500);
         } else {
-          // Exceeded retry count, show friendly manual retry button
-          setIsLoading(false);
+          setIsLoadingInitial(false);
           setIsWakingUp(false);
           setHasFailed(true);
         }
@@ -73,20 +78,95 @@ export default function PropertyFeed({ initialProperties = [] }: PropertyFeedPro
     }
   }, []);
 
-  // When initialProperties is empty (e.g. Next.js SSR couldn't connect or cold started), start client polling immediately
+  // Fetch next page for infinite scroll
+  const loadMoreProperties = useCallback(async () => {
+    if (isFetchingRef.current || !hasMore || isLoadingMore || isLoadingInitial) {
+      return;
+    }
+
+    isFetchingRef.current = true;
+    setIsLoadingMore(true);
+
+    try {
+      const nextPage = page + 1;
+      const rawUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+      const apiUrl = rawUrl.replace(/\/$/, '');
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+      const res = await fetch(`${apiUrl}/properties?page=${nextPage}&limit=${PAGE_LIMIT}`, {
+        cache: 'no-store',
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timeoutId));
+
+      if (!res.ok) {
+        throw new Error(`API error: ${res.status}`);
+      }
+
+      const data = await res.json();
+      const newProperties = data.properties || [];
+
+      if (newProperties.length === 0) {
+        setHasMore(false);
+      } else {
+        setProperties((prev) => {
+          // Deduplicate by _id
+          const existingIds = new Set(prev.map((p) => p._id));
+          const filtered = newProperties.filter((p: any) => !existingIds.has(p._id));
+          return [...prev, ...filtered];
+        });
+        setPage(nextPage);
+        const reachedEnd = data.totalPages ? nextPage >= data.totalPages : newProperties.length < PAGE_LIMIT;
+        setHasMore(!reachedEnd);
+      }
+    } catch (err) {
+      console.error('Failed to load more properties:', err);
+    } finally {
+      setIsLoadingMore(false);
+      isFetchingRef.current = false;
+    }
+  }, [page, hasMore, isLoadingMore, isLoadingInitial]);
+
+  // Initial load effect
   useEffect(() => {
     if (initialProperties.length === 0) {
-      fetchProperties();
+      fetchInitialProperties();
     }
     return () => {
       if (retryTimeoutRef.current) {
         clearTimeout(retryTimeoutRef.current);
       }
     };
-  }, [initialProperties, fetchProperties]);
+  }, [initialProperties, fetchInitialProperties]);
+
+  // IntersectionObserver for infinite scrolling
+  useEffect(() => {
+    const sentinel = observerRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !isLoadingMore && !isLoadingInitial) {
+          loadMoreProperties();
+        }
+      },
+      {
+        root: null,
+        rootMargin: '300px', // Pre-fetch before user reaches the very bottom
+        threshold: 0.1,
+      }
+    );
+
+    observer.observe(sentinel);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [hasMore, isLoadingMore, isLoadingInitial, loadMoreProperties]);
 
   // Loading state (showing skeletons + cold start alert banner)
-  if (isLoading || isWakingUp) {
+  if (isLoadingInitial || isWakingUp) {
     return (
       <div className="w-full space-y-6">
         {isWakingUp && (
@@ -138,7 +218,7 @@ export default function PropertyFeed({ initialProperties = [] }: PropertyFeedPro
         <button
           onClick={() => {
             setRetryCount(0);
-            fetchProperties(false);
+            fetchInitialProperties(false);
           }}
           className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-zinc-900 text-white hover:bg-zinc-800 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-100 font-semibold text-sm shadow-md transition-all active:scale-95 cursor-pointer"
         >
@@ -155,7 +235,7 @@ export default function PropertyFeed({ initialProperties = [] }: PropertyFeedPro
       <div className="col-span-full py-16 text-center text-zinc-400 dark:text-zinc-500">
         <p className="text-lg font-medium">Aucune propriété trouvée.</p>
         <button
-          onClick={() => fetchProperties(false)}
+          onClick={() => fetchInitialProperties(false)}
           className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-full border border-zinc-200 dark:border-zinc-800 text-xs font-semibold hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
         >
           <RefreshCw className="w-3.5 h-3.5" />
@@ -166,10 +246,39 @@ export default function PropertyFeed({ initialProperties = [] }: PropertyFeedPro
   }
 
   return (
-    <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 min-[2100px]:grid-cols-6">
-      {properties.map((property: any) => (
-        <PropertyCard key={property._id} property={property} />
-      ))}
+    <div className="w-full space-y-8">
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 min-[2100px]:grid-cols-6">
+        {properties.map((property: any) => (
+          <PropertyCard key={property._id} property={property} />
+        ))}
+      </div>
+
+      {/* Loading more skeletons indicator */}
+      {isLoadingMore && (
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 min-[2100px]:grid-cols-6 pt-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <PropertyCardSkeleton key={`skeleton-more-${i}`} />
+          ))}
+        </div>
+      )}
+
+      {/* Bottom sentinel trigger for IntersectionObserver */}
+      <div ref={observerRef} className="h-6 w-full flex items-center justify-center">
+        {isLoadingMore && (
+          <div className="flex items-center gap-2 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+            <Loader2 className="w-4 h-4 animate-spin text-primary" />
+            <span>Chargement de nouvelles annonces...</span>
+          </div>
+        )}
+      </div>
+
+      {/* End of list state */}
+      {!hasMore && properties.length > 0 && (
+        <div className="pt-4 pb-8 flex items-center justify-center gap-2 text-xs font-medium text-zinc-400 dark:text-zinc-500">
+          <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+          <span>Vous avez vu toutes les propriétés disponibles.</span>
+        </div>
+      )}
     </div>
   );
 }

@@ -9,7 +9,7 @@ async function getProperties() {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 3500);
 
-    const res = await fetch(`${apiUrl}/properties?limit=20`, {
+    const res = await fetch(`${apiUrl}/properties?page=1&limit=8`, {
       next: { revalidate: 60 },
       signal: controller.signal,
     }).finally(() => clearTimeout(timeoutId));

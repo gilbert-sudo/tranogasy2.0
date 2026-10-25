@@ -140,6 +140,13 @@ export default function PropertyCard({ property }: PropertyProps) {
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [touchEnd, setTouchEnd] = useState<number | null>(null);
 
+  const [loadedIndices, setLoadedIndices] = useState<number[]>([0]);
+
+  const updateCurrentIndex = (newIndex: number) => {
+    setCurrentIndex(newIndex);
+    setLoadedIndices(prev => (prev.includes(newIndex) ? prev : [...prev, newIndex]));
+  };
+
   const minSwipeDistance = 50; 
 
   const onTouchStart = (e: React.TouchEvent) => {
@@ -157,23 +164,23 @@ export default function PropertyCard({ property }: PropertyProps) {
     const isLeftSwipe = distance > minSwipeDistance;
     const isRightSwipe = distance < -minSwipeDistance;
     if (isLeftSwipe && currentIndex < images.length - 1) {
-      setCurrentIndex(prev => prev + 1);
+      updateCurrentIndex(currentIndex + 1);
     }
     if (isRightSwipe && currentIndex > 0) {
-      setCurrentIndex(prev => prev - 1);
+      updateCurrentIndex(currentIndex - 1);
     }
   };
 
   const nextImage = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (currentIndex < images.length - 1) setCurrentIndex(prev => prev + 1);
+    if (currentIndex < images.length - 1) updateCurrentIndex(currentIndex + 1);
   };
   
   const prevImage = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (currentIndex > 0) setCurrentIndex(prev => prev - 1);
+    if (currentIndex > 0) updateCurrentIndex(currentIndex - 1);
   };
 
   const activeFeatures = property.features 
@@ -193,11 +200,22 @@ export default function PropertyCard({ property }: PropertyProps) {
             className="flex h-full w-full transition-transform duration-300 ease-in-out"
             style={{ transform: `translateX(-${currentIndex * 100}%)` }}
           >
-            {images.map((img, idx) => (
-              <div key={idx} className="relative h-full w-full shrink-0">
-                <Image src={img} alt={`${property.title} - Image ${idx + 1}`} fill className="object-cover" />
-              </div>
-            ))}
+            {images.map((img, idx) => {
+              const shouldRenderImage = loadedIndices.includes(idx);
+              return (
+                <div key={idx} className="relative h-full w-full shrink-0">
+                  {shouldRenderImage && (
+                    <Image
+                      src={img}
+                      alt={`${property.title} - Image ${idx + 1}`}
+                      fill
+                      sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                      className="object-cover"
+                    />
+                  )}
+                </div>
+              );
+            })}
           </div>
 
           {/* Carousel Controls */}
@@ -225,8 +243,8 @@ export default function PropertyCard({ property }: PropertyProps) {
                 {images.map((_, idx) => (
                   <div 
                     key={idx} 
-                    onMouseEnter={() => setCurrentIndex(idx)}
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setCurrentIndex(idx); }}
+                    onMouseEnter={() => updateCurrentIndex(idx)}
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); updateCurrentIndex(idx); }}
                     className={`h-1.5 rounded-full transition-all cursor-pointer ${idx === currentIndex ? 'w-3.5 bg-white shadow-xs' : 'w-1.5 bg-white/50'}`}
                   />
                 ))}
