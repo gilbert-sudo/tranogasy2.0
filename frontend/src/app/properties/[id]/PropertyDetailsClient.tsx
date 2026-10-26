@@ -20,6 +20,7 @@ import PropertyLocationDisplayer from '@/components/map/PropertyLocationDisplaye
 import TikTokCommentsDrawer from '@/components/feed/TikTokCommentsDrawer';
 import TikTokContactModal from '@/components/feed/TikTokContactModal';
 import { useUserStore } from '@/store/userStore';
+import { usePropertyDetailModalStore } from '@/store/propertyDetailModalStore';
 import { useProperty } from '@/hooks/useProperty';
 import { useFavorite } from '@/hooks/useFavorite';
 
@@ -73,6 +74,41 @@ function formatDateAgo(dateString?: string) {
   return "Récent";
 }
 
+function LazyPropertyMap({ position, circle }: { position: any; circle?: boolean }) {
+  const [shouldRender, setShouldRender] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setShouldRender(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '150px' }
+    );
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <div ref={containerRef} className="w-full h-full">
+      {shouldRender ? (
+        <PropertyLocationDisplayer position={position} circle={circle} />
+      ) : (
+        <div className="w-full h-full bg-zinc-100 dark:bg-zinc-800/60 flex items-center justify-center text-zinc-400 text-xs font-semibold">
+          <div className="flex items-center gap-2">
+            <MapPin className="h-4 w-4 text-brand-green animate-bounce" />
+            <span>Chargement de la carte...</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PropertyDetailsContent({ 
   property, 
   onBack,
@@ -91,6 +127,9 @@ function PropertyDetailsContent({
 
   const userStore = useUserStore(state => state.user);
   const currentUser = userStore?.user || userStore;
+  const isTransitioning = usePropertyDetailModalStore(
+    (state) => state.isTransitioning && state.propertyId === property?._id
+  );
   const { favorites, checkFavorite, toggleFavorite } = useFavorite();
   const isFavorite = favorites[property?._id] || false;
 
@@ -211,14 +250,22 @@ function PropertyDetailsContent({
   };
 
   const renderMobileGallery = () => (
-    <div className="lg:hidden relative w-full h-[350px] sm:h-[450px] overflow-hidden mb-6 rounded-b-[2rem] shadow-sm">
+    <div 
+      data-detail-hero-image={property?._id}
+      className="lg:hidden relative w-full h-[350px] sm:h-[450px] overflow-hidden mb-6 rounded-b-[2rem] shadow-sm"
+    >
       <div 
         className="flex overflow-x-auto snap-x snap-mandatory h-full w-full" 
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
         onScroll={handleMobileScroll}
       >
         {images.map((img: string, idx: number) => (
-          <div key={idx} className="w-full flex-shrink-0 h-full relative snap-center" onClick={() => setLightboxIndex(idx)}>
+          <div 
+            key={idx} 
+            className="w-full flex-shrink-0 h-full relative snap-center" 
+            onClick={() => setLightboxIndex(idx)}
+            style={{ opacity: (idx === 0 && isTransitioning) ? 0 : 1 }}
+          >
             <Image src={img} fill className="object-cover" alt={`Photo ${idx+1}`} priority={idx === 0} />
           </div>
         ))}
@@ -273,8 +320,10 @@ function PropertyDetailsContent({
     if (images.length === 1) {
       return (
         <div 
+          data-detail-hero-image={property?._id}
           className="hidden lg:block w-full min-w-[340px] xl:min-w-[420px] min-h-[360px] xl:min-h-[420px] max-h-[80vh] aspect-[16/10] relative rounded-2xl lg:rounded-3xl overflow-hidden cursor-pointer group shadow-xs mb-6" 
           onClick={() => setLightboxIndex(0)}
+          style={{ opacity: isTransitioning ? 0 : 1 }}
         >
           <Image src={images[0]} fill className="object-cover group-hover:scale-105 transition-transform duration-700" alt="Principale" priority />
           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-500" />
@@ -295,7 +344,11 @@ function PropertyDetailsContent({
       if (rowImages.length === 1) {
         rows.push(
           <div key={`row-${rowIndex}`} className="flex gap-[3px] w-full flex-1 min-h-[160px] max-h-[38vh]">
-            <div className="flex-1 relative cursor-pointer group overflow-hidden" onClick={() => setLightboxIndex(i)}>
+            <div 
+              {...(i === 0 ? { 'data-detail-hero-image': property?._id, style: { opacity: isTransitioning ? 0 : 1 } } : {})}
+              className="flex-1 relative cursor-pointer group overflow-hidden" 
+              onClick={() => setLightboxIndex(i)}
+            >
               <Image src={rowImages[0]} fill className="object-cover group-hover:scale-105 transition-transform duration-700" alt={`Photo ${i + 1}`} />
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-500" />
             </div>
@@ -305,7 +358,11 @@ function PropertyDetailsContent({
         // Dynamic proportion: 40% / 60% split
         rows.push(
           <div key={`row-${rowIndex}`} className="flex gap-[3px] w-full flex-[1.2] min-h-[170px] max-h-[40vh]">
-            <div className="flex-[4] relative cursor-pointer group overflow-hidden" onClick={() => setLightboxIndex(i)}>
+            <div 
+              {...(i === 0 ? { 'data-detail-hero-image': property?._id, style: { opacity: isTransitioning ? 0 : 1 } } : {})}
+              className="flex-[4] relative cursor-pointer group overflow-hidden" 
+              onClick={() => setLightboxIndex(i)}
+            >
               <Image src={rowImages[0]} fill className="object-cover group-hover:scale-105 transition-transform duration-700" alt={`Photo ${i + 1}`} />
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-500" />
             </div>
@@ -329,7 +386,12 @@ function PropertyDetailsContent({
               const globalIdx = i + idx;
               const isLast = globalIdx === 6 && images.length > 7;
               return (
-                <div key={globalIdx} className="flex-1 relative cursor-pointer group overflow-hidden" onClick={() => setLightboxIndex(globalIdx)}>
+                <div 
+                  key={globalIdx} 
+                  {...(globalIdx === 0 ? { 'data-detail-hero-image': property?._id, style: { opacity: isTransitioning ? 0 : 1 } } : {})}
+                  className="flex-1 relative cursor-pointer group overflow-hidden" 
+                  onClick={() => setLightboxIndex(globalIdx)}
+                >
                   <Image src={img} fill className="object-cover group-hover:scale-105 transition-transform duration-700" alt={`Photo ${globalIdx + 1}`} />
                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-500" />
                   {isLast && (
@@ -417,15 +479,19 @@ function PropertyDetailsContent({
 
   return (
     <div className="relative min-h-screen bg-white dark:bg-zinc-950">
-      {/* ── Subtle Blue Liquid Glass Background (Capped at 30% intensity) ── */}
+      {/* ── Subtle Blue Liquid Glass Background (Optimized with GPU-friendly radial gradients) ── */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none select-none z-0">
-        {/* Soft base liquid gradient */}
         <div className="absolute inset-0 bg-gradient-to-b from-sky-50/30 via-zinc-50/20 to-white dark:from-[#090d16]/30 dark:via-[#0c1322]/20 dark:to-zinc-950" />
-
-        {/* Ambient liquid glass glow orbs (subtle & diffused) */}
-        <div className="absolute -top-24 -left-20 w-[480px] h-[480px] rounded-full bg-sky-200/25 dark:bg-sky-900/15 blur-3xl" />
-        <div className="absolute top-28 right-0 w-[420px] h-[420px] rounded-full bg-emerald-200/20 dark:bg-emerald-900/10 blur-3xl" />
-        <div className="absolute top-[420px] left-1/4 w-[500px] h-[500px] rounded-full bg-indigo-100/20 dark:bg-indigo-950/15 blur-3xl" />
+        <div 
+          className="absolute inset-0 opacity-40 dark:opacity-20"
+          style={{
+            backgroundImage: `
+              radial-gradient(circle at 10% 10%, rgba(56, 189, 248, 0.22) 0%, transparent 45%),
+              radial-gradient(circle at 90% 20%, rgba(52, 211, 153, 0.18) 0%, transparent 40%),
+              radial-gradient(circle at 30% 60%, rgba(99, 102, 241, 0.14) 0%, transparent 45%)
+            `
+          }}
+        />
       </div>
 
       {/* MOBILE GALLERY */}
@@ -525,7 +591,7 @@ function PropertyDetailsContent({
                    <div className="h-px bg-zinc-100 dark:bg-zinc-800 flex-1"></div>
                  </h3>
                  <div className="h-[220px] lg:h-[280px] rounded-2xl lg:rounded-3xl overflow-hidden border border-zinc-100 dark:border-zinc-700 shadow-inner relative z-0">
-                   <PropertyLocationDisplayer position={position} circle={useCircle} />
+                   <LazyPropertyMap position={position} circle={useCircle} />
                  </div>
               </div>
             </div>
@@ -786,7 +852,7 @@ export default function PropertyDetailsClient({
   onClose,
   isModal 
 }: PropertyDetailsClientProps) {
-  const { property, isLoading, error } = useProperty(propertyId);
+  const { property, isLoading, error } = useProperty(propertyId, initialProperty);
   const router = useRouter();
 
   const handleBack = () => {

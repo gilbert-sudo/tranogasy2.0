@@ -2,17 +2,24 @@ import { useState, useEffect } from 'react';
 import { propertyService } from '../services/property.service';
 import { usePropertyStore } from '../store/propertyStore';
 
-export function useProperty(propertyId?: string) {
+export function useProperty(propertyId?: string, initialData?: any) {
   const getProperty = usePropertyStore(state => state.getProperty);
   const addProperty = usePropertyStore(state => state.addProperty);
   
   // Only initialize state if propertyId is provided, otherwise null.
-  // This allows the hook to be used for general property methods too.
-  const [property, setPropertyState] = useState<any>(propertyId ? (getProperty(propertyId) || null) : null);
-  const [isLoading, setIsLoading] = useState(!!propertyId && !property);
+  // Use initialData first if available to prevent any network request.
+  const [property, setPropertyState] = useState<any>(
+    initialData || (propertyId ? (getProperty(propertyId) || null) : null)
+  );
+  const [isLoading, setIsLoading] = useState(!initialData && !!propertyId && !property);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (initialData) {
+      setPropertyState(initialData);
+      return;
+    }
+
     if (propertyId && !property) {
       const fetchProperty = async () => {
         setIsLoading(true);
@@ -28,7 +35,7 @@ export function useProperty(propertyId?: string) {
       };
       fetchProperty();
     }
-  }, [propertyId, property, addProperty]);
+  }, [propertyId, property, initialData, addProperty]);
 
   const fetchPropertyById = async (id: string) => {
     setIsLoading(true);

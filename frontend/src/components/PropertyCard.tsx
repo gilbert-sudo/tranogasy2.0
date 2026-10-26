@@ -195,7 +195,27 @@ export default function PropertyCard({ property }: PropertyProps) {
       return;
     }
     e.preventDefault();
-    openPropertyDetail(property._id, property);
+
+    let transitionOrigin = null;
+    const cardEl = e.currentTarget as HTMLElement;
+    const imgWrapper = cardEl.querySelector(`[data-property-card-image="${property._id}"]`) as HTMLElement | null;
+    if (imgWrapper) {
+      const rect = imgWrapper.getBoundingClientRect();
+      const imgEl = imgWrapper.querySelector('img') as HTMLImageElement | null;
+      const activeSrc = imgEl?.currentSrc || imgEl?.src || images[currentIndex] || images[0] || (property.images && property.images[0]) || '';
+      transitionOrigin = {
+        rect: {
+          top: rect.top,
+          left: rect.left,
+          width: rect.width,
+          height: rect.height,
+        },
+        src: typeof activeSrc === 'string' ? activeSrc : (activeSrc as any)?.src || '',
+        borderRadius: window.getComputedStyle(imgWrapper).borderRadius || '1.5rem 1.5rem 0 0',
+      };
+    }
+
+    openPropertyDetail(property._id, property, transitionOrigin);
   };
 
   return (
@@ -206,6 +226,7 @@ export default function PropertyCard({ property }: PropertyProps) {
     >
       <div className="flex h-full flex-col overflow-hidden rounded-3xl bg-zinc-50 shadow-sm border border-zinc-200 transition-transform hover:-translate-y-1 hover:shadow-md dark:bg-zinc-800 dark:border-zinc-700 relative">
         <div 
+          data-property-card-image={property._id}
           className="relative h-48 w-full overflow-hidden rounded-t-3xl bg-zinc-200 dark:bg-zinc-700 group"
           onTouchStart={onTouchStart}
           onTouchMove={onTouchMove}
