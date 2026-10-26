@@ -19,6 +19,7 @@ import { TfiLayoutSidebarLeft } from "react-icons/tfi";
 import { usePropertyStore } from '@/store/propertyStore';
 import { useFavorite } from '@/hooks/useFavorite';
 import { useUserStore } from '@/store/userStore';
+import { usePropertyDetailModalStore } from '@/store/propertyDetailModalStore';
 
 const FEATURE_ICONS: Record<string, React.ElementType> = {
   electricityJirama: FaPlugCircleBolt,
@@ -103,6 +104,7 @@ export default function PropertyCard({ property }: PropertyProps) {
   const addProperty = usePropertyStore(state => state.addProperty);
   const user = useUserStore(state => state.user);
   const { favorites, checkFavorite, toggleFavorite } = useFavorite();
+  const openPropertyDetail = usePropertyDetailModalStore(state => state.openPropertyDetail);
   
   const isFavorite = favorites[property._id] || false;
   
@@ -187,8 +189,21 @@ export default function PropertyCard({ property }: PropertyProps) {
     ? Object.entries(property.features).filter(([_, value]) => value).map(([key]) => key)
     : [];
 
+  const handleCardClick = (e: React.MouseEvent) => {
+    // Let browser handle new tab actions (Ctrl+Click, Cmd+Click, middle click, etc.)
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) {
+      return;
+    }
+    e.preventDefault();
+    openPropertyDetail(property._id, property);
+  };
+
   return (
-    <Link href={`/properties/${property._id}`} className="block h-full">
+    <Link 
+      href={`/properties/${property._id}`} 
+      onClick={handleCardClick}
+      className="block h-full cursor-pointer"
+    >
       <div className="flex h-full flex-col overflow-hidden rounded-3xl bg-zinc-50 shadow-sm border border-zinc-200 transition-transform hover:-translate-y-1 hover:shadow-md dark:bg-zinc-800 dark:border-zinc-700 relative">
         <div 
           className="relative h-48 w-full overflow-hidden rounded-t-3xl bg-zinc-200 dark:bg-zinc-700 group"

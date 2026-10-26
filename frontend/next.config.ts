@@ -1,6 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  allowedDevOrigins: [
+    '172.28.224.1',
+    '192.168.88.168',
+  ],
   experimental: {
     // Client router cache: reuse already-visited pages instead of re-rendering
     // them on the server on every navigation (Next's default for dynamic pages is 0s).

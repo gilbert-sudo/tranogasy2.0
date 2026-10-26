@@ -73,7 +73,14 @@ function formatDateAgo(dateString?: string) {
   return "Récent";
 }
 
-function PropertyDetailsContent({ property }: { property: any }) {
+function PropertyDetailsContent({ 
+  property, 
+  onBack,
+}: { 
+  property: any; 
+  onBack?: () => void; 
+  isModal?: boolean; 
+}) {
   const router = useRouter();
   const [showContact, setShowContact] = useState(false);
   const [showComments, setShowComments] = useState(false);
@@ -220,7 +227,7 @@ function PropertyDetailsContent({ property }: { property: any }) {
       {/* Mobile Top Actions */}
       <div className="fixed top-0 left-0 right-0 z-50 pointer-events-none lg:hidden bg-gradient-to-b from-black/50 via-black/15 to-transparent pt-4 pb-10 px-4 flex justify-between items-start">
         <button 
-          onClick={() => router.back()} 
+          onClick={onBack || (() => router.back())} 
           aria-label="Retour"
           className="pointer-events-auto h-10 w-10 rounded-full bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl flex items-center justify-center text-zinc-900 dark:text-zinc-100 shadow-sm border border-white/60 dark:border-white/10 hover:scale-105 active:scale-90 transition-all cursor-pointer"
         >
@@ -429,7 +436,7 @@ function PropertyDetailsContent({ property }: { property: any }) {
         {/* DESKTOP NAVIGATION (STICKY ON SCROLL) */}
         <div className="hidden lg:flex items-center justify-between mb-4 lg:mb-5 sticky top-5 z-50 pointer-events-none">
           <button 
-            onClick={() => router.back()} 
+            onClick={onBack || (() => router.back())} 
             className="pointer-events-auto flex items-center gap-2.5 text-zinc-800 dark:text-zinc-100 hover:text-zinc-950 dark:hover:text-white font-bold text-sm transition-all bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl hover:bg-white dark:hover:bg-zinc-800 px-5 py-3 rounded-full border border-zinc-200/90 dark:border-white/15 shadow-[0_8px_30px_rgba(0,0,0,0.12)] dark:shadow-[0_12px_36px_rgba(0,0,0,0.6)] active:scale-95 cursor-pointer"
           >
             <ChevronLeft className="h-4.5 w-4.5" />
@@ -765,23 +772,62 @@ function PropertyDetailsContent({ property }: { property: any }) {
   );
 }
 
-export default function PropertyDetailsClient({ propertyId }: { propertyId: string }) {
+export interface PropertyDetailsClientProps {
+  propertyId: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  initialProperty?: any;
+  onClose?: () => void;
+  isModal?: boolean;
+}
+
+export default function PropertyDetailsClient({ 
+  propertyId, 
+  initialProperty, 
+  onClose,
+  isModal 
+}: PropertyDetailsClientProps) {
   const { property, isLoading, error } = useProperty(propertyId);
   const router = useRouter();
 
-  if (isLoading) {
-    return <div className="min-h-screen bg-white dark:bg-zinc-900 flex items-center justify-center text-zinc-900 dark:text-white font-bold">Chargement...</div>;
-  }
+  const handleBack = () => {
+    if (onClose) {
+      onClose();
+    } else {
+      router.back();
+    }
+  };
 
-  if (error || !property) {
+  const activeProperty = property || initialProperty;
+
+  if (isLoading && !activeProperty) {
     return (
-      <div className="min-h-screen bg-white dark:bg-zinc-900 flex flex-col items-center justify-center text-zinc-900 dark:text-white font-bold gap-4">
-        {error || 'Propriété introuvable.'}
-        <button onClick={() => router.back()} className="px-5 py-2.5 bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 font-bold rounded-full text-sm shadow-sm hover:scale-105 active:scale-95 transition-all">Retour</button>
+      <div className="min-h-screen bg-white dark:bg-zinc-950 flex items-center justify-center text-zinc-900 dark:text-white font-bold">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 rounded-full border-2 border-brand-green border-t-transparent animate-spin" />
+          <span className="text-sm font-semibold text-zinc-500">Chargement...</span>
+        </div>
       </div>
     );
   }
 
-  return <PropertyDetailsContent property={property} />;
+  if (error && !activeProperty) {
+    return (
+      <div className="min-h-screen bg-white dark:bg-zinc-950 flex flex-col items-center justify-center text-zinc-900 dark:text-white font-bold gap-4">
+        {error || 'Propriété introuvable.'}
+        <button 
+          onClick={handleBack} 
+          className="px-5 py-2.5 bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 font-bold rounded-full text-sm shadow-sm hover:scale-105 active:scale-95 transition-all cursor-pointer"
+        >
+          Retour
+        </button>
+      </div>
+    );
+  }
+
+  if (!activeProperty) {
+    return null;
+  }
+
+  return <PropertyDetailsContent property={activeProperty} onBack={handleBack} isModal={isModal} />;
 }
 

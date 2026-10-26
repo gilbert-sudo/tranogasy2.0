@@ -4,6 +4,7 @@ import "./globals.css";
 import BottomNavigation from "@/components/BottomNavigation";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import AuthModals from "@/components/AuthModals";
+import PropertyDetailsModal from "@/components/property/PropertyDetailsModal";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -59,6 +60,7 @@ export default function RootLayout({
             <main className="flex-1">{children}</main>
             <BottomNavigation />
             <AuthModals />
+            <PropertyDetailsModal />
           </div>
         </ThemeProvider>
       </body>

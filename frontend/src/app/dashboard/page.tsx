@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import { useUserStore } from '@/store/userStore';
 import { useModalStore } from '@/store/modalStore';
+import { usePropertyDetailModalStore } from '@/store/propertyDetailModalStore';
 import Header from '@/components/Header';
 
 interface UserProperty {
@@ -119,6 +120,7 @@ function DashboardContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const openModal = useModalStore((state) => state.openModal);
+  const openPropertyDetail = usePropertyDetailModalStore((state) => state.openPropertyDetail);
   const { user, initialize } = useUserStore();
   const currentUser = user?.user || user;
   const isLoggedIn = !!currentUser;
@@ -1021,6 +1023,12 @@ function DashboardContent() {
                       <div className="flex items-center gap-1.5">
                         <Link
                           href={`/properties/${prop.id}`}
+                          onClick={(e) => {
+                            if (!e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && e.button === 0) {
+                              e.preventDefault();
+                              openPropertyDetail(prop.id, prop);
+                            }
+                          }}
                           aria-label="Voir l'annonce"
                           className="p-2 rounded-full text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-950 dark:hover:text-white transition-all active:scale-90"
                           title="Voir l'annonce"
