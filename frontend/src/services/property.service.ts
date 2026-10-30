@@ -7,5 +7,12 @@ export const propertyService = {
   
   getProperties: (params?: any) => {
     return apiFetch<any>('/properties', { params });
-  }
+  },
+
+  createProperty: (data: any) => {
+    return apiFetch<any>('/properties', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
 };

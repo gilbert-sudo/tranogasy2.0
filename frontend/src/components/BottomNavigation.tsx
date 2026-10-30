@@ -87,6 +87,10 @@ export default function BottomNavigation() {
       openModal('login');
       return;
     }
+    if (targetTab === 'create') {
+      router.push('/create-listing');
+      return;
+    }
     router.push(`/dashboard?tab=${targetTab}`);
   };
 

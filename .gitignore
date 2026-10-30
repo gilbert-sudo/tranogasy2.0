@@ -8,3 +8,10 @@ node_modules/
 dist/
 build/
 coverage/
+
+# Secrets & Service Account keys
+*-credentials.json
+*gcs-credentials*.json
+*.pem
+*.key
+

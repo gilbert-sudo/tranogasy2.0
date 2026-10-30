@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Param } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, Param } from '@nestjs/common';
 import { PropertiesService } from './properties.service';
 
 @Controller('api/properties')
@@ -26,5 +26,10 @@ export class PropertiesController {
   @Get(':id')
   async findOne(@Param('id') id: string) {
     return this.propertiesService.findOne(id);
+  }
+
+  @Post()
+  async create(@Body() createPropertyDto: any) {
+    return this.propertiesService.create(createPropertyDto);
   }
 }
