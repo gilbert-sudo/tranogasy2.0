@@ -98,7 +98,7 @@ export default function BottomNavigation() {
   const isPropertyDetails = pathname.startsWith('/properties/');
   const isCreateListing = pathname.startsWith('/create-listing');
 
-  if (isPropertyDetails) {
+  if (isPropertyDetails || isCreateListing) {
     return null;
   }
 
