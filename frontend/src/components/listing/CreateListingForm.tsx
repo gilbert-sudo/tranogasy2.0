@@ -1034,85 +1034,46 @@ export default function CreateListingForm() {
         </div>
       </main>
 
-      {/* ── STICKY BOTTOM ACTION BAR (ALWAYS ON WATCH, ULTRA-ROUNDED & MOBILE-FRIENDLY) ── */}
+      {/* ── STICKY BOTTOM ACTION BAR (MINIMALIST, LUXURIOUS & VERY ROUNDED) ── */}
       <aside
         aria-label="Actions de publication"
-        className="fixed bottom-0 inset-x-0 z-40 bg-white/90 dark:bg-zinc-950/90 backdrop-blur-2xl border-t border-zinc-200/70 dark:border-zinc-800/80 shadow-[0_-8px_32px_rgba(0,0,0,0.08)] dark:shadow-[0_-8px_32px_rgba(0,0,0,0.4)] py-3 sm:py-3.5 px-4 sm:px-8"
+        className="fixed bottom-0 inset-x-0 z-40 bg-white/92 dark:bg-zinc-950/92 backdrop-blur-2xl border-t border-zinc-200/60 dark:border-zinc-800/60 shadow-[0_-10px_35px_rgba(0,0,0,0.06)] dark:shadow-[0_-10px_35px_rgba(0,0,0,0.4)] py-4 sm:py-5 px-4 sm:px-8 lg:px-12"
       >
-        <div className="max-w-7xl mx-auto flex items-center justify-between gap-3 sm:gap-4">
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
           
-          {/* 1. Annuler & Retour Button (Very rounded pill) */}
+          {/* Annuler Button (Less margin, generous padding, large font) */}
           <button
             type="button"
             onClick={() => router.back()}
-            className="flex items-center gap-1.5 sm:gap-2 px-4 sm:px-6 py-2.5 sm:py-3 rounded-full bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800/90 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 font-bold text-xs sm:text-sm transition-all active:scale-95 cursor-pointer shrink-0 shadow-xs"
-            title="Annuler et retourner à la page précédente"
+            className="flex items-center justify-center gap-2 px-5 sm:px-8 py-3.5 sm:py-4 rounded-full bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 font-extrabold text-sm sm:text-base transition-all active:scale-95 cursor-pointer shrink-0"
+            title="Annuler et retourner"
           >
-            <ArrowLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.5]" />
+            <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5]" />
             <span className="hidden sm:inline">Annuler & Retour</span>
             <span className="sm:hidden">Annuler</span>
           </button>
 
-          {/* 2. Live Watch Status Capsule (Creative real-time indicator on user's listing) */}
-          <div className="hidden md:flex items-center gap-3 px-4 py-2 rounded-full bg-zinc-100/80 dark:bg-zinc-900/80 border border-zinc-200/60 dark:border-zinc-800/60 text-xs text-zinc-600 dark:text-zinc-300 shadow-2xs">
-            <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-brand-green animate-pulse" />
-              <span className="font-extrabold text-zinc-900 dark:text-white truncate max-w-[180px]">
-                {title.trim() || 'Nouvelle annonce'}
-              </span>
-            </span>
-            <span className="text-zinc-300 dark:text-zinc-700">|</span>
-            <span className="font-black text-brand-green">
-              {type === 'rent'
-                ? rent && rent > 0
-                  ? `${rent.toLocaleString('fr-FR')} Ar/mois`
-                  : 'Loyer à définir'
-                : price && price > 0
-                  ? `${price.toLocaleString('fr-FR')} Ar`
-                  : 'Prix à définir'}
-            </span>
-            <span className="text-zinc-300 dark:text-zinc-700">|</span>
-            <span className="text-zinc-500 font-semibold text-[11px]">
-              {imageUploadState.images.length}/8 photos
-            </span>
-          </div>
-
-          {/* 3. Mobile Live Preview Toggle Pill (Quick access on mobile without scrolling) */}
-          <button
-            type="button"
-            onClick={() => setShowMobilePreview(!showMobilePreview)}
-            className="lg:hidden flex items-center gap-1.5 px-3.5 py-2.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 font-bold text-xs transition-all active:scale-95 shrink-0 shadow-xs cursor-pointer"
-          >
-            <Eye className="w-3.5 h-3.5 text-brand-green" />
-            <span>Aperçu</span>
-            {imageUploadState.images.length > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full bg-brand-green text-white text-[10px] font-extrabold">
-                {imageUploadState.images.length}
-              </span>
-            )}
-          </button>
-
-          {/* 4. Publier mon annonce Button (Very rounded, prominent, brand green glow) */}
+          {/* Publier mon annonce Button (Large font size, generous padding, glowing brand green) */}
           <button
             type="submit"
             form="create-listing-form"
             onClick={handleSubmit}
             disabled={isSubmitting || isImageUploading}
-            className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-6 sm:px-9 py-2.5 sm:py-3.5 rounded-full bg-brand-green hover:bg-[#6fa81a] disabled:opacity-50 text-white font-black text-xs sm:text-sm md:text-base shadow-lg shadow-brand-green/25 active:scale-95 transition-all cursor-pointer whitespace-nowrap"
+            className="flex-1 sm:flex-initial flex items-center justify-center gap-2.5 px-7 sm:px-12 py-3.5 sm:py-4 rounded-full bg-brand-green hover:bg-[#6fa81a] disabled:opacity-50 text-white font-black text-sm sm:text-base md:text-lg shadow-xl shadow-brand-green/30 active:scale-95 transition-all cursor-pointer whitespace-nowrap"
           >
             {isSubmitting ? (
               <>
-                <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" />
+                <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 animate-spin" />
                 <span>Publication en cours...</span>
               </>
             ) : isImageUploading ? (
               <>
-                <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" />
+                <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 animate-spin" />
                 <span>Envoi des photos...</span>
               </>
             ) : (
               <>
-                <Sparkles className="w-4 h-4 sm:w-5 sm:h-5" />
+                <Sparkles className="w-5 h-5 sm:w-6 sm:h-6" />
                 <span>Publier mon annonce</span>
               </>
             )}
