@@ -986,6 +986,7 @@ export default function CreateListingForm() {
 
             <ListingLivePreviewCard
               title={title}
+              description={description}
               type={type}
               houseType={houseType}
               floor={floor}
@@ -1001,6 +1002,7 @@ export default function CreateListingForm() {
                   ? `${selectedCity.fokontany}, ${selectedCity.commune}`
                   : undefined
               }
+              features={features}
             />
 
             {/* Quick Tips */}
@@ -1033,6 +1035,7 @@ export default function CreateListingForm() {
                 </div>
                 <ListingLivePreviewCard
                   title={title}
+                  description={description}
                   type={type}
                   houseType={houseType}
                   floor={floor}
@@ -1048,6 +1051,7 @@ export default function CreateListingForm() {
                       ? `${selectedCity.fokontany}, ${selectedCity.commune}`
                       : undefined
                   }
+                  features={features}
                 />
                 <button
                   type="button"
