@@ -360,7 +360,7 @@ export default function CreateListingForm() {
       </header>
 
       {/* ── MAIN FULL-PAGE VIEWPORT CANVAS ── */}
-      <main className="w-full px-4 sm:px-8 lg:px-12 py-6 sm:py-8 pb-32 sm:pb-36">
+      <main className="w-full px-4 sm:px-8 lg:px-12 py-6 sm:py-8 pb-20 sm:pb-24">
         <div className="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
           
           {/* ────────────── LEFT COLUMN: BORDERLESS FORM ────────────── */}
@@ -1037,7 +1037,7 @@ export default function CreateListingForm() {
       {/* ── STICKY BOTTOM ACTION BAR (MINIMALIST, LUXURIOUS & VERY ROUNDED) ── */}
       <aside
         aria-label="Actions de publication"
-        className="fixed bottom-0 inset-x-0 z-40 bg-white/92 dark:bg-zinc-950/92 backdrop-blur-2xl border-t border-zinc-200/60 dark:border-zinc-800/60 shadow-[0_-10px_35px_rgba(0,0,0,0.06)] dark:shadow-[0_-10px_35px_rgba(0,0,0,0.4)] py-4 sm:py-5 px-4 sm:px-8 lg:px-12"
+        className="fixed bottom-0 inset-x-0 z-40 bg-white/92 dark:bg-zinc-950/92 backdrop-blur-2xl border-t border-zinc-200/60 dark:border-zinc-800/60 shadow-[0_-10px_35px_rgba(0,0,0,0.06)] dark:shadow-[0_-10px_35px_rgba(0,0,0,0.4)] py-2 sm:py-2.5 px-4 sm:px-8 lg:px-12"
       >
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
           
@@ -1045,7 +1045,7 @@ export default function CreateListingForm() {
           <button
             type="button"
             onClick={() => router.back()}
-            className="flex items-center justify-center gap-2 px-5 sm:px-8 py-3.5 sm:py-4 rounded-full bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 font-extrabold text-sm sm:text-base transition-all active:scale-95 cursor-pointer shrink-0"
+            className="flex items-center justify-center gap-2 px-5 sm:px-7 py-2.5 sm:py-3 rounded-full bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 font-extrabold text-sm sm:text-base transition-all active:scale-95 cursor-pointer shrink-0"
             title="Annuler et retourner"
           >
             <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5]" />
@@ -1059,7 +1059,7 @@ export default function CreateListingForm() {
             form="create-listing-form"
             onClick={handleSubmit}
             disabled={isSubmitting || isImageUploading}
-            className="flex-1 sm:flex-initial flex items-center justify-center gap-2.5 px-7 sm:px-12 py-3.5 sm:py-4 rounded-full bg-brand-green hover:bg-[#6fa81a] disabled:opacity-50 text-white font-black text-sm sm:text-base md:text-lg shadow-xl shadow-brand-green/30 active:scale-95 transition-all cursor-pointer whitespace-nowrap"
+            className="flex-1 sm:flex-initial flex items-center justify-center gap-2.5 px-7 sm:px-10 py-2.5 sm:py-3 rounded-full bg-brand-green hover:bg-[#6fa81a] disabled:opacity-50 text-white font-black text-sm sm:text-base md:text-lg shadow-xl shadow-brand-green/30 active:scale-95 transition-all cursor-pointer whitespace-nowrap"
           >
             {isSubmitting ? (
               <>
