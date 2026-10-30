@@ -12,7 +12,6 @@ import {
   DollarSign,
   Home,
   Building2,
-  ChevronDown,
   Plus,
   Minus,
   Phone,
@@ -312,6 +311,96 @@ export default function CreateListingForm() {
     );
   }
 
+  // ── REUSABLE PRICE SECTION (DESKTOP RIGHT SIDE 2ND SECTION & MOBILE BOTTOM) ──
+  const renderPriceSection = (isMobile = false) => (
+    <div
+      className={`p-4 sm:p-5 rounded-3xl bg-white dark:bg-zinc-900/70 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs space-y-3.5 hover:border-zinc-300 dark:hover:border-zinc-700 transition-all duration-300 ${
+        isMobile ? 'border-brand-green/30 ring-1 ring-brand-green/20' : ''
+      }`}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800/80 pb-2.5">
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-brand-green/10 text-brand-green">
+            <Sparkles className="w-3 h-3" />
+            {type === 'rent' ? 'Tarif Location' : 'Prix de Vente'}
+          </span>
+          <span className="text-xs text-zinc-400 font-medium hidden xs:inline">
+            • {type === 'rent' ? 'Loyer mensuel' : 'Prix net'}
+          </span>
+        </div>
+
+        {Boolean(currentPriceValue && currentPriceValue > 0) && (
+          <span className="text-xs font-bold font-mono text-brand-green bg-brand-green/10 px-2.5 py-0.5 rounded-full flex items-center gap-1 animate-in fade-in duration-200">
+            {currentPriceValue?.toLocaleString('fr-FR')} MGA
+          </span>
+        )}
+      </div>
+
+      {/* Input row */}
+      <div className="space-y-1.5">
+        <label className="block text-[11px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+          {type === 'rent' ? 'Montant du loyer mensuel *' : 'Prix total de vente (Ariary) *'}
+        </label>
+
+        <div className="relative flex items-center group">
+          <div className="absolute left-3 w-8 h-8 rounded-full bg-brand-green/10 text-brand-green flex items-center justify-center pointer-events-none transition-transform duration-200 group-focus-within:scale-110">
+            {type === 'rent' ? <Key className="w-4 h-4" /> : <DollarSign className="w-4 h-4" />}
+          </div>
+
+          <input
+            type="text"
+            inputMode="numeric"
+            value={currentPriceValue ? currentPriceValue.toLocaleString('fr-FR') : ''}
+            onChange={(e) => handlePriceChange(e.target.value)}
+            placeholder={type === 'rent' ? 'Ex: 1 500 000' : 'Ex: 450 000 000'}
+            className="w-full pl-12 pr-24 py-2.5 sm:py-3 text-base sm:text-lg font-bold rounded-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 focus:border-brand-green focus:outline-none focus:ring-4 focus:ring-brand-green/15 text-zinc-900 dark:text-white transition-all shadow-xs"
+          />
+
+          <div className="absolute right-2 px-3 py-1.5 rounded-full bg-zinc-200/80 dark:bg-zinc-800 text-xs font-extrabold text-zinc-700 dark:text-zinc-300 pointer-events-none transition-all duration-300">
+            {type === 'rent' ? 'Ar / mois' : 'Ar'}
+          </div>
+        </div>
+      </div>
+
+      {/* Quick Suggestions Chips */}
+      <div className="flex items-center gap-1.5 pt-0.5 overflow-x-auto no-scrollbar">
+        <span className="text-[11px] font-medium text-zinc-400 shrink-0">
+          Suggestions :
+        </span>
+        {(type === 'rent'
+          ? [500000, 1000000, 1500000, 2500000, 5000000]
+          : [80000000, 150000000, 300000000, 600000000, 1000000000]
+        ).map((preset) => {
+          const isSelected = currentPriceValue === preset;
+          const formatted =
+            preset >= 1000000000
+              ? `${preset / 1000000000} Md`
+              : preset >= 1000000
+              ? `${preset / 1000000}M`
+              : `${preset / 1000}k`;
+          return (
+            <button
+              key={preset}
+              type="button"
+              onClick={() => {
+                if (type === 'rent') setRent(preset);
+                else setPrice(preset);
+              }}
+              className={`px-2.5 py-1 rounded-full text-[11px] font-bold shrink-0 transition-all duration-200 cursor-pointer ${
+                isSelected
+                  ? 'bg-brand-green text-white shadow-xs scale-105'
+                  : 'bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300'
+              }`}
+            >
+              {formatted} Ar
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+
   return (
     <div className="w-full min-h-screen bg-transparent text-zinc-900 dark:text-white">
       {/* ── BORDERLESS TOP BAR ── */}
@@ -380,128 +469,221 @@ export default function CreateListingForm() {
             <form id="create-listing-form" onSubmit={handleSubmit} className="space-y-10">
               
               {/* SECTION 1: TYPE D'OFFRE & BIEN */}
-              <section className="space-y-5">
-                <div className="border-b border-zinc-200/50 dark:border-zinc-800/50 pb-2">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-brand-green">
-                    Étape 1
-                  </span>
-                  <h2 className="text-lg sm:text-xl font-extrabold tracking-tight">
-                    Type d'offre & Nature du bien
-                  </h2>
+              <section className="p-4 sm:p-5 rounded-3xl bg-white dark:bg-zinc-900/60 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs space-y-4 hover:border-zinc-300 dark:hover:border-zinc-700 transition-all duration-300">
+                {/* Header */}
+                <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800/80 pb-3">
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-brand-green/10 text-brand-green">
+                        <span className="w-1.5 h-1.5 rounded-full bg-brand-green animate-pulse" />
+                        Étape 1
+                      </span>
+                      <span className="text-xs text-zinc-400 font-medium hidden sm:inline">• Configuration initiale</span>
+                    </div>
+                    <h2 className="text-base sm:text-lg font-extrabold tracking-tight text-zinc-900 dark:text-white">
+                      Type d&apos;offre & Nature du bien
+                    </h2>
+                  </div>
+
+                  {Boolean(type && (houseType === 'maison' || floor)) && (
+                    <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-bold animate-in fade-in duration-200">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Prêt</span>
+                    </div>
+                  )}
                 </div>
 
-                {/* Vente vs Location Switches */}
-                <div className="grid grid-cols-2 gap-3 sm:gap-4">
-                  <button
-                    type="button"
-                    onClick={() => setType('rent')}
-                    className={`flex items-center justify-center gap-3 p-4 rounded-2xl font-bold text-sm sm:text-base transition-all duration-200 cursor-pointer select-none ${
-                      type === 'rent'
-                        ? 'bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 shadow-md scale-[1.01]'
-                        : 'bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400'
-                    }`}
-                  >
-                    <Key className="w-5 h-5 text-brand-green" />
-                    <span>Location</span>
-                  </button>
+                {/* Vente vs Location: Smooth Segmented Sliding Pill */}
+                <div className="space-y-1.5">
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                    Modalit&eacute; de l&apos;offre *
+                  </label>
+                  <div className="relative p-1 bg-zinc-100 dark:bg-zinc-900 rounded-full border border-zinc-200/80 dark:border-zinc-800 flex items-center select-none shadow-xs">
+                    {/* Animated Sliding Indicator */}
+                    <div
+                      className="absolute top-1 bottom-1 left-1 w-[calc(50%-4px)] rounded-full bg-zinc-950 dark:bg-white shadow-md transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] pointer-events-none"
+                      style={{
+                        transform: type === 'rent' ? 'translateX(0)' : 'translateX(calc(100% + 4px))',
+                      }}
+                    />
 
-                  <button
-                    type="button"
-                    onClick={() => setType('sale')}
-                    className={`flex items-center justify-center gap-3 p-4 rounded-2xl font-bold text-sm sm:text-base transition-all duration-200 cursor-pointer select-none ${
-                      type === 'sale'
-                        ? 'bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 shadow-md scale-[1.01]'
-                        : 'bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400'
-                    }`}
-                  >
-                    <DollarSign className="w-5 h-5 text-brand-green" />
-                    <span>Vente</span>
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => setType('rent')}
+                      className={`relative z-10 w-1/2 flex items-center justify-center gap-2 py-2.5 px-3 rounded-full font-bold text-xs sm:text-sm transition-colors duration-200 cursor-pointer ${
+                        type === 'rent'
+                          ? 'text-white dark:text-zinc-950'
+                          : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                      }`}
+                    >
+                      <Key
+                        className={`w-4 h-4 transition-transform duration-300 ${
+                          type === 'rent' ? 'text-brand-green scale-110' : 'text-zinc-400'
+                        }`}
+                      />
+                      <span>Location</span>
+                      <span
+                        className={`hidden sm:inline-block text-[10px] px-2 py-0.5 rounded-full font-semibold transition-colors duration-200 ${
+                          type === 'rent'
+                            ? 'bg-white/15 dark:bg-zinc-900/15 text-zinc-200 dark:text-zinc-700'
+                            : 'bg-zinc-200/60 dark:bg-zinc-800/60 text-zinc-400'
+                        }`}
+                      >
+                        Bail
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setType('sale')}
+                      className={`relative z-10 w-1/2 flex items-center justify-center gap-2 py-2.5 px-3 rounded-full font-bold text-xs sm:text-sm transition-colors duration-200 cursor-pointer ${
+                        type === 'sale'
+                          ? 'text-white dark:text-zinc-950'
+                          : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                      }`}
+                    >
+                      <DollarSign
+                        className={`w-4 h-4 transition-transform duration-300 ${
+                          type === 'sale' ? 'text-brand-green scale-110' : 'text-zinc-400'
+                        }`}
+                      />
+                      <span>Vente</span>
+                      <span
+                        className={`hidden sm:inline-block text-[10px] px-2 py-0.5 rounded-full font-semibold transition-colors duration-200 ${
+                          type === 'sale'
+                            ? 'bg-white/15 dark:bg-zinc-900/15 text-zinc-200 dark:text-zinc-700'
+                            : 'bg-zinc-200/60 dark:bg-zinc-800/60 text-zinc-400'
+                        }`}
+                      >
+                        Achat
+                      </span>
+                    </button>
+                  </div>
                 </div>
 
-                {/* Maison vs Appartement */}
-                <div className="space-y-2">
-                  <label className="block text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                {/* Maison vs Appartement: Compact Rounded Capsule Cards */}
+                <div className="space-y-1.5">
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                     Catégorie du bien *
                   </label>
-                  <div className="grid grid-cols-2 gap-3 sm:gap-4">
+                  <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
                     <button
                       type="button"
                       onClick={() => setHouseType('maison')}
-                      className={`flex flex-col items-center justify-center gap-2 p-4 rounded-2xl font-bold text-sm transition-all duration-200 cursor-pointer ${
+                      className={`group relative flex items-center justify-between p-2.5 sm:px-3.5 sm:py-2.5 rounded-2xl border transition-all duration-200 cursor-pointer select-none active:scale-[0.98] ${
                         houseType === 'maison'
-                          ? 'bg-brand-green/10 text-brand-green ring-2 ring-brand-green shadow-xs'
-                          : 'bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300'
+                          ? 'bg-brand-green/10 dark:bg-brand-green/15 border-brand-green text-zinc-900 dark:text-white shadow-[0_2px_12px_rgba(124,189,30,0.15)] ring-1 ring-brand-green/40'
+                          : 'bg-white dark:bg-zinc-900/60 border-zinc-200/80 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100/70 dark:hover:bg-zinc-800/50 hover:border-zinc-300 dark:hover:border-zinc-700'
                       }`}
                     >
-                      <Home className="w-6 h-6" />
-                      <span>Maison / Villa</span>
+                      <div className="flex items-center gap-2.5">
+                        <div
+                          className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 ${
+                            houseType === 'maison'
+                              ? 'bg-brand-green text-white shadow-xs scale-105'
+                              : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 group-hover:text-zinc-600 dark:group-hover:text-zinc-300'
+                          }`}
+                        >
+                          <Home className="w-4 h-4" />
+                        </div>
+                        <span className="text-xs sm:text-sm font-bold tracking-tight">Maison / Villa</span>
+                      </div>
+                      <div
+                        className={`w-5 h-5 rounded-full flex items-center justify-center transition-all duration-300 ${
+                          houseType === 'maison'
+                            ? 'bg-brand-green text-white scale-100 shadow-xs'
+                            : 'border border-zinc-300 dark:border-zinc-700 opacity-30 scale-75'
+                        }`}
+                      >
+                        <Check className="w-3 h-3 stroke-[3]" />
+                      </div>
                     </button>
 
                     <button
                       type="button"
                       onClick={() => setHouseType('appartement')}
-                      className={`flex flex-col items-center justify-center gap-2 p-4 rounded-2xl font-bold text-sm transition-all duration-200 cursor-pointer ${
+                      className={`group relative flex items-center justify-between p-2.5 sm:px-3.5 sm:py-2.5 rounded-2xl border transition-all duration-200 cursor-pointer select-none active:scale-[0.98] ${
                         houseType === 'appartement'
-                          ? 'bg-brand-green/10 text-brand-green ring-2 ring-brand-green shadow-xs'
-                          : 'bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300'
+                          ? 'bg-brand-green/10 dark:bg-brand-green/15 border-brand-green text-zinc-900 dark:text-white shadow-[0_2px_12px_rgba(124,189,30,0.15)] ring-1 ring-brand-green/40'
+                          : 'bg-white dark:bg-zinc-900/60 border-zinc-200/80 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100/70 dark:hover:bg-zinc-800/50 hover:border-zinc-300 dark:hover:border-zinc-700'
                       }`}
                     >
-                      <Building2 className="w-6 h-6" />
-                      <span>Appartement</span>
+                      <div className="flex items-center gap-2.5">
+                        <div
+                          className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 ${
+                            houseType === 'appartement'
+                              ? 'bg-brand-green text-white shadow-xs scale-105'
+                              : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 group-hover:text-zinc-600 dark:group-hover:text-zinc-300'
+                          }`}
+                        >
+                          <Building2 className="w-4 h-4" />
+                        </div>
+                        <span className="text-xs sm:text-sm font-bold tracking-tight">Appartement</span>
+                      </div>
+                      <div
+                        className={`w-5 h-5 rounded-full flex items-center justify-center transition-all duration-300 ${
+                          houseType === 'appartement'
+                            ? 'bg-brand-green text-white scale-100 shadow-xs'
+                            : 'border border-zinc-300 dark:border-zinc-700 opacity-30 scale-75'
+                        }`}
+                      >
+                        <Check className="w-3 h-3 stroke-[3]" />
+                      </div>
                     </button>
                   </div>
                 </div>
 
-                {/* Étage (si appartement) */}
-                {houseType === 'appartement' && (
-                  <div className="space-y-1.5 animate-in fade-in slide-in-from-top-2 duration-200">
-                    <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300">
-                      Étage de l'appartement *
-                    </label>
-                    <div className="relative">
-                      <select
-                        value={floor}
-                        onChange={(e) => setFloor(e.target.value)}
-                        className="w-full appearance-none px-4 py-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-white text-sm focus:outline-none focus:border-brand-green focus:ring-2 focus:ring-brand-green/20 cursor-pointer"
-                      >
-                        <option value="">Sélectionnez l'étage</option>
-                        <option value="Rez-de-chaussée">Rez-de-chaussée</option>
-                        <option value="1er étage">1er étage</option>
-                        <option value="2ème étage">2ème étage</option>
-                        <option value="3ème étage">3ème étage</option>
-                        <option value="4ème étage">4ème étage</option>
-                        <option value="5ème étage ou plus">5ème étage ou plus</option>
-                      </select>
-                      <ChevronDown className="w-4 h-4 text-zinc-400 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    </div>
-                  </div>
-                )}
+                {/* Étage (si appartement) - Accordion smoothly animated */}
+                <div
+                  className={`grid transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+                    houseType === 'appartement'
+                      ? 'grid-rows-[1fr] opacity-100 mt-2'
+                      : 'grid-rows-[0fr] opacity-0 mt-0 pointer-events-none'
+                  }`}
+                >
+                  <div className="overflow-hidden">
+                    <div className="p-3 sm:p-3.5 rounded-2xl bg-zinc-100/70 dark:bg-zinc-800/50 border border-zinc-200/70 dark:border-zinc-700/60 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[11px] sm:text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                          <Layers className="w-3.5 h-3.5 text-brand-green" />
+                          <span>&Eacute;tage de l&apos;appartement *</span>
+                        </label>
+                        {floor && (
+                          <span className="text-[10px] sm:text-[11px] font-bold text-brand-green bg-brand-green/10 px-2.5 py-0.5 rounded-full font-mono flex items-center gap-1">
+                            <Check className="w-3 h-3 stroke-[3]" />
+                            {floor}
+                          </span>
+                        )}
+                      </div>
 
-                {/* Price / Rent Input */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300">
-                      {type === 'rent' ? 'Loyer mensuel (Ariary) *' : 'Prix total de vente (Ariary) *'}
-                    </label>
-                    {currentPriceValue && (
-                      <span className="text-xs font-bold font-mono text-brand-green">
-                        {currentPriceValue.toLocaleString('fr-FR')} MGA
-                      </span>
-                    )}
-                  </div>
-                  <div className="relative flex items-center">
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      value={currentPriceValue ? currentPriceValue.toLocaleString('fr-FR') : ''}
-                      onChange={(e) => handlePriceChange(e.target.value)}
-                      placeholder={type === 'rent' ? 'Ex: 1 500 000' : 'Ex: 450 000 000'}
-                      className="w-full pl-4 pr-16 py-3.5 text-base sm:text-lg font-bold rounded-2xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 focus:border-brand-green focus:outline-none focus:ring-2 focus:ring-brand-green/20 text-zinc-900 dark:text-white transition-all shadow-xs"
-                    />
-                    <span className="absolute right-4 text-xs sm:text-sm font-bold text-zinc-400 uppercase tracking-wider pointer-events-none">
-                      {type === 'rent' ? 'Ar / mois' : 'Ar'}
-                    </span>
+                      {/* Quick floor chips */}
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          { label: 'RDC', value: 'Rez-de-chaussée' },
+                          { label: '1er', value: '1er étage' },
+                          { label: '2ème', value: '2ème étage' },
+                          { label: '3ème', value: '3ème étage' },
+                          { label: '4ème', value: '4ème étage' },
+                          { label: '5ème+', value: '5ème étage ou plus' },
+                        ].map((item) => {
+                          const isSelected = floor === item.value;
+                          return (
+                            <button
+                              key={item.value}
+                              type="button"
+                              onClick={() => setFloor(item.value)}
+                              className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all duration-200 cursor-pointer ${
+                                isSelected
+                                  ? 'bg-brand-green text-white shadow-xs scale-[1.02]'
+                                  : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200/80 dark:hover:bg-zinc-800 border border-zinc-200/80 dark:border-zinc-700/80'
+                              }`}
+                            >
+                              {item.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </section>
@@ -936,41 +1118,67 @@ export default function CreateListingForm() {
                 </section>
               )}
 
+              {/* ── MOBILE PRICE SECTION (Just a little bit above the bottom submit button) ── */}
+              <div className="block lg:hidden pt-2 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-brand-green flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-brand-green animate-pulse" />
+                    Tarification du bien
+                  </span>
+                  <span className="text-[11px] text-zinc-400 font-medium">Juste avant de publier</span>
+                </div>
+                {renderPriceSection(true)}
+              </div>
+
               <div className="h-4" />
             </form>
           </div>
 
           {/* ────────────── RIGHT COLUMN: DESKTOP LIVE PREVIEW ────────────── */}
-          <div className="hidden lg:block lg:col-span-5 xl:col-span-4 sticky top-22 space-y-6">
-            <div className="space-y-1">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-zinc-400">
-                Aperçu de publication
-              </h3>
-              <p className="text-xs text-zinc-500">
-                Visualisez votre annonce telle qu'elle apparaîtra sur TranoGasy.
-              </p>
+          <div className="hidden lg:block lg:col-span-5 xl:col-span-4 sticky top-22 space-y-5">
+            {/* Section 1: Aperçu de publication */}
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <h3 className="text-sm font-bold uppercase tracking-wider text-zinc-400">
+                  Aperçu de publication
+                </h3>
+                <p className="text-xs text-zinc-500">
+                  Visualisez votre annonce telle qu&apos;elle apparaîtra sur TranoGasy.
+                </p>
+              </div>
+
+              <ListingLivePreviewCard
+                title={title}
+                description={description}
+                type={type}
+                houseType={houseType}
+                floor={floor}
+                price={price}
+                rent={rent}
+                area={area}
+                rooms={rooms}
+                bathrooms={bathrooms}
+                toilet={toilet}
+                images={images}
+                cityLabel={
+                  selectedCity
+                    ? `${selectedCity.fokontany}, ${selectedCity.commune}`
+                    : undefined
+                }
+                features={features}
+              />
             </div>
 
-            <ListingLivePreviewCard
-              title={title}
-              description={description}
-              type={type}
-              houseType={houseType}
-              floor={floor}
-              price={price}
-              rent={rent}
-              area={area}
-              rooms={rooms}
-              bathrooms={bathrooms}
-              toilet={toilet}
-              images={images}
-              cityLabel={
-                selectedCity
-                  ? `${selectedCity.fokontany}, ${selectedCity.commune}`
-                  : undefined
-              }
-              features={features}
-            />
+            {/* ── SECTION 2 (RIGHT SIDE): TARIFICATION DU BIEN ── */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400">
+                  Section 2 • Tarification
+                </h3>
+                <span className="text-[11px] text-zinc-400 font-medium">D&eacute;finissez votre prix</span>
+              </div>
+              {renderPriceSection(false)}
+            </div>
 
             {/* Quick Tips */}
             <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/60 dark:border-zinc-800 text-xs text-zinc-500 dark:text-zinc-400 space-y-2">
