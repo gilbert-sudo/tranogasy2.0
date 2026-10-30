@@ -96,6 +96,7 @@ export default function BottomNavigation() {
 
   const isDashboardActive = pathname.startsWith('/dashboard');
   const isPropertyDetails = pathname.startsWith('/properties/');
+  const isCreateListing = pathname.startsWith('/create-listing');
 
   if (isPropertyDetails) {
     return null;
@@ -215,10 +216,10 @@ export default function BottomNavigation() {
       )}
 
       {/* ── Fixed Navigation Bar ── */}
-      <nav className="fixed z-50 transition-all duration-300 bg-white/85 dark:bg-zinc-900/90 backdrop-blur-2xl border-zinc-200/70 dark:border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.12)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.5)]
+      <nav className={`fixed z-30 transition-all duration-300 bg-white/85 dark:bg-zinc-900/90 backdrop-blur-2xl border-zinc-200/70 dark:border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.12)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.5)] ${isCreateListing ? "hidden lg:flex" : ""}
         bottom-0 left-0 right-0 border-t rounded-none pb-safe pt-1.5
         md:bottom-0 md:left-1/2 md:-translate-x-1/2 md:w-[390px] md:border-x md:border-t md:rounded-t-3xl md:rounded-b-none md:pb-1.5 md:pt-1.5 md:shadow-2xl
-        lg:top-1/2 lg:right-0 lg:left-auto lg:bottom-auto lg:translate-x-0 lg:-translate-y-1/2 lg:w-[85px] lg:h-[410px] lg:border-y lg:border-l lg:border-r-0 lg:rounded-l-[2.5rem] lg:rounded-r-none lg:pt-4 lg:pb-4 lg:px-0">
+        lg:top-1/2 lg:right-0 lg:left-auto lg:bottom-auto lg:translate-x-0 lg:-translate-y-1/2 lg:w-[85px] lg:h-[410px] lg:border-y lg:border-l lg:border-r-0 lg:rounded-l-[2.5rem] lg:rounded-r-none lg:pt-4 lg:pb-4 lg:px-0`}>
         
         <div className="flex h-full items-center justify-around px-2 pb-1.5 md:pb-0 lg:flex-col lg:px-0 lg:py-2">
           

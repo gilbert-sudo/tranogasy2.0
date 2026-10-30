@@ -360,7 +360,7 @@ export default function CreateListingForm() {
       </header>
 
       {/* ── MAIN FULL-PAGE VIEWPORT CANVAS ── */}
-      <main className="w-full px-4 sm:px-8 lg:px-12 py-6 sm:py-8">
+      <main className="w-full px-4 sm:px-8 lg:px-12 py-6 sm:py-8 pb-32 sm:pb-36">
         <div className="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
           
           {/* ────────────── LEFT COLUMN: BORDERLESS FORM ────────────── */}
@@ -377,7 +377,7 @@ export default function CreateListingForm() {
               </div>
             )}
 
-            <form onSubmit={handleSubmit} className="space-y-10">
+            <form id="create-listing-form" onSubmit={handleSubmit} className="space-y-10">
               
               {/* SECTION 1: TYPE D'OFFRE & BIEN */}
               <section className="space-y-5">
@@ -936,40 +936,7 @@ export default function CreateListingForm() {
                 </section>
               )}
 
-              {/* ── BORDERLESS BOTTOM SUBMIT FLOATING BAR ── */}
-              <div className="pt-6 pb-20 sm:pb-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-                <button
-                  type="button"
-                  onClick={() => router.back()}
-                  className="w-full sm:w-auto px-6 py-3.5 rounded-2xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 font-bold text-sm transition-all cursor-pointer"
-                >
-                  Annuler & Retour
-                </button>
-
-                <button
-                  type="submit"
-                  disabled={isSubmitting || isImageUploading}
-                  className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-brand-green hover:bg-[#6fa81a] disabled:opacity-50 text-white font-extrabold text-sm sm:text-base shadow-lg shadow-brand-green/30 hover:scale-[1.01] active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2"
-                >
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      <span>Création de votre annonce en cours...</span>
-                    </>
-                  ) : isImageUploading ? (
-                    <>
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      <span>En attente des photos...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="w-5 h-5" />
-                      <span>Publier mon annonce maintenant</span>
-                    </>
-                  )}
-                </button>
-              </div>
-
+              <div className="h-4" />
             </form>
           </div>
 
@@ -1066,6 +1033,93 @@ export default function CreateListingForm() {
 
         </div>
       </main>
+
+      {/* ── STICKY BOTTOM ACTION BAR (ALWAYS ON WATCH, ULTRA-ROUNDED & MOBILE-FRIENDLY) ── */}
+      <aside
+        aria-label="Actions de publication"
+        className="fixed bottom-0 inset-x-0 z-40 bg-white/90 dark:bg-zinc-950/90 backdrop-blur-2xl border-t border-zinc-200/70 dark:border-zinc-800/80 shadow-[0_-8px_32px_rgba(0,0,0,0.08)] dark:shadow-[0_-8px_32px_rgba(0,0,0,0.4)] py-3 sm:py-3.5 px-4 sm:px-8"
+      >
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-3 sm:gap-4">
+          
+          {/* 1. Annuler & Retour Button (Very rounded pill) */}
+          <button
+            type="button"
+            onClick={() => router.back()}
+            className="flex items-center gap-1.5 sm:gap-2 px-4 sm:px-6 py-2.5 sm:py-3 rounded-full bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800/90 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 font-bold text-xs sm:text-sm transition-all active:scale-95 cursor-pointer shrink-0 shadow-xs"
+            title="Annuler et retourner à la page précédente"
+          >
+            <ArrowLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.5]" />
+            <span className="hidden sm:inline">Annuler & Retour</span>
+            <span className="sm:hidden">Annuler</span>
+          </button>
+
+          {/* 2. Live Watch Status Capsule (Creative real-time indicator on user's listing) */}
+          <div className="hidden md:flex items-center gap-3 px-4 py-2 rounded-full bg-zinc-100/80 dark:bg-zinc-900/80 border border-zinc-200/60 dark:border-zinc-800/60 text-xs text-zinc-600 dark:text-zinc-300 shadow-2xs">
+            <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-brand-green animate-pulse" />
+              <span className="font-extrabold text-zinc-900 dark:text-white truncate max-w-[180px]">
+                {title.trim() || 'Nouvelle annonce'}
+              </span>
+            </span>
+            <span className="text-zinc-300 dark:text-zinc-700">|</span>
+            <span className="font-black text-brand-green">
+              {type === 'rent'
+                ? rent && rent > 0
+                  ? `${rent.toLocaleString('fr-FR')} Ar/mois`
+                  : 'Loyer à définir'
+                : price && price > 0
+                  ? `${price.toLocaleString('fr-FR')} Ar`
+                  : 'Prix à définir'}
+            </span>
+            <span className="text-zinc-300 dark:text-zinc-700">|</span>
+            <span className="text-zinc-500 font-semibold text-[11px]">
+              {imageUploadState.images.length}/8 photos
+            </span>
+          </div>
+
+          {/* 3. Mobile Live Preview Toggle Pill (Quick access on mobile without scrolling) */}
+          <button
+            type="button"
+            onClick={() => setShowMobilePreview(!showMobilePreview)}
+            className="lg:hidden flex items-center gap-1.5 px-3.5 py-2.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 font-bold text-xs transition-all active:scale-95 shrink-0 shadow-xs cursor-pointer"
+          >
+            <Eye className="w-3.5 h-3.5 text-brand-green" />
+            <span>Aperçu</span>
+            {imageUploadState.images.length > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full bg-brand-green text-white text-[10px] font-extrabold">
+                {imageUploadState.images.length}
+              </span>
+            )}
+          </button>
+
+          {/* 4. Publier mon annonce Button (Very rounded, prominent, brand green glow) */}
+          <button
+            type="submit"
+            form="create-listing-form"
+            onClick={handleSubmit}
+            disabled={isSubmitting || isImageUploading}
+            className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-6 sm:px-9 py-2.5 sm:py-3.5 rounded-full bg-brand-green hover:bg-[#6fa81a] disabled:opacity-50 text-white font-black text-xs sm:text-sm md:text-base shadow-lg shadow-brand-green/25 active:scale-95 transition-all cursor-pointer whitespace-nowrap"
+          >
+            {isSubmitting ? (
+              <>
+                <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" />
+                <span>Publication en cours...</span>
+              </>
+            ) : isImageUploading ? (
+              <>
+                <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" />
+                <span>Envoi des photos...</span>
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-4 h-4 sm:w-5 sm:h-5" />
+                <span>Publier mon annonce</span>
+              </>
+            )}
+          </button>
+
+        </div>
+      </aside>
     </div>
   );
 }
