@@ -423,7 +423,7 @@ function DashboardContent() {
                 <div className="absolute inset-0 flex items-end pointer-events-none z-0">
                   {/* Slot 0 base (z-[3]) */}
                   <div className="relative flex-1 h-full z-[3] rounded-tl-xl sm:rounded-tl-2xl bg-zinc-200/80 dark:bg-zinc-800/80 border-t border-l border-zinc-300/60 dark:border-zinc-700/60">
-                    <div className="absolute -right-4 sm:-right-5 top-0 bottom-0 w-4 sm:w-5 drop-shadow-[1px_0_2px_rgba(0,0,0,0.06)]">
+                    <div className="absolute left-full -ml-[1.5px] top-0 bottom-0 w-4 sm:w-5">
                       <svg className="w-full h-full" viewBox="0 0 20 44" preserveAspectRatio="none" fill="none">
                         <path d="M 0 0 C 10 0, 10 44, 20 44 L 0 44 Z" className="fill-zinc-200/80 dark:fill-zinc-800/80" />
                         <path d="M 0 0 C 10 0, 10 44, 20 44" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-zinc-300/60 dark:text-zinc-700/60" />
@@ -432,7 +432,7 @@ function DashboardContent() {
                   </div>
                   {/* Slot 1 base (z-[2]) */}
                   <div className="relative flex-1 h-full z-[2] rounded-tl-xl sm:rounded-tl-2xl bg-zinc-200/80 dark:bg-zinc-800/80 border-t border-l border-zinc-300/60 dark:border-zinc-700/60">
-                    <div className="absolute -right-4 sm:-right-5 top-0 bottom-0 w-4 sm:w-5 drop-shadow-[1px_0_2px_rgba(0,0,0,0.06)]">
+                    <div className="absolute left-full -ml-[1.5px] top-0 bottom-0 w-4 sm:w-5">
                       <svg className="w-full h-full" viewBox="0 0 20 44" preserveAspectRatio="none" fill="none">
                         <path d="M 0 0 C 10 0, 10 44, 20 44 L 0 44 Z" className="fill-zinc-200/80 dark:fill-zinc-800/80" />
                         <path d="M 0 0 C 10 0, 10 44, 20 44" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-zinc-300/60 dark:text-zinc-700/60" />
@@ -441,7 +441,7 @@ function DashboardContent() {
                   </div>
                   {/* Slot 2 base (Mint Green accent, z-[1]) */}
                   <div className="relative flex-1 h-full z-[1] rounded-tl-xl sm:rounded-tl-2xl bg-emerald-500/15 dark:bg-emerald-950/40 border-t border-l border-emerald-500/30 dark:border-emerald-800/30">
-                    <div className="absolute -right-4 sm:-right-5 top-0 bottom-0 w-4 sm:w-5">
+                    <div className="absolute left-full -ml-[1.5px] top-0 bottom-0 w-4 sm:w-5">
                       <svg className="w-full h-full" viewBox="0 0 20 44" preserveAspectRatio="none" fill="none">
                         <path
                           d="M 0 0 C 10 0, 10 44, 20 44 L 0 44 Z"
@@ -475,7 +475,7 @@ function DashboardContent() {
                     }`}
                   >
                     {/* Sliding S-curve ear */}
-                    <div className="absolute -right-4 sm:-right-5 top-0 bottom-0 w-4 sm:w-5 pointer-events-none drop-shadow-[2px_0_3px_rgba(0,0,0,0.18)]">
+                    <div className="absolute left-full -ml-[1.5px] top-0 bottom-0 w-4 sm:w-5 pointer-events-none">
                       <svg className="w-full h-full" viewBox="0 0 20 44" preserveAspectRatio="none" fill="none">
                         <path
                           d="M 0 0 C 10 0, 10 44, 20 44 L 0 44 Z"
