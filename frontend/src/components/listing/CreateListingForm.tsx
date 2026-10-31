@@ -10,19 +10,24 @@ import {
   Sparkles,
   Key,
   DollarSign,
-  Home,
-  Building2,
   Plus,
   Minus,
   Phone,
-  Layers,
-  MapPin,
-  Image as ImageIcon,
   Check,
   Loader2,
   Eye,
   X,
-  Share2,
+  BedDouble,
+  Bath,
+  Toilet,
+  Sofa,
+  UtensilsCrossed,
+  Maximize2,
+  Home,
+  Trees,
+  MessageSquare,
+  ShieldCheck,
+  RotateCcw,
 } from 'lucide-react';
 import { useUserStore } from '@/store/userStore';
 import { useModalStore } from '@/store/modalStore';
@@ -45,9 +50,10 @@ export default function CreateListingForm() {
   const { images, isUploading: isImageUploading } = imageUploadState;
 
   // Form Fields
-  const [type, setType] = useState<'rent' | 'sale'>('rent');
-  const [houseType, setHouseType] = useState<'maison' | 'appartement'>('maison');
-  const [floor, setFloor] = useState<string>('');
+  // Defaulted for current business focus: houses for rent only
+  const [type, _setType] = useState<'rent' | 'sale'>('rent');
+  const [houseType, _setHouseType] = useState<'maison' | 'appartement'>('maison');
+  const [floor, _setFloor] = useState<string>('');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
 
@@ -71,11 +77,26 @@ export default function CreateListingForm() {
   const [insideToilet, setInsideToilet] = useState<boolean>(true);
   const [insideBathroom, setInsideBathroom] = useState<boolean>(true);
 
-  // Contact Phones
+  // Contact Phone (single direct contact)
   const [phone1, setPhone1] = useState<string>('');
-  const [phone2, setPhone2] = useState<string>('');
-  const [phone3, setPhone3] = useState<string>('');
-  const [showPhone3, setShowPhone3] = useState<boolean>(false);
+
+  // Carrier detection & validity for phone1
+  const cleanPhoneDigits = phone1.replace(/\D/g, '');
+  const isPhoneValid = cleanPhoneDigits.length >= 9;
+  const phoneCarrier = React.useMemo(() => {
+    const digits = phone1.replace(/\D/g, '');
+    const local = digits.startsWith('261') ? digits.slice(3) : digits.startsWith('0') ? digits.slice(1) : digits;
+    if (local.startsWith('34') || local.startsWith('38')) {
+      return { name: 'Telma', bg: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20' };
+    }
+    if (local.startsWith('32')) {
+      return { name: 'Orange', bg: 'bg-orange-500/10 text-orange-700 dark:text-orange-400 border-orange-500/20' };
+    }
+    if (local.startsWith('33') || local.startsWith('37')) {
+      return { name: 'Airtel', bg: 'bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20' };
+    }
+    return null;
+  }, [phone1]);
 
   // Admin source fields
   const [sourcesUsername, setSourcesUsername] = useState('');
@@ -195,7 +216,7 @@ export default function CreateListingForm() {
       return false;
     }
     if (!phone1.trim()) {
-      setFormError("Veuillez fournir au moins un numéro de téléphone joignable.");
+      setFormError("Veuillez fournir un numéro de téléphone joignable.");
       return false;
     }
 
@@ -241,8 +262,8 @@ export default function CreateListingForm() {
         images: images.filter((img) => (img.status === 'done' && img.src) || img.src).map((img) => img.src),
         owner: user._id || user.id,
         phone1: phone1.trim(),
-        phone2: phone2.trim() || null,
-        phone3: phone3.trim() || null,
+        phone2: null,
+        phone3: null,
         sources: (sourcesUsername || sourcesLink) ? {
           username: sourcesUsername || null,
           avatar: sourcesAvatar || null,
@@ -354,7 +375,7 @@ export default function CreateListingForm() {
             value={currentPriceValue ? currentPriceValue.toLocaleString('fr-FR') : ''}
             onChange={(e) => handlePriceChange(e.target.value)}
             placeholder={type === 'rent' ? 'Ex: 1 500 000' : 'Ex: 450 000 000'}
-            className="w-full pl-12 pr-24 py-2.5 sm:py-3 text-base sm:text-lg font-bold rounded-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 focus:border-brand-green focus:outline-none focus:ring-4 focus:ring-brand-green/15 text-zinc-900 dark:text-white transition-all shadow-xs"
+            className="w-full pl-12 pr-24 py-2.5 sm:py-3 text-base sm:text-lg font-bold rounded-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 focus:border-brand-green focus:outline-none focus:ring-4 focus:ring-brand-green/15 text-zinc-900 dark:text-white placeholder:text-zinc-400 dark:placeholder:text-zinc-500 transition-all shadow-xs"
           />
 
           <div className="absolute right-2 px-3 py-1.5 rounded-full bg-zinc-200/80 dark:bg-zinc-800 text-xs font-extrabold text-zinc-700 dark:text-zinc-300 pointer-events-none transition-all duration-300">
@@ -409,7 +430,7 @@ export default function CreateListingForm() {
           <button
             type="button"
             onClick={() => router.back()}
-            className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl flex items-center justify-center bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all text-zinc-700 dark:text-zinc-200 cursor-pointer"
+            className="w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all text-zinc-700 dark:text-zinc-200 cursor-pointer"
             aria-label="Retour"
           >
             <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -433,7 +454,7 @@ export default function CreateListingForm() {
           <button
             type="button"
             onClick={() => setShowMobilePreview(!showMobilePreview)}
-            className="lg:hidden flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 transition-all cursor-pointer"
+            className="lg:hidden flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 transition-all cursor-pointer"
           >
             <Eye className="w-3.5 h-3.5 text-brand-green" />
             <span>{showMobilePreview ? 'Formulaire' : 'Aperçu'}</span>
@@ -441,7 +462,7 @@ export default function CreateListingForm() {
 
           <Link
             href="/dashboard"
-            className="hidden sm:flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors"
+            className="hidden sm:flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors"
           >
             Tableau de bord
           </Link>
@@ -468,231 +489,11 @@ export default function CreateListingForm() {
 
             <form id="create-listing-form" onSubmit={handleSubmit} className="space-y-10">
               
-              {/* SECTION 1: TYPE D'OFFRE & BIEN */}
-              <section className="p-4 sm:p-5 rounded-3xl bg-white dark:bg-zinc-900/60 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs space-y-4 hover:border-zinc-300 dark:hover:border-zinc-700 transition-all duration-300">
-                {/* Header */}
-                <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800/80 pb-3">
-                  <div className="space-y-0.5">
-                    <div className="flex items-center gap-2">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-brand-green/10 text-brand-green">
-                        <span className="w-1.5 h-1.5 rounded-full bg-brand-green animate-pulse" />
-                        Étape 1
-                      </span>
-                      <span className="text-xs text-zinc-400 font-medium hidden sm:inline">• Configuration initiale</span>
-                    </div>
-                    <h2 className="text-base sm:text-lg font-extrabold tracking-tight text-zinc-900 dark:text-white">
-                      Type d&apos;offre & Nature du bien
-                    </h2>
-                  </div>
-
-                  {Boolean(type && (houseType === 'maison' || floor)) && (
-                    <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-bold animate-in fade-in duration-200">
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span className="hidden sm:inline">Prêt</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Vente vs Location: Smooth Segmented Sliding Pill */}
-                <div className="space-y-1.5">
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                    Modalit&eacute; de l&apos;offre *
-                  </label>
-                  <div className="relative p-1 bg-zinc-100 dark:bg-zinc-900 rounded-full border border-zinc-200/80 dark:border-zinc-800 flex items-center select-none shadow-xs">
-                    {/* Animated Sliding Indicator */}
-                    <div
-                      className="absolute top-1 bottom-1 left-1 w-[calc(50%-4px)] rounded-full bg-zinc-950 dark:bg-white shadow-md transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] pointer-events-none"
-                      style={{
-                        transform: type === 'rent' ? 'translateX(0)' : 'translateX(calc(100% + 4px))',
-                      }}
-                    />
-
-                    <button
-                      type="button"
-                      onClick={() => setType('rent')}
-                      className={`relative z-10 w-1/2 flex items-center justify-center gap-2 py-2.5 px-3 rounded-full font-bold text-xs sm:text-sm transition-colors duration-200 cursor-pointer ${
-                        type === 'rent'
-                          ? 'text-white dark:text-zinc-950'
-                          : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
-                      }`}
-                    >
-                      <Key
-                        className={`w-4 h-4 transition-transform duration-300 ${
-                          type === 'rent' ? 'text-brand-green scale-110' : 'text-zinc-400'
-                        }`}
-                      />
-                      <span>Location</span>
-                      <span
-                        className={`hidden sm:inline-block text-[10px] px-2 py-0.5 rounded-full font-semibold transition-colors duration-200 ${
-                          type === 'rent'
-                            ? 'bg-white/15 dark:bg-zinc-900/15 text-zinc-200 dark:text-zinc-700'
-                            : 'bg-zinc-200/60 dark:bg-zinc-800/60 text-zinc-400'
-                        }`}
-                      >
-                        Bail
-                      </span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setType('sale')}
-                      className={`relative z-10 w-1/2 flex items-center justify-center gap-2 py-2.5 px-3 rounded-full font-bold text-xs sm:text-sm transition-colors duration-200 cursor-pointer ${
-                        type === 'sale'
-                          ? 'text-white dark:text-zinc-950'
-                          : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
-                      }`}
-                    >
-                      <DollarSign
-                        className={`w-4 h-4 transition-transform duration-300 ${
-                          type === 'sale' ? 'text-brand-green scale-110' : 'text-zinc-400'
-                        }`}
-                      />
-                      <span>Vente</span>
-                      <span
-                        className={`hidden sm:inline-block text-[10px] px-2 py-0.5 rounded-full font-semibold transition-colors duration-200 ${
-                          type === 'sale'
-                            ? 'bg-white/15 dark:bg-zinc-900/15 text-zinc-200 dark:text-zinc-700'
-                            : 'bg-zinc-200/60 dark:bg-zinc-800/60 text-zinc-400'
-                        }`}
-                      >
-                        Achat
-                      </span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Maison vs Appartement: Compact Rounded Capsule Cards */}
-                <div className="space-y-1.5">
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                    Catégorie du bien *
-                  </label>
-                  <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setHouseType('maison')}
-                      className={`group relative flex items-center justify-between p-2.5 sm:px-3.5 sm:py-2.5 rounded-2xl border transition-all duration-200 cursor-pointer select-none active:scale-[0.98] ${
-                        houseType === 'maison'
-                          ? 'bg-brand-green/10 dark:bg-brand-green/15 border-brand-green text-zinc-900 dark:text-white shadow-[0_2px_12px_rgba(124,189,30,0.15)] ring-1 ring-brand-green/40'
-                          : 'bg-white dark:bg-zinc-900/60 border-zinc-200/80 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100/70 dark:hover:bg-zinc-800/50 hover:border-zinc-300 dark:hover:border-zinc-700'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <div
-                          className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 ${
-                            houseType === 'maison'
-                              ? 'bg-brand-green text-white shadow-xs scale-105'
-                              : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 group-hover:text-zinc-600 dark:group-hover:text-zinc-300'
-                          }`}
-                        >
-                          <Home className="w-4 h-4" />
-                        </div>
-                        <span className="text-xs sm:text-sm font-bold tracking-tight">Maison / Villa</span>
-                      </div>
-                      <div
-                        className={`w-5 h-5 rounded-full flex items-center justify-center transition-all duration-300 ${
-                          houseType === 'maison'
-                            ? 'bg-brand-green text-white scale-100 shadow-xs'
-                            : 'border border-zinc-300 dark:border-zinc-700 opacity-30 scale-75'
-                        }`}
-                      >
-                        <Check className="w-3 h-3 stroke-[3]" />
-                      </div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setHouseType('appartement')}
-                      className={`group relative flex items-center justify-between p-2.5 sm:px-3.5 sm:py-2.5 rounded-2xl border transition-all duration-200 cursor-pointer select-none active:scale-[0.98] ${
-                        houseType === 'appartement'
-                          ? 'bg-brand-green/10 dark:bg-brand-green/15 border-brand-green text-zinc-900 dark:text-white shadow-[0_2px_12px_rgba(124,189,30,0.15)] ring-1 ring-brand-green/40'
-                          : 'bg-white dark:bg-zinc-900/60 border-zinc-200/80 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100/70 dark:hover:bg-zinc-800/50 hover:border-zinc-300 dark:hover:border-zinc-700'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <div
-                          className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 ${
-                            houseType === 'appartement'
-                              ? 'bg-brand-green text-white shadow-xs scale-105'
-                              : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 group-hover:text-zinc-600 dark:group-hover:text-zinc-300'
-                          }`}
-                        >
-                          <Building2 className="w-4 h-4" />
-                        </div>
-                        <span className="text-xs sm:text-sm font-bold tracking-tight">Appartement</span>
-                      </div>
-                      <div
-                        className={`w-5 h-5 rounded-full flex items-center justify-center transition-all duration-300 ${
-                          houseType === 'appartement'
-                            ? 'bg-brand-green text-white scale-100 shadow-xs'
-                            : 'border border-zinc-300 dark:border-zinc-700 opacity-30 scale-75'
-                        }`}
-                      >
-                        <Check className="w-3 h-3 stroke-[3]" />
-                      </div>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Étage (si appartement) - Accordion smoothly animated */}
-                <div
-                  className={`grid transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-                    houseType === 'appartement'
-                      ? 'grid-rows-[1fr] opacity-100 mt-2'
-                      : 'grid-rows-[0fr] opacity-0 mt-0 pointer-events-none'
-                  }`}
-                >
-                  <div className="overflow-hidden">
-                    <div className="p-3 sm:p-3.5 rounded-2xl bg-zinc-100/70 dark:bg-zinc-800/50 border border-zinc-200/70 dark:border-zinc-700/60 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <label className="text-[11px] sm:text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
-                          <Layers className="w-3.5 h-3.5 text-brand-green" />
-                          <span>&Eacute;tage de l&apos;appartement *</span>
-                        </label>
-                        {floor && (
-                          <span className="text-[10px] sm:text-[11px] font-bold text-brand-green bg-brand-green/10 px-2.5 py-0.5 rounded-full font-mono flex items-center gap-1">
-                            <Check className="w-3 h-3 stroke-[3]" />
-                            {floor}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Quick floor chips */}
-                      <div className="flex flex-wrap gap-1.5">
-                        {[
-                          { label: 'RDC', value: 'Rez-de-chaussée' },
-                          { label: '1er', value: '1er étage' },
-                          { label: '2ème', value: '2ème étage' },
-                          { label: '3ème', value: '3ème étage' },
-                          { label: '4ème', value: '4ème étage' },
-                          { label: '5ème+', value: '5ème étage ou plus' },
-                        ].map((item) => {
-                          const isSelected = floor === item.value;
-                          return (
-                            <button
-                              key={item.value}
-                              type="button"
-                              onClick={() => setFloor(item.value)}
-                              className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all duration-200 cursor-pointer ${
-                                isSelected
-                                  ? 'bg-brand-green text-white shadow-xs scale-[1.02]'
-                                  : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200/80 dark:hover:bg-zinc-800 border border-zinc-200/80 dark:border-zinc-700/80'
-                              }`}
-                            >
-                              {item.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </section>
-
-              {/* SECTION 2: TITRE & DESCRIPTION */}
+              {/* SECTION 1: TITRE & DESCRIPTION */}
               <section className="space-y-4">
                 <div className="border-b border-zinc-200/50 dark:border-zinc-800/50 pb-2">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-brand-green">
-                    Étape 2
+                    Étape 1
                   </span>
                   <h2 className="text-lg sm:text-xl font-extrabold tracking-tight">
                     Présentation & Description
@@ -705,18 +506,23 @@ export default function CreateListingForm() {
                     <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
                       Titre de l'annonce *
                     </label>
-                    <span className="text-[11px] text-zinc-400">
+                    <span className="text-[11px] font-medium text-zinc-400">
                       {title.length} / 120
                     </span>
                   </div>
-                  <input
-                    type="text"
-                    maxLength={120}
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    placeholder="Ex: Villa contemporaine 5 pièces avec piscine à Ivandry"
-                    className="w-full px-4 py-3.5 text-sm sm:text-base rounded-2xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 focus:border-brand-green focus:outline-none focus:ring-2 focus:ring-brand-green/20 text-zinc-900 dark:text-white transition-all shadow-xs"
-                  />
+                  <div className="relative flex items-center group">
+                    <div className="absolute left-3 w-8 h-8 rounded-full bg-brand-green/10 text-brand-green flex items-center justify-center pointer-events-none transition-transform duration-200 group-focus-within:scale-110">
+                      <Home className="w-4 h-4" />
+                    </div>
+                    <input
+                      type="text"
+                      maxLength={120}
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      placeholder="Ex: Villa contemporaine 5 pièces avec piscine à Ivandry"
+                      className="w-full pl-12 pr-4 py-2.5 sm:py-3 text-sm sm:text-base font-medium rounded-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 focus:border-brand-green focus:outline-none focus:ring-4 focus:ring-brand-green/15 text-zinc-900 dark:text-white placeholder:text-zinc-400 dark:placeholder:text-zinc-500 transition-all shadow-xs"
+                    />
+                  </div>
                 </div>
 
                 {/* Description */}
@@ -725,7 +531,7 @@ export default function CreateListingForm() {
                     <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
                       Description détaillée
                     </label>
-                    <span className="text-[11px] text-zinc-400">
+                    <span className="text-[11px] font-medium text-zinc-400">
                       {description.length} / 1000
                     </span>
                   </div>
@@ -735,16 +541,16 @@ export default function CreateListingForm() {
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     placeholder="Décrivez l'environnement, la luminosité, les accès, la sécurité et les atouts uniques du bien..."
-                    className="w-full p-4 text-sm rounded-2xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 focus:border-brand-green focus:outline-none focus:ring-2 focus:ring-brand-green/20 text-zinc-900 dark:text-white transition-all resize-y shadow-xs"
+                    className="w-full p-4 sm:p-5 text-sm sm:text-base font-medium rounded-3xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 focus:border-brand-green focus:outline-none focus:ring-4 focus:ring-brand-green/15 text-zinc-900 dark:text-white placeholder:text-zinc-400 dark:placeholder:text-zinc-500 transition-all resize-y shadow-xs"
                   />
                 </div>
               </section>
 
-              {/* SECTION 3: LOCALISATION */}
+              {/* SECTION 2: LOCALISATION */}
               <section className="space-y-4">
                 <div className="border-b border-zinc-200/50 dark:border-zinc-800/50 pb-2">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-brand-green">
-                    Étape 3
+                    Étape 2
                   </span>
                   <h2 className="text-lg sm:text-xl font-extrabold tracking-tight">
                     Emplacement & Coordonnées
@@ -759,37 +565,54 @@ export default function CreateListingForm() {
                 />
               </section>
 
-              {/* SECTION 4: SPÉCIFICATIONS & PIÈCES */}
+              {/* SECTION 3: SPÉCIFICATIONS & PIÈCES */}
               <section className="space-y-5">
                 <div className="border-b border-zinc-200/50 dark:border-zinc-800/50 pb-2">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-brand-green">
-                    Étape 4
+                    Étape 3
                   </span>
                   <h2 className="text-lg sm:text-xl font-extrabold tracking-tight">
                     Caractéristiques & Pièces
                   </h2>
                 </div>
 
-                {/* Steppers Grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
+                {/* Steppers Grid - Compact, Ultra-arrondi & Animations fluides */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-3.5">
                   {/* Chambres */}
-                  <div className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/70 dark:border-zinc-800 space-y-2">
-                    <span className="text-xs font-bold text-zinc-500 dark:text-zinc-400">
-                      Chambre(s)
-                    </span>
-                    <div className="flex items-center justify-between">
+                  <div className="p-2.5 sm:p-3.5 rounded-2xl sm:rounded-3xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/70 dark:border-zinc-800 space-y-2 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <div className="w-6 h-6 rounded-full bg-zinc-200/60 dark:bg-zinc-800 flex items-center justify-center shrink-0 text-zinc-500 dark:text-zinc-400">
+                        <BedDouble className="w-3.5 h-3.5" />
+                      </div>
+                      <span className="text-xs font-bold text-zinc-600 dark:text-zinc-300 truncate">
+                        Chambre(s)
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between px-0.5 sm:px-1">
                       <button
                         type="button"
+                        disabled={rooms <= 0}
                         onClick={() => setRooms(Math.max(0, rooms - 1))}
-                        className="w-8 h-8 rounded-xl flex items-center justify-center bg-zinc-200/80 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 cursor-pointer"
+                        className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center border transition-all duration-200 select-none ${
+                          rooms <= 0
+                            ? "opacity-30 border-zinc-200 dark:border-zinc-800 text-zinc-400 cursor-not-allowed"
+                            : "bg-white dark:bg-zinc-800 border-zinc-200/80 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700 hover:scale-105 active:scale-85 cursor-pointer shadow-2xs"
+                        }`}
+                        aria-label="Diminuer les chambres"
                       >
                         <Minus className="w-3.5 h-3.5" />
                       </button>
-                      <span className="text-lg font-bold font-mono">{rooms}</span>
+                      <span
+                        key={rooms}
+                        className="text-base sm:text-lg font-extrabold font-mono text-zinc-900 dark:text-white select-none animate-in fade-in zoom-in-90 duration-150"
+                      >
+                        {rooms}
+                      </span>
                       <button
                         type="button"
                         onClick={() => setRooms(rooms + 1)}
-                        className="w-8 h-8 rounded-xl flex items-center justify-center bg-zinc-200/80 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 cursor-pointer"
+                        className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center bg-white dark:bg-zinc-800 border border-zinc-200/80 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700 hover:scale-105 active:scale-85 cursor-pointer shadow-2xs transition-all duration-200 select-none"
+                        aria-label="Augmenter les chambres"
                       >
                         <Plus className="w-3.5 h-3.5" />
                       </button>
@@ -797,23 +620,45 @@ export default function CreateListingForm() {
                   </div>
 
                   {/* Salles de bain */}
-                  <div className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/70 dark:border-zinc-800 space-y-2">
-                    <span className="text-xs font-bold text-zinc-500 dark:text-zinc-400">
-                      Salle(s) de bain / Douche
-                    </span>
-                    <div className="flex items-center justify-between">
+                  <div className="p-2.5 sm:p-3.5 rounded-2xl sm:rounded-3xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/70 dark:border-zinc-800 space-y-2 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
+                    <div className="flex items-center justify-between min-w-0 gap-1">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <div className="w-6 h-6 rounded-full bg-brand-green/10 dark:bg-brand-green/20 flex items-center justify-center shrink-0 text-brand-green">
+                          <Bath className="w-3.5 h-3.5" />
+                        </div>
+                        <span className="text-xs font-bold text-zinc-700 dark:text-zinc-200 truncate">
+                          Salle de bain
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-bold text-brand-green px-1.5 py-0.5 rounded-full bg-brand-green/10 dark:bg-brand-green/20 shrink-0">
+                        {insideBathroom ? "Int." : "Ext."}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between px-0.5 sm:px-1">
                       <button
                         type="button"
+                        disabled={bathrooms <= 0}
                         onClick={() => setBathrooms(Math.max(0, bathrooms - 1))}
-                        className="w-8 h-8 rounded-xl flex items-center justify-center bg-zinc-200/80 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 cursor-pointer"
+                        className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center border transition-all duration-200 select-none ${
+                          bathrooms <= 0
+                            ? "opacity-30 border-zinc-200 dark:border-zinc-800 text-zinc-400 cursor-not-allowed"
+                            : "bg-white dark:bg-zinc-800 border-zinc-200/80 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700 hover:scale-105 active:scale-85 cursor-pointer shadow-2xs"
+                        }`}
+                        aria-label="Diminuer les salles de bain"
                       >
                         <Minus className="w-3.5 h-3.5" />
                       </button>
-                      <span className="text-lg font-bold font-mono">{bathrooms}</span>
+                      <span
+                        key={bathrooms}
+                        className="text-base sm:text-lg font-extrabold font-mono text-zinc-900 dark:text-white select-none animate-in fade-in zoom-in-90 duration-150"
+                      >
+                        {bathrooms}
+                      </span>
                       <button
                         type="button"
                         onClick={() => setBathrooms(bathrooms + 1)}
-                        className="w-8 h-8 rounded-xl flex items-center justify-center bg-zinc-200/80 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 cursor-pointer"
+                        className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center bg-white dark:bg-zinc-800 border border-zinc-200/80 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700 hover:scale-105 active:scale-85 cursor-pointer shadow-2xs transition-all duration-200 select-none"
+                        aria-label="Augmenter les salles de bain"
                       >
                         <Plus className="w-3.5 h-3.5" />
                       </button>
@@ -821,23 +666,45 @@ export default function CreateListingForm() {
                   </div>
 
                   {/* WC */}
-                  <div className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/70 dark:border-zinc-800 space-y-2">
-                    <span className="text-xs font-bold text-zinc-500 dark:text-zinc-400">
-                      Toilettes / W.C.
-                    </span>
-                    <div className="flex items-center justify-between">
+                  <div className="p-2.5 sm:p-3.5 rounded-2xl sm:rounded-3xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/70 dark:border-zinc-800 space-y-2 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
+                    <div className="flex items-center justify-between min-w-0 gap-1">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <div className="w-6 h-6 rounded-full bg-brand-green/10 dark:bg-brand-green/20 flex items-center justify-center shrink-0 text-brand-green">
+                          <Toilet className="w-3.5 h-3.5" />
+                        </div>
+                        <span className="text-xs font-bold text-zinc-700 dark:text-zinc-200 truncate">
+                          Toilettes / W.C.
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-bold text-brand-green px-1.5 py-0.5 rounded-full bg-brand-green/10 dark:bg-brand-green/20 shrink-0">
+                        {insideToilet ? "Int." : "Ext."}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between px-0.5 sm:px-1">
                       <button
                         type="button"
+                        disabled={toilet <= 0}
                         onClick={() => setToilet(Math.max(0, toilet - 1))}
-                        className="w-8 h-8 rounded-xl flex items-center justify-center bg-zinc-200/80 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 cursor-pointer"
+                        className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center border transition-all duration-200 select-none ${
+                          toilet <= 0
+                            ? "opacity-30 border-zinc-200 dark:border-zinc-800 text-zinc-400 cursor-not-allowed"
+                            : "bg-white dark:bg-zinc-800 border-zinc-200/80 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700 hover:scale-105 active:scale-85 cursor-pointer shadow-2xs"
+                        }`}
+                        aria-label="Diminuer les toilettes"
                       >
                         <Minus className="w-3.5 h-3.5" />
                       </button>
-                      <span className="text-lg font-bold font-mono">{toilet}</span>
+                      <span
+                        key={toilet}
+                        className="text-base sm:text-lg font-extrabold font-mono text-zinc-900 dark:text-white select-none animate-in fade-in zoom-in-90 duration-150"
+                      >
+                        {toilet}
+                      </span>
                       <button
                         type="button"
                         onClick={() => setToilet(toilet + 1)}
-                        className="w-8 h-8 rounded-xl flex items-center justify-center bg-zinc-200/80 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 cursor-pointer"
+                        className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center bg-white dark:bg-zinc-800 border border-zinc-200/80 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700 hover:scale-105 active:scale-85 cursor-pointer shadow-2xs transition-all duration-200 select-none"
+                        aria-label="Augmenter les toilettes"
                       >
                         <Plus className="w-3.5 h-3.5" />
                       </button>
@@ -845,23 +712,40 @@ export default function CreateListingForm() {
                   </div>
 
                   {/* Salon / Living */}
-                  <div className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/70 dark:border-zinc-800 space-y-2">
-                    <span className="text-xs font-bold text-zinc-500 dark:text-zinc-400">
-                      Living / Salon
-                    </span>
-                    <div className="flex items-center justify-between">
+                  <div className="p-2.5 sm:p-3.5 rounded-2xl sm:rounded-3xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/70 dark:border-zinc-800 space-y-2 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <div className="w-6 h-6 rounded-full bg-zinc-200/60 dark:bg-zinc-800 flex items-center justify-center shrink-0 text-zinc-500 dark:text-zinc-400">
+                        <Sofa className="w-3.5 h-3.5" />
+                      </div>
+                      <span className="text-xs font-bold text-zinc-600 dark:text-zinc-300 truncate">
+                        Living / Salon
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between px-0.5 sm:px-1">
                       <button
                         type="button"
+                        disabled={livingRoom <= 0}
                         onClick={() => setLivingRoom(Math.max(0, livingRoom - 1))}
-                        className="w-8 h-8 rounded-xl flex items-center justify-center bg-zinc-200/80 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 cursor-pointer"
+                        className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center border transition-all duration-200 select-none ${
+                          livingRoom <= 0
+                            ? "opacity-30 border-zinc-200 dark:border-zinc-800 text-zinc-400 cursor-not-allowed"
+                            : "bg-white dark:bg-zinc-800 border-zinc-200/80 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700 hover:scale-105 active:scale-85 cursor-pointer shadow-2xs"
+                        }`}
+                        aria-label="Diminuer le salon"
                       >
                         <Minus className="w-3.5 h-3.5" />
                       </button>
-                      <span className="text-lg font-bold font-mono">{livingRoom}</span>
+                      <span
+                        key={livingRoom}
+                        className="text-base sm:text-lg font-extrabold font-mono text-zinc-900 dark:text-white select-none animate-in fade-in zoom-in-90 duration-150"
+                      >
+                        {livingRoom}
+                      </span>
                       <button
                         type="button"
                         onClick={() => setLivingRoom(livingRoom + 1)}
-                        className="w-8 h-8 rounded-xl flex items-center justify-center bg-zinc-200/80 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 cursor-pointer"
+                        className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center bg-white dark:bg-zinc-800 border border-zinc-200/80 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700 hover:scale-105 active:scale-85 cursor-pointer shadow-2xs transition-all duration-200 select-none"
+                        aria-label="Augmenter le salon"
                       >
                         <Plus className="w-3.5 h-3.5" />
                       </button>
@@ -869,23 +753,40 @@ export default function CreateListingForm() {
                   </div>
 
                   {/* Cuisine */}
-                  <div className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/70 dark:border-zinc-800 space-y-2">
-                    <span className="text-xs font-bold text-zinc-500 dark:text-zinc-400">
-                      Cuisine(s)
-                    </span>
-                    <div className="flex items-center justify-between">
+                  <div className="p-2.5 sm:p-3.5 rounded-2xl sm:rounded-3xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/70 dark:border-zinc-800 space-y-2 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <div className="w-6 h-6 rounded-full bg-zinc-200/60 dark:bg-zinc-800 flex items-center justify-center shrink-0 text-zinc-500 dark:text-zinc-400">
+                        <UtensilsCrossed className="w-3.5 h-3.5" />
+                      </div>
+                      <span className="text-xs font-bold text-zinc-600 dark:text-zinc-300 truncate">
+                        Cuisine(s)
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between px-0.5 sm:px-1">
                       <button
                         type="button"
+                        disabled={kitchen <= 0}
                         onClick={() => setKitchen(Math.max(0, kitchen - 1))}
-                        className="w-8 h-8 rounded-xl flex items-center justify-center bg-zinc-200/80 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 cursor-pointer"
+                        className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center border transition-all duration-200 select-none ${
+                          kitchen <= 0
+                            ? "opacity-30 border-zinc-200 dark:border-zinc-800 text-zinc-400 cursor-not-allowed"
+                            : "bg-white dark:bg-zinc-800 border-zinc-200/80 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700 hover:scale-105 active:scale-85 cursor-pointer shadow-2xs"
+                        }`}
+                        aria-label="Diminuer la cuisine"
                       >
                         <Minus className="w-3.5 h-3.5" />
                       </button>
-                      <span className="text-lg font-bold font-mono">{kitchen}</span>
+                      <span
+                        key={kitchen}
+                        className="text-base sm:text-lg font-extrabold font-mono text-zinc-900 dark:text-white select-none animate-in fade-in zoom-in-90 duration-150"
+                      >
+                        {kitchen}
+                      </span>
                       <button
                         type="button"
                         onClick={() => setKitchen(kitchen + 1)}
-                        className="w-8 h-8 rounded-xl flex items-center justify-center bg-zinc-200/80 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 cursor-pointer"
+                        className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center bg-white dark:bg-zinc-800 border border-zinc-200/80 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700 hover:scale-105 active:scale-85 cursor-pointer shadow-2xs transition-all duration-200 select-none"
+                        aria-label="Augmenter la cuisine"
                       >
                         <Plus className="w-3.5 h-3.5" />
                       </button>
@@ -893,92 +794,176 @@ export default function CreateListingForm() {
                   </div>
 
                   {/* Surface m² */}
-                  <div className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/70 dark:border-zinc-800 space-y-2">
-                    <span className="text-xs font-bold text-zinc-500 dark:text-zinc-400">
-                      Surface habitable
-                    </span>
-                    <div className="flex items-center justify-between">
+                  <div className="p-2.5 sm:p-3.5 rounded-2xl sm:rounded-3xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/70 dark:border-zinc-800 space-y-2 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <div className="w-6 h-6 rounded-full bg-zinc-200/60 dark:bg-zinc-800 flex items-center justify-center shrink-0 text-zinc-500 dark:text-zinc-400">
+                        <Maximize2 className="w-3.5 h-3.5" />
+                      </div>
+                      <span className="text-xs font-bold text-zinc-600 dark:text-zinc-300 truncate">
+                        Surface habitable
+                      </span>
+                    </div>
+                    <div className="relative flex items-center group">
                       <input
                         type="number"
                         min="0"
-                        value={area || ''}
+                        value={area || ""}
                         onChange={(e) => setArea(parseInt(e.target.value, 10) || 0)}
-                        className="w-full text-center text-lg font-bold font-mono bg-transparent focus:outline-none"
+                        className="w-full pl-3 pr-8 py-1.5 text-center text-base sm:text-lg font-extrabold font-mono rounded-full bg-white dark:bg-zinc-800 border border-zinc-200/80 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600 focus:border-brand-green focus:outline-none focus:ring-4 focus:ring-brand-green/15 text-zinc-900 dark:text-white shadow-2xs transition-all"
                       />
-                      <span className="text-xs text-zinc-400 font-bold shrink-0">m²</span>
+                      <span className="absolute right-2.5 text-xs text-zinc-400 font-bold pointer-events-none select-none">
+                        m²
+                      </span>
                     </div>
                   </div>
                 </div>
 
-                {/* Emplacement WC & Douche (Intérieur / Extérieur) */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-zinc-600 dark:text-zinc-400">
-                      Emplacement des W.C.
-                    </label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setInsideToilet(true)}
-                        className={`py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                          insideToilet
-                            ? 'bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 shadow-xs'
-                            : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400'
-                        }`}
-                      >
-                        Intérieur
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setInsideToilet(false)}
-                        className={`py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                          !insideToilet
-                            ? 'bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 shadow-xs'
-                            : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400'
-                        }`}
-                      >
-                        Extérieur
-                      </button>
+                {/* Emplacement Sanitaires (Douche & W.C.) - Design épuré sans double bordure */}
+                <div className="space-y-2 pt-1">
+                  <div className="flex items-center justify-between px-0.5">
+                    <div className="flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-brand-green" />
+                      <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                        Emplacement des sanitaires
+                      </span>
+                      <span className="text-[11px] text-zinc-400 dark:text-zinc-500 font-medium hidden sm:inline">
+                        • Douche & W.C. indiqués ci-dessus
+                      </span>
                     </div>
+                    <span className="text-[10px] font-semibold text-zinc-400 dark:text-zinc-500 tracking-wide uppercase">
+                      Intérieur / Extérieur
+                    </span>
                   </div>
 
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-zinc-600 dark:text-zinc-400">
-                      Emplacement de la Douche
-                    </label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setInsideBathroom(true)}
-                        className={`py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                          insideBathroom
-                            ? 'bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 shadow-xs'
-                            : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400'
-                        }`}
-                      >
-                        Intérieur
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setInsideBathroom(false)}
-                        className={`py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                          !insideBathroom
-                            ? 'bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 shadow-xs'
-                            : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400'
-                        }`}
-                      >
-                        Extérieur
-                      </button>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3.5">
+                    {/* Douche / Salle de bain - Carte autonome sans bordure imbriquée */}
+                    <div className="flex items-center justify-between p-2.5 sm:p-3 rounded-2xl sm:rounded-3xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/70 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
+                      <div className="flex items-center gap-2 min-w-0 pr-1.5">
+                        <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-brand-green/10 dark:bg-brand-green/20 flex items-center justify-center shrink-0 text-brand-green">
+                          <Bath className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200 truncate">
+                              Douche / SDB
+                            </span>
+                            <span
+                              key={bathrooms}
+                              className="px-1.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-zinc-200/60 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 shrink-0 animate-in fade-in zoom-in-90 duration-150"
+                            >
+                              {bathrooms}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-zinc-400 dark:text-zinc-500 block truncate">
+                            {insideBathroom ? "Emplacement intérieur" : "Emplacement extérieur"}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Fluid Animated Sliding Pill - Track sans bordure */}
+                      <div className="relative inline-flex p-0.5 sm:p-1 rounded-full bg-zinc-200/70 dark:bg-zinc-800 shrink-0 w-38 sm:w-44 h-7.5 sm:h-8 items-center">
+                        <div
+                          className={`absolute top-0.5 sm:top-1 bottom-0.5 sm:bottom-1 rounded-full bg-zinc-950 dark:bg-white shadow-xs transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+                            insideBathroom
+                              ? "left-0.5 sm:left-1 w-[calc(50%-2px)] sm:w-[calc(50%-4px)]"
+                              : "left-[calc(50%+1px)] sm:left-[calc(50%+2px)] w-[calc(50%-2px)] sm:w-[calc(50%-4px)]"
+                          }`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setInsideBathroom(true)}
+                          className={`relative z-10 flex-1 h-full rounded-full text-[10px] sm:text-xs font-bold transition-colors duration-200 flex items-center justify-center gap-1 cursor-pointer select-none active:scale-95 ${
+                            insideBathroom
+                              ? "text-white dark:text-zinc-950"
+                              : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200"
+                          }`}
+                        >
+                          <Home className="w-3 h-3 shrink-0" />
+                          <span>Intérieur</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setInsideBathroom(false)}
+                          className={`relative z-10 flex-1 h-full rounded-full text-[10px] sm:text-xs font-bold transition-colors duration-200 flex items-center justify-center gap-1 cursor-pointer select-none active:scale-95 ${
+                            !insideBathroom
+                              ? "text-white dark:text-zinc-950"
+                              : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200"
+                          }`}
+                        >
+                          <Trees className="w-3 h-3 shrink-0" />
+                          <span>Extérieur</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Toilettes / W.C. - Carte autonome sans bordure imbriquée */}
+                    <div className="flex items-center justify-between p-2.5 sm:p-3 rounded-2xl sm:rounded-3xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/70 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
+                      <div className="flex items-center gap-2 min-w-0 pr-1.5">
+                        <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-brand-green/10 dark:bg-brand-green/20 flex items-center justify-center shrink-0 text-brand-green">
+                          <Toilet className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200 truncate">
+                              Toilettes
+                            </span>
+                            <span
+                              key={toilet}
+                              className="px-1.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-zinc-200/60 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 shrink-0 animate-in fade-in zoom-in-90 duration-150"
+                            >
+                              {toilet}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-zinc-400 dark:text-zinc-500 block truncate">
+                            {insideToilet ? "Emplacement intérieur" : "Emplacement extérieur"}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Fluid Animated Sliding Pill - Track sans bordure */}
+                      <div className="relative inline-flex p-0.5 sm:p-1 rounded-full bg-zinc-200/70 dark:bg-zinc-800 shrink-0 w-38 sm:w-44 h-7.5 sm:h-8 items-center">
+                        <div
+                          className={`absolute top-0.5 sm:top-1 bottom-0.5 sm:bottom-1 rounded-full bg-zinc-950 dark:bg-white shadow-xs transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+                            insideToilet
+                              ? "left-0.5 sm:left-1 w-[calc(50%-2px)] sm:w-[calc(50%-4px)]"
+                              : "left-[calc(50%+1px)] sm:left-[calc(50%+2px)] w-[calc(50%-2px)] sm:w-[calc(50%-4px)]"
+                          }`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setInsideToilet(true)}
+                          className={`relative z-10 flex-1 h-full rounded-full text-[10px] sm:text-xs font-bold transition-colors duration-200 flex items-center justify-center gap-1 cursor-pointer select-none active:scale-95 ${
+                            insideToilet
+                              ? "text-white dark:text-zinc-950"
+                              : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200"
+                          }`}
+                        >
+                          <Home className="w-3 h-3 shrink-0" />
+                          <span>Intérieur</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setInsideToilet(false)}
+                          className={`relative z-10 flex-1 h-full rounded-full text-[10px] sm:text-xs font-bold transition-colors duration-200 flex items-center justify-center gap-1 cursor-pointer select-none active:scale-95 ${
+                            !insideToilet
+                              ? "text-white dark:text-zinc-950"
+                              : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200"
+                          }`}
+                        >
+                          <Trees className="w-3 h-3 shrink-0" />
+                          <span>Extérieur</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
               </section>
 
-              {/* SECTION 5: ÉQUIPEMENTS & PRESTATIONS (34 FEATURES) */}
+              {/* SECTION 4: ÉQUIPEMENTS & PRESTATIONS (34 FEATURES) */}
               <section className="space-y-4">
                 <div className="border-b border-zinc-200/50 dark:border-zinc-800/50 pb-2">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-brand-green">
-                    Étape 5
+                    Étape 4
                   </span>
                   <h2 className="text-lg sm:text-xl font-extrabold tracking-tight">
                     Prestations & Commodités
@@ -991,11 +976,11 @@ export default function CreateListingForm() {
                 />
               </section>
 
-              {/* SECTION 6: PHOTOS GOOGLE CLOUD STORAGE */}
+              {/* SECTION 5: PHOTOS GOOGLE CLOUD STORAGE */}
               <section className="space-y-4">
                 <div className="border-b border-zinc-200/50 dark:border-zinc-800/50 pb-2">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-brand-green">
-                    Étape 6
+                    Étape 5
                   </span>
                   <h2 className="text-lg sm:text-xl font-extrabold tracking-tight">
                     Photos de l'annonce
@@ -1005,79 +990,121 @@ export default function CreateListingForm() {
                 <ListingImageUploader uploadState={imageUploadState} />
               </section>
 
-              {/* SECTION 7: COORDONNÉES DE CONTACT */}
-              <section className="space-y-4">
+              {/* SECTION 6: COORDONNÉES DE CONTACT (MINIMALISTE, ULTRA-ARRONDI & UNIQUE) */}
+              <section className="space-y-3.5">
                 <div className="border-b border-zinc-200/50 dark:border-zinc-800/50 pb-2">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-brand-green">
-                    Étape 7
+                    Étape 6
                   </span>
                   <h2 className="text-lg sm:text-xl font-extrabold tracking-tight">
-                    Contacts & Coordonnées
+                    Contact & Ligne directe
                   </h2>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
-                      Téléphone principal *
-                    </label>
-                    <div className="relative flex items-center">
-                      <Phone className="w-4 h-4 absolute left-3.5 text-zinc-400" />
-                      <input
-                        type="tel"
-                        value={phone1}
-                        onChange={(e) => setPhone1(e.target.value)}
-                        placeholder="Ex: 034 00 000 00"
-                        className="w-full pl-10 pr-4 py-3 text-sm rounded-2xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 focus:border-brand-green focus:outline-none focus:ring-2 focus:ring-brand-green/20"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
-                      Téléphone secondaire (Facultatif)
-                    </label>
-                    <div className="relative flex items-center">
-                      <Phone className="w-4 h-4 absolute left-3.5 text-zinc-400" />
-                      <input
-                        type="tel"
-                        value={phone2}
-                        onChange={(e) => setPhone2(e.target.value)}
-                        placeholder="Ex: 032 00 000 00"
-                        className="w-full pl-10 pr-4 py-3 text-sm rounded-2xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 focus:border-brand-green focus:outline-none focus:ring-2 focus:ring-brand-green/20"
-                      />
-                    </div>
-                  </div>
-
-                  {showPhone3 && (
-                    <div className="space-y-1.5 sm:col-span-2 animate-in fade-in">
-                      <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
-                        Téléphone 3 (Facultatif)
+                <div className="p-3.5 sm:p-5 rounded-3xl bg-zinc-50/80 dark:bg-zinc-900/50 border border-zinc-200/70 dark:border-zinc-800 space-y-3.5 hover:border-zinc-300 dark:hover:border-zinc-700 transition-all shadow-xs">
+                  {/* Header info */}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <label className="text-xs font-bold text-zinc-700 dark:text-zinc-200 block">
+                        Numéro de téléphone principal *
                       </label>
-                      <div className="relative flex items-center">
-                        <Phone className="w-4 h-4 absolute left-3.5 text-zinc-400" />
-                        <input
-                          type="tel"
-                          value={phone3}
-                          onChange={(e) => setPhone3(e.target.value)}
-                          placeholder="Ex: 033 00 000 00"
-                          className="w-full pl-10 pr-4 py-3 text-sm rounded-2xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 focus:border-brand-green focus:outline-none focus:ring-2 focus:ring-brand-green/20"
-                        />
+                      <p className="text-[11px] text-zinc-400 dark:text-zinc-500">
+                        Votre ligne directe pour les visites et rendez-vous
+                      </p>
+                    </div>
+
+                    {isPhoneValid ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-brand-green bg-brand-green/10 border border-brand-green/20 px-2.5 py-0.5 rounded-full shrink-0 animate-in fade-in zoom-in-95">
+                        <Check className="w-3 h-3 stroke-[2.5]" />
+                        <span>Valide</span>
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold text-brand-green bg-brand-green/10 px-2.5 py-0.5 rounded-full shrink-0">
+                        Requis
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Compact, Rounded-full modern input container */}
+                  <div className="relative flex items-center rounded-full bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 focus-within:border-brand-green focus-within:ring-4 focus-within:ring-brand-green/15 transition-all shadow-xs p-1">
+                    {/* Country Code Pill */}
+                    <div className="flex items-center gap-1.5 pl-3 pr-2.5 py-1.5 rounded-full bg-zinc-100 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 text-xs font-bold shrink-0 border border-zinc-200/60 dark:border-zinc-800 select-none">
+                      <span className="text-base leading-none" role="img" aria-label="Madagascar">🇲🇬</span>
+                      <span className="font-mono text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">+261</span>
+                    </div>
+
+                    {/* Tel Input */}
+                    <input
+                      type="tel"
+                      value={phone1}
+                      onChange={(e) => setPhone1(e.target.value)}
+                      placeholder="034 00 000 00"
+                      className="w-full px-3 py-2 text-sm sm:text-base font-semibold bg-transparent border-0 focus:outline-none focus:ring-0 text-zinc-900 dark:text-white placeholder:text-zinc-400 dark:placeholder:text-zinc-500 tracking-wide font-mono"
+                    />
+
+                    {/* Right accessory elements */}
+                    <div className="flex items-center gap-1.5 pr-1.5 shrink-0">
+                      {/* Carrier badge */}
+                      {phoneCarrier && (
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider border animate-in fade-in zoom-in-95 duration-150 ${phoneCarrier.bg}`}>
+                          {phoneCarrier.name}
+                        </span>
+                      )}
+
+                      {/* Clear Button */}
+                      {phone1 && (
+                        <button
+                          type="button"
+                          onClick={() => setPhone1('')}
+                          className="w-7 h-7 rounded-full flex items-center justify-center text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all cursor-pointer"
+                          aria-label="Effacer le numéro"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+
+                      {/* Phone / Active Icon Pill */}
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-200 ${
+                        isPhoneValid
+                          ? 'bg-brand-green text-white shadow-xs'
+                          : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-400 dark:text-zinc-500'
+                      }`}>
+                        <Phone className="w-3.5 h-3.5" />
                       </div>
                     </div>
-                  )}
-                </div>
+                  </div>
 
-                {!showPhone3 && (
-                  <button
-                    type="button"
-                    onClick={() => setShowPhone3(true)}
-                    className="inline-flex items-center gap-1.5 text-xs font-bold text-brand-green hover:underline cursor-pointer pt-1"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Ajouter un 3ème numéro de contact</span>
-                  </button>
-                )}
+                  {/* Micro Footer: Channel Pills & Account Autofill */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
+                    <div className="flex items-center gap-1.5">
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-zinc-200/60 dark:bg-zinc-800/80 text-zinc-700 dark:text-zinc-300 font-semibold text-[10px]">
+                        <Phone className="w-3 h-3 text-brand-green" />
+                        <span>Appels directs & SMS</span>
+                      </span>
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 font-semibold text-[10px] border border-emerald-500/20">
+                        <MessageSquare className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                        <span>WhatsApp</span>
+                      </span>
+                    </div>
+
+                    {user?.phone && phone1 !== user.phone && (
+                      <button
+                        type="button"
+                        onClick={() => setPhone1(user.phone || '')}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold text-brand-green bg-brand-green/10 hover:bg-brand-green/20 transition-all cursor-pointer"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        <span>Mon numéro ({user.phone})</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Privacy / Security Notice */}
+                  <div className="pt-1 flex items-center gap-1.5 text-[11px] text-zinc-400 dark:text-zinc-500">
+                    <ShieldCheck className="w-3.5 h-3.5 text-brand-green shrink-0" />
+                    <span>Visible uniquement par les acquéreurs et locataires vérifiés sur TranoGasy.</span>
+                  </div>
+                </div>
               </section>
 
               {/* ADMIN SOURCES (IF ADMIN) */}
@@ -1087,7 +1114,7 @@ export default function CreateListingForm() {
                     <span className="text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
                       Options Administrateur
                     </span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-300 font-bold">
+                    <span className="text-[10px] px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-300 font-bold">
                       Admin Only
                     </span>
                   </div>
@@ -1098,21 +1125,21 @@ export default function CreateListingForm() {
                       placeholder="Nom de la source"
                       value={sourcesUsername}
                       onChange={(e) => setSourcesUsername(e.target.value)}
-                      className="px-3.5 py-2.5 rounded-xl bg-white dark:bg-zinc-800 text-xs border border-zinc-200 dark:border-zinc-700 focus:outline-none"
+                      className="w-full px-4 py-2.5 sm:py-3 text-xs sm:text-sm font-medium rounded-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600 focus:border-brand-green focus:outline-none focus:ring-4 focus:ring-brand-green/15 text-zinc-900 dark:text-white placeholder:text-zinc-400 dark:placeholder:text-zinc-500 transition-all shadow-xs"
                     />
                     <input
                       type="url"
                       placeholder="Lien source original"
                       value={sourcesLink}
                       onChange={(e) => setSourcesLink(e.target.value)}
-                      className="px-3.5 py-2.5 rounded-xl bg-white dark:bg-zinc-800 text-xs border border-zinc-200 dark:border-zinc-700 focus:outline-none"
+                      className="w-full px-4 py-2.5 sm:py-3 text-xs sm:text-sm font-medium rounded-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600 focus:border-brand-green focus:outline-none focus:ring-4 focus:ring-brand-green/15 text-zinc-900 dark:text-white placeholder:text-zinc-400 dark:placeholder:text-zinc-500 transition-all shadow-xs"
                     />
                     <input
                       type="url"
                       placeholder="URL Avatar source"
                       value={sourcesAvatar}
                       onChange={(e) => setSourcesAvatar(e.target.value)}
-                      className="px-3.5 py-2.5 rounded-xl bg-white dark:bg-zinc-800 text-xs border border-zinc-200 dark:border-zinc-700 focus:outline-none"
+                      className="w-full px-4 py-2.5 sm:py-3 text-xs sm:text-sm font-medium rounded-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600 focus:border-brand-green focus:outline-none focus:ring-4 focus:ring-brand-green/15 text-zinc-900 dark:text-white placeholder:text-zinc-400 dark:placeholder:text-zinc-500 transition-all shadow-xs"
                     />
                   </div>
                 </section>
@@ -1173,9 +1200,9 @@ export default function CreateListingForm() {
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400">
-                  Section 2 • Tarification
+                  Tarification du loyer
                 </h3>
-                <span className="text-[11px] text-zinc-400 font-medium">D&eacute;finissez votre prix</span>
+                <span className="text-[11px] text-zinc-400 font-medium">D&eacute;finissez votre loyer</span>
               </div>
               {renderPriceSection(false)}
             </div>
