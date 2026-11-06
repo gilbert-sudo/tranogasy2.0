@@ -135,7 +135,10 @@ export default function PropertyCard({ property }: PropertyProps) {
   const displayPrice = property.type === 'rent' ? property.rent : property.price;
   
   const images = property.images && property.images.length > 0 
-    ? property.images.slice(0, 3) 
+    ? property.images
+        .slice(0, 3)
+        .map((img: any) => (typeof img === 'string' ? img : img?.src))
+        .filter(Boolean)
     : ['https://via.placeholder.com/400x300?text=TranoGasy'];
 
   const [currentIndex, setCurrentIndex] = useState(0);

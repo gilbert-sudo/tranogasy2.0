@@ -23,6 +23,11 @@ export class PropertiesController {
     );
   }
 
+  @Get('search')
+  async searchProperties(@Query() query: Record<string, any>) {
+    return this.propertiesService.searchProperties(query);
+  }
+
   @Get(':id')
   async findOne(@Param('id') id: string) {
     return this.propertiesService.findOne(id);

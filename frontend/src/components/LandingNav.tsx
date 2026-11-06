@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 import {
   Search,
   MapPin,
@@ -17,6 +18,7 @@ import {
   ChevronDown,
   User,
   Check,
+  Map as MapIcon,
 } from 'lucide-react';
 import { useModalStore } from '@/store/modalStore';
 import { useUserStore } from '@/store/userStore';
@@ -45,12 +47,40 @@ const CITIES = [
 ];
 
 export default function LandingNav() {
+  const router = useRouter();
   const [isScrolled, setIsScrolled] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
   const [activeCategory, setActiveCategory] = useState('Appartement');
   const [selectedLocation, setSelectedLocation] = useState('Antananarivo, Madagascar');
   const [isLocationOpen, setIsLocationOpen] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const launchSearchEngine = useCallback(
+    (opts?: { openFilters?: boolean; queryOverride?: string; categoryOverride?: string }) => {
+      const params = new URLSearchParams();
+      const q = (opts?.queryOverride ?? searchQuery).trim();
+      if (q) params.set('q', q);
+
+      const catName = opts?.categoryOverride ?? activeCategory;
+      const catObj = CATEGORIES.find((c) => c.name === catName);
+      if (catObj && catObj.id !== 'tous') {
+        params.set('category', catObj.id);
+      }
+
+      if (selectedLocation) {
+        params.set('city', selectedLocation);
+      }
+
+      if (opts?.openFilters) {
+        params.set('openFilters', '1');
+      }
+
+      const qs = params.toString();
+      router.push(qs ? `/search?${qs}` : '/search');
+    },
+    [searchQuery, activeCategory, selectedLocation, router]
+  );
   
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -310,12 +340,19 @@ export default function LandingNav() {
                 <Search className="h-4 w-4 flex-shrink-0 text-zinc-400" />
                 <input
                   type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') launchSearchEngine();
+                  }}
                   placeholder="Rechercher une ville, quartier…"
                   onFocus={() => setSearchFocused(true)}
                   onBlur={() => setSearchFocused(false)}
                   className="flex-1 bg-transparent text-sm text-zinc-800 dark:text-zinc-100 placeholder:text-zinc-400 outline-none min-w-0"
                 />
                 <button
+                  type="button"
+                  onClick={() => launchSearchEngine({ openFilters: true })}
                   aria-label="Filtres"
                   className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 transition-transform active:scale-90 cursor-pointer"
                 >
@@ -357,10 +394,7 @@ export default function LandingNav() {
                   type="button"
                   id="mobile-top-nav-search-btn"
                   aria-label="Rechercher"
-                  onClick={() => {
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
-                    setTimeout(() => inputRef.current?.focus(), 400);
-                  }}
+                  onClick={() => launchSearchEngine()}
                   className="relative h-11 px-3.5 rounded-full flex items-center gap-2 flex-shrink-0 transition-all duration-200 active:scale-95 cursor-pointer
                     bg-gradient-to-b from-zinc-800 via-zinc-900 to-black text-white
                     border border-white/20 dark:border-white/25
@@ -547,11 +581,11 @@ export default function LandingNav() {
               <span className="font-bold text-zinc-900 dark:text-white">près de chez vous</span>
             </h1>
 
-            {/* ── Search Bar Row: Pill Input + Separate Circular Filter Button ── */}
-            <div className="flex items-center gap-3 w-full max-w-xl mb-4 sm:mb-5">
+            {/* ── Search Bar Row: Pill Input + Separate Circular Filter Button + Map Mode Button ── */}
+            <div className="flex items-center gap-2.5 sm:gap-3 w-full max-w-2xl mb-4 sm:mb-5">
               {/* Search input pill */}
               <div
-                className={`flex-1 min-w-0 flex items-center h-12 md:h-13 rounded-full px-4
+                className={`flex-1 min-w-0 flex items-center h-12 md:h-13 rounded-full pl-4 pr-2
                   bg-white/75 dark:bg-zinc-800/60 backdrop-blur-xl
                   border border-white/85 dark:border-white/10
                   shadow-[0_4px_20px_rgba(0,0,0,0.04)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.25)]
@@ -566,16 +600,32 @@ export default function LandingNav() {
                   ref={inputRef}
                   id="main-search"
                   type="text"
-                  placeholder="Rechercher"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') launchSearchEngine();
+                  }}
+                  placeholder="Rechercher un quartier, ville, n° bien…"
                   onFocus={() => setSearchFocused(true)}
                   onBlur={() => setSearchFocused(false)}
                   className="w-full bg-transparent text-[15px] md:text-base text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 font-normal outline-none"
                 />
+                {searchQuery.trim().length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => launchSearchEngine()}
+                    className="px-4 py-2 rounded-full bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 font-outfit font-light text-xs shrink-0 hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                  >
+                    Aller
+                  </button>
+                )}
               </div>
 
               {/* Separate circular filter button matching Image 2 */}
               <button
                 id="filter-btn"
+                type="button"
+                onClick={() => launchSearchEngine({ openFilters: true })}
                 aria-label="Filtres"
                 className="flex h-12 w-12 md:h-13 md:w-13 flex-shrink-0 items-center justify-center rounded-full
                   bg-white/75 dark:bg-zinc-800/60 backdrop-blur-xl
@@ -602,6 +652,22 @@ export default function LandingNav() {
                   <line x1="5" y1="18" x2="3" y2="18" />
                   <circle cx="7" cy="18" r="2" />
                 </svg>
+              </button>
+
+              {/* Futuristic Map-Oriented Search Mode Launcher Pill */}
+              <button
+                id="map-search-mode-btn"
+                type="button"
+                onClick={() => launchSearchEngine()}
+                className="flex items-center gap-2.5 h-12 md:h-13 px-5 sm:px-6 rounded-full flex-shrink-0
+                  bg-zinc-950 dark:bg-white text-white dark:text-zinc-950
+                  shadow-[0_8px_24px_rgba(0,0,0,0.18)]
+                  font-outfit font-light text-xs sm:text-sm tracking-wide
+                  hover:scale-105 active:scale-95 transition-all cursor-pointer group"
+              >
+                <MapIcon className="w-4 h-4 text-brand-green group-hover:scale-110 transition-transform" />
+                <span className="hidden sm:inline">Carte Interactive</span>
+                <span className="sm:hidden">Carte</span>
               </button>
             </div>
 

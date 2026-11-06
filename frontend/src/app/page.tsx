@@ -35,7 +35,7 @@ export default async function Home() {
       <div className="mx-auto w-full max-w-[2000px] px-4 sm:px-6 md:px-8 lg:px-28 xl:px-32 2xl:px-36 py-4 sm:py-6">
 
         {/* Top Property Section header matching target design */}
-        <TopPropertySection />
+        <TopPropertySection viewAllHref="/search" />
 
         {/* Property feed with cold start detection, auto-retry polling, and card skeletons */}
         <PropertyFeed initialProperties={properties} />

@@ -97,8 +97,9 @@ export default function BottomNavigation() {
   const isDashboardActive = pathname.startsWith('/dashboard');
   const isPropertyDetails = pathname.startsWith('/properties/');
   const isCreateListing = pathname.startsWith('/create-listing');
+  const isSearchEngine = pathname.startsWith('/search');
 
-  if (isPropertyDetails || isCreateListing) {
+  if (isPropertyDetails || isCreateListing || isSearchEngine) {
     return null;
   }
 
