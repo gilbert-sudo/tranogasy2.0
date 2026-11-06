@@ -1,4 +1,15 @@
-import { Controller, Get, Post, Body, Param, Res, HttpStatus, BadRequestException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Body,
+  Param,
+  Query,
+  Res,
+  HttpStatus,
+  BadRequestException,
+} from '@nestjs/common';
 import { Response } from 'express';
 import { UsersService } from './users.service';
 
@@ -15,6 +26,19 @@ export class UsersController {
     }
     // Return 404 Not Found if it does not exist, so frontend proceeds with signup
     return res.status(HttpStatus.NOT_FOUND).json({ exists: false });
+  }
+
+  @Get('profile/:identifier')
+  async getPublicProfile(
+    @Param('identifier') identifier: string,
+    @Query('source') source?: string,
+  ) {
+    return this.usersService.getPublicProfile(identifier, source);
+  }
+
+  @Patch(':id/profile')
+  async updateProfile(@Param('id') id: string, @Body() body: any) {
+    return this.usersService.updateProfile(id, body);
   }
 
   @Post('login')

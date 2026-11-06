@@ -102,7 +102,7 @@ export class PropertiesService {
         .find()
         .populate('city')
         .populate('features')
-        .populate('owner', '_id username avatar role phone bio lastConnectedAt created_at')
+        .populate('owner', '_id username avatar coverImage location role phone bio lastConnectedAt created_at')
         .sort({ created_at: -1 })
         .skip(skip)
         .limit(limit)
@@ -123,7 +123,7 @@ export class PropertiesService {
       .find()
       .populate('city')
       .populate('features')
-      .populate('owner', '_id username avatar role phone bio lastConnectedAt created_at')
+      .populate('owner', '_id username avatar coverImage location role phone bio lastConnectedAt created_at')
       .sort({ created_at: -1 })
       .limit(limit)
       .lean();
@@ -194,7 +194,7 @@ export class PropertiesService {
       .find(mongoFilter)
       .populate('city')
       .populate('features')
-      .populate('owner', '_id username avatar role phone bio lastConnectedAt created_at')
+      .populate('owner', '_id username avatar coverImage location role phone bio lastConnectedAt created_at')
       .sort({ created_at: -1 })
       .limit(600)
       .lean();
@@ -315,7 +315,7 @@ export class PropertiesService {
       .findById(id)
       .populate('city')
       .populate('features')
-      .populate('owner', '_id username avatar role phone bio lastConnectedAt created_at')
+      .populate('owner', '_id username avatar coverImage location role phone bio lastConnectedAt created_at')
       .lean();
 
     if (!property) {

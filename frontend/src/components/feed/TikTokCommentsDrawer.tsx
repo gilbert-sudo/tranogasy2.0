@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
 import {
   X,
   Send,
@@ -321,21 +322,33 @@ export default function TikTokCommentsDrawer({
                 className="flex gap-3 items-start group p-2 rounded-2xl transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/40"
               >
                 {/* User Avatar */}
-                <div className="w-9 h-9 rounded-full overflow-hidden shrink-0 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-white/10 shadow-xs">
+                <Link
+                  href={`/profile/${encodeURIComponent(
+                    comment.user || (comment as any).userId || comment.authorName || 'membre'
+                  )}`}
+                  onClick={onClose}
+                  className="w-9 h-9 rounded-full overflow-hidden shrink-0 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-white/10 shadow-xs hover:scale-105 transition-transform"
+                >
                   <img
                     src={avatarUrl}
                     alt={comment.authorName}
                     className="w-full h-full object-cover"
                   />
-                </div>
+                </Link>
 
                 {/* Comment Body */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5 min-w-0">
-                      <span className="text-xs font-bold text-zinc-900 dark:text-white truncate">
+                      <Link
+                        href={`/profile/${encodeURIComponent(
+                          comment.user || (comment as any).userId || comment.authorName || 'membre'
+                        )}`}
+                        onClick={onClose}
+                        className="text-xs font-bold text-zinc-900 dark:text-white hover:text-brand-green hover:underline truncate transition-colors"
+                      >
                         @{comment.authorName}
-                      </span>
+                      </Link>
                       {isOwner && (
                         <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-brand-green/15 text-brand-green border border-brand-green/30">
                           Vous

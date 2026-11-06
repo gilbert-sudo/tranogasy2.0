@@ -23,6 +23,7 @@ import { useUserStore } from '@/store/userStore';
 import { usePropertyDetailModalStore } from '@/store/propertyDetailModalStore';
 import { useProperty } from '@/hooks/useProperty';
 import { useFavorite } from '@/hooks/useFavorite';
+import { resolveProfileHref } from '@/services/user.service';
 
 const FEATURE_ICONS: Record<string, { icon: React.ElementType, label: string }> = {
   electricityJirama: { icon: FaPlugCircleBolt, label: "Électricité JIRAMA" },
@@ -127,9 +128,19 @@ function PropertyDetailsContent({
 
   const userStore = useUserStore(state => state.user);
   const currentUser = userStore?.user || userStore;
+  const closePropertyDetail = usePropertyDetailModalStore(state => state.closePropertyDetail);
   const isTransitioning = usePropertyDetailModalStore(
     (state) => state.isTransitioning && state.propertyId === property?._id
   );
+  const profileHref = resolveProfileHref(property?.owner, property?.sources);
+
+  const handleOpenOwnerProfile = () => {
+    if (typeof document !== 'undefined') {
+      document.body.style.overflow = '';
+    }
+    closePropertyDetail();
+    router.push(profileHref);
+  };
   const { favorites, checkFavorite, toggleFavorite } = useFavorite();
   const isFavorite = favorites[property?._id] || false;
 
@@ -609,28 +620,39 @@ function PropertyDetailsContent({
                  {/* Subtle background accent */}
                  <div className="absolute top-0 right-0 w-28 h-28 bg-brand-green/5 rounded-bl-full pointer-events-none"></div>
                  
-                 <div className="flex items-center gap-3.5 mb-5 relative z-10 bg-zinc-50/70 dark:bg-zinc-700/50 p-3 sm:p-3.5 rounded-xl border border-zinc-100/60 dark:border-zinc-600/50">
-                   <div className="h-11 w-11 rounded-full overflow-hidden bg-white dark:bg-zinc-700 border border-zinc-200 dark:border-zinc-600 shrink-0 shadow-2xs">
-                      <img 
-                        src={
-                          property.owner?.role === "admin"
-                            ? (property.sources?.avatar || "/icon-logo.png")
-                            : (property.owner?.avatar || "https://ui-avatars.com/api/?name=User&background=random")
-                        }
-                        alt="Avatar" 
-                        className="w-full h-full object-cover" 
-                        onError={(e) => {
-                          e.currentTarget.src = "https://ui-avatars.com/api/?name=User&background=random";
-                        }}
-                      />
+                 <div
+                   onClick={handleOpenOwnerProfile}
+                   role="button"
+                   tabIndex={0}
+                   onKeyDown={(e) => {
+                     if (e.key === 'Enter' || e.key === ' ') handleOpenOwnerProfile();
+                   }}
+                   className="flex items-center justify-between gap-3.5 mb-5 relative z-10 bg-zinc-50/70 dark:bg-zinc-700/50 hover:bg-zinc-100/90 dark:hover:bg-zinc-700/80 p-3 sm:p-3.5 rounded-2xl border border-zinc-100/60 dark:border-zinc-600/50 hover:border-brand-green/40 transition-all cursor-pointer group"
+                 >
+                   <div className="flex items-center gap-3.5 min-w-0">
+                     <div className="h-11 w-11 rounded-full overflow-hidden bg-white dark:bg-zinc-700 border border-zinc-200 dark:border-zinc-600 shrink-0 shadow-2xs group-hover:scale-105 transition-transform">
+                        <img 
+                          src={
+                            property.owner?.role === "admin"
+                              ? (property.sources?.avatar || "/icon-logo.png")
+                              : (property.owner?.avatar || "https://ui-avatars.com/api/?name=User&background=random")
+                          }
+                          alt="Avatar" 
+                          className="w-full h-full object-cover" 
+                          onError={(e) => {
+                            e.currentTarget.src = "https://ui-avatars.com/api/?name=User&background=random";
+                          }}
+                        />
+                     </div>
+                     <div className="flex flex-col min-w-0">
+                        <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-0.5">Annonceur • Voir le profil</span>
+                        <span className="font-bold text-zinc-900 dark:text-white group-hover:text-brand-green transition-colors text-sm sm:text-base truncate">
+                          {property.owner?.role === "admin" ? (property.sources?.username || "TranoGasy") : (property.owner?.username || "Utilisateur")}
+                        </span>
+                        <span className="text-xs text-brand-green font-semibold mt-0.5">Annonce {formatDateAgo(property.created_at)}</span>
+                     </div>
                    </div>
-                   <div className="flex flex-col min-w-0">
-                      <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-0.5">Annonceur</span>
-                      <span className="font-bold text-zinc-900 dark:text-white text-sm sm:text-base truncate">
-                        {property.owner?.role === "admin" ? (property.sources?.username || "TranoGasy") : (property.owner?.username || "Utilisateur")}
-                      </span>
-                      <span className="text-xs text-brand-green font-semibold mt-0.5">Annonce {formatDateAgo(property.created_at)}</span>
-                   </div>
+                   <ChevronRight className="w-4.5 h-4.5 text-zinc-400 group-hover:text-brand-green group-hover:translate-x-0.5 transition-all shrink-0" />
                  </div>
 
                  <div className="hidden lg:flex items-center gap-2 relative z-10">

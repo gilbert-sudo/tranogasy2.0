@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useRef, useEffect } from 'react';
-import { X, MapPin, Phone, Share2, BedDouble, Home, Utensils, Droplets, Grid2X2, Expand, MessageCircle } from 'lucide-react';
+import Link from 'next/link';
+import { X, MapPin, Phone, Share2, BedDouble, Home, Utensils, Droplets, Grid2X2, Expand, MessageCircle, ChevronRight } from 'lucide-react';
 import {
   FaCar, FaMotorcycle, FaWifi, FaParking, FaShieldAlt, FaSwimmingPool, FaHotTub, FaBed
 } from "react-icons/fa";
@@ -17,6 +18,7 @@ import { TfiLayoutSidebarLeft } from "react-icons/tfi";
 
 import PropertyLocationDisplayer from '@/components/map/PropertyLocationDisplayer';
 import { FeedProperty } from './types';
+import { resolveProfileHref } from '@/services/user.service';
 
 const FEATURE_DEFINITIONS: Record<string, { icon: React.ElementType; label: string }> = {
   electricityJirama: { icon: FaPlugCircleBolt, label: "Électricité JIRAMA" },
@@ -298,6 +300,39 @@ export default function TikTokDetailsDrawer({
             {property.type === 'rent' && <span className="text-xs font-normal text-zinc-500"> / mois</span>}
           </div>
         </div>
+
+        {/* Clickable Advertiser Pill */}
+        <Link
+          href={resolveProfileHref(property.owner, property.sources)}
+          onClick={onClose}
+          className="flex items-center justify-between gap-3 p-2.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800/70 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-200/70 dark:border-zinc-700/60 hover:border-brand-green/40 transition-all group mt-2"
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <img
+              src={
+                property.owner?.role === 'admin'
+                  ? property.sources?.avatar || '/icon-logo.png'
+                  : property.owner?.avatar ||
+                    `https://ui-avatars.com/api/?name=${encodeURIComponent(
+                      property.owner?.username || 'Annonceur'
+                    )}&background=18181b&color=fff`
+              }
+              alt="Annonceur"
+              className="w-10 h-10 rounded-full object-cover border border-zinc-200 dark:border-zinc-600 shrink-0 group-hover:scale-105 transition-transform"
+            />
+            <div className="min-w-0">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block">
+                Annonceur • Voir le profil
+              </span>
+              <span className="text-sm font-bold text-zinc-900 dark:text-white group-hover:text-brand-green transition-colors truncate block">
+                {property.owner?.role === 'admin'
+                  ? property.sources?.username || 'TranoGasy'
+                  : property.owner?.username || 'Utilisateur'}
+              </span>
+            </div>
+          </div>
+          <ChevronRight className="w-4 h-4 text-zinc-400 group-hover:text-brand-green group-hover:translate-x-0.5 transition-all shrink-0" />
+        </Link>
       </div>
 
       {/* Specifications Grid */}

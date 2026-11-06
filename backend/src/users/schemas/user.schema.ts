@@ -15,6 +15,12 @@ export class User {
   @Prop()
   avatar: string;
 
+  @Prop({ default: null })
+  coverImage: string;
+
+  @Prop({ default: null })
+  location: string;
+
   @Prop()
   email: string;
 

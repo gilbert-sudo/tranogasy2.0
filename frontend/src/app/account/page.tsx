@@ -130,9 +130,18 @@ export default function AccountPage() {
                   <p className="text-xs lg:text-sm font-medium text-zinc-500 dark:text-zinc-400 mt-0.5 lg:mt-1 truncate max-w-full">
                     {currentUser?.phone || 'Aucun numéro renseigné'}
                   </p>
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1 mt-2 lg:mt-4 rounded-full bg-zinc-100 dark:bg-zinc-800 text-[10px] lg:text-xs font-bold text-zinc-700 dark:text-zinc-300 shrink-0">
-                    <span className="w-1.5 h-1.5 lg:w-2 lg:h-2 rounded-full bg-brand-green animate-pulse"></span>
-                    Compte actif
+                  <div className="flex flex-wrap items-center gap-2 mt-2 lg:mt-4">
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-zinc-100 dark:bg-zinc-800 text-[10px] lg:text-xs font-bold text-zinc-700 dark:text-zinc-300 shrink-0">
+                      <span className="w-1.5 h-1.5 lg:w-2 lg:h-2 rounded-full bg-brand-green animate-pulse"></span>
+                      Compte actif
+                    </div>
+                    <Link
+                      href={currentUser?._id ? `/profile/${currentUser._id}` : '/profile'}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 text-[10px] lg:text-xs font-semibold hover:scale-105 active:scale-95 transition-all shrink-0"
+                    >
+                      <span>Voir mon profil public</span>
+                      <ChevronRight className="w-3 h-3" />
+                    </Link>
                   </div>
                 </div>
               </div>

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import Link from 'next/link';
 import {
   Heart,
   MapPin,
@@ -29,6 +30,7 @@ import { FeedProperty } from './types';
 import { useFavorite } from '@/hooks/useFavorite';
 import { useUserStore } from '@/store/userStore';
 import { useModalStore } from '@/store/modalStore';
+import { resolveProfileHref } from '@/services/user.service';
 
 const FEATURE_ICONS: Record<string, React.ElementType> = {
   electricityJirama: FaPlugCircleBolt,
@@ -142,6 +144,8 @@ export default function TikTokCard({
     property.owner?.role === 'admin'
       ? property.sources?.username || 'TranoGasy'
       : property.owner?.username || 'Utilisateur';
+
+  const profileHref = resolveProfileHref(property.owner, property.sources, ownerName);
 
   const nextImage = useCallback(
     (e?: React.MouseEvent) => {
@@ -320,14 +324,19 @@ export default function TikTokCard({
       {/* RIGHT ACTION COLUMN (True TikTok / Reels Style - Pure Icon-Oriented, No Background) */}
       <div className="absolute bottom-20 md:bottom-24 right-2.5 md:right-3.5 z-20 flex flex-col items-center gap-4.5">
         {/* Advertiser Avatar with Plus Badge */}
-        <div className="relative group cursor-pointer mb-1" onClick={onOpenContact}>
+        <Link
+          href={profileHref}
+          onClick={(e) => e.stopPropagation()}
+          className="relative group cursor-pointer mb-1 block"
+          title={`Voir le profil de ${ownerName}`}
+        >
           <div className="w-11 h-11 md:w-12 md:h-12 rounded-full overflow-hidden border-2 border-white drop-shadow-[0_2px_6px_rgba(0,0,0,0.85)] bg-zinc-900 transition-transform group-hover:scale-105">
             <img src={avatar} alt={ownerName} className="w-full h-full object-cover" />
           </div>
           <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-4.5 h-4.5 rounded-full bg-brand-green text-white flex items-center justify-center shadow-md border border-white">
             <Plus className="w-3 h-3 stroke-[3]" />
           </div>
-        </div>
+        </Link>
 
         {/* Favorite (Like) Button */}
         <button
@@ -492,12 +501,13 @@ export default function TikTokCard({
         {/* BOTTOM LEFT PROPERTY INFO OVERLAY */}
         <div className="w-full px-4 pr-20 text-white space-y-2 pointer-events-auto">
           {/* Advertiser handle */}
-          <p
-            className="text-sm font-black text-white hover:underline cursor-pointer flex items-center gap-1 w-max"
-            onClick={onOpenContact}
+          <Link
+            href={profileHref}
+            onClick={(e) => e.stopPropagation()}
+            className="text-sm font-black text-white hover:text-brand-green hover:underline cursor-pointer flex items-center gap-1 w-max transition-colors"
           >
             @{ownerName}
-          </p>
+          </Link>
 
           {/* Title */}
           <h3

@@ -1,8 +1,10 @@
 'use client';
 
 import React, { useState } from 'react';
-import { X, Phone, Copy, Check, MessageSquare, ShieldCheck, MapPin } from 'lucide-react';
+import Link from 'next/link';
+import { X, Phone, Copy, Check, MessageSquare, ShieldCheck, MapPin, ChevronRight } from 'lucide-react';
 import { FeedProperty } from './types';
+import { resolveProfileHref } from '@/services/user.service';
 
 interface TikTokContactModalProps {
   property: FeedProperty | any | null;
@@ -43,6 +45,8 @@ export default function TikTokContactModal({ property, onClose }: TikTokContactM
     property.owner?.role === 'admin'
       ? property.sources?.avatar || '/icon-logo.png'
       : property.owner?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(property.owner?.username || 'Annonceur')}&background=7cbd1e&color=fff`;
+
+  const profileHref = resolveProfileHref(property.owner, property.sources);
 
   return (
     <div
@@ -88,24 +92,31 @@ export default function TikTokContactModal({ property, onClose }: TikTokContactM
           </div>
         </div>
 
-        {/* Advertiser info */}
-        <div className="flex items-center gap-3 p-3 bg-zinc-50 dark:bg-zinc-800/60 rounded-2xl border border-zinc-100 dark:border-zinc-700/60">
-          <img
-            src={avatar}
-            alt={property.owner?.username || 'Annonceur'}
-            className="w-11 h-11 rounded-full object-cover border border-zinc-200 dark:border-zinc-600 shrink-0"
-          />
-          <div className="min-w-0 flex-1">
-            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
-              Annonceur vérifié
-            </span>
-            <span className="text-sm font-bold text-zinc-800 dark:text-zinc-200 truncate block">
-              {property.owner?.role === 'admin'
-                ? property.sources?.username || 'TranoGasy Officiel'
-                : property.owner?.username || 'Utilisateur'}
-            </span>
+        {/* Advertiser info (Clickable to open User Profile Page) */}
+        <Link
+          href={profileHref}
+          onClick={onClose}
+          className="flex items-center justify-between gap-3 p-3 bg-zinc-50 dark:bg-zinc-800/60 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-2xl border border-zinc-100 dark:border-zinc-700/60 hover:border-brand-green/40 transition-all group"
+        >
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <img
+              src={avatar}
+              alt={property.owner?.username || 'Annonceur'}
+              className="w-11 h-11 rounded-full object-cover border border-zinc-200 dark:border-zinc-600 shrink-0 group-hover:scale-105 transition-transform"
+            />
+            <div className="min-w-0 flex-1">
+              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
+                Annonceur vérifié • Voir le profil
+              </span>
+              <span className="text-sm font-bold text-zinc-800 dark:text-zinc-200 group-hover:text-brand-green transition-colors truncate block">
+                {property.owner?.role === 'admin'
+                  ? property.sources?.username || 'TranoGasy Officiel'
+                  : property.owner?.username || 'Utilisateur'}
+              </span>
+            </div>
           </div>
-        </div>
+          <ChevronRight className="w-4 h-4 text-zinc-400 group-hover:text-brand-green group-hover:translate-x-0.5 transition-all shrink-0" />
+        </Link>
 
         {/* Phone Numbers List */}
         <div className="space-y-2.5">
