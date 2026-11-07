@@ -5,7 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { BedDouble, Bath, Maximize, MapPin, Heart, Check, ChevronLeft, ChevronRight } from 'lucide-react';
 import {
-  FaCar, FaMotorcycle, FaWifi, FaParking, FaShieldAlt, FaSwimmingPool, FaHotTub, FaBed
+  FaCar, FaMotorcycle, FaWifi, FaParking, FaShieldAlt, FaSwimmingPool, FaHotTub, FaBed, FaShower
 } from "react-icons/fa";
 import {
   FaFaucetDrip, FaPlugCircleBolt, FaPlugCircleCheck, FaOilWell, FaKitchenSet
@@ -13,7 +13,7 @@ import {
 import {
   GiWell, GiBrickWall, GiFireplace, GiBathtub, GiSolarPower, GiMountainCave, GiSeatedMouse, GiSeaDragon, GiCastle
 } from "react-icons/gi";
-import { MdOutlineLiving, MdBalcony, MdLandscape, MdOutlineFiberSmartRecord } from "react-icons/md";
+import { MdOutlineLiving, MdBalcony, MdLandscape, MdOutlineFiberSmartRecord, MdWc } from "react-icons/md";
 import { TbAirConditioning, TbBuildingCastle, TbWash } from "react-icons/tb";
 import { TfiLayoutSidebarLeft } from "react-icons/tfi";
 import { usePropertyStore } from '@/store/propertyStore';
@@ -57,7 +57,21 @@ const FEATURE_ICONS: Record<string, React.ElementType> = {
   seaView: GiSeaDragon,
   mountainView: GiMountainCave,
   panoramicView: GiSeatedMouse,
+  insideToilet: MdWc,
+  insideBathroom: FaShower,
 };
+
+function extractSurfaceFromText(text?: string): number | null {
+  if (!text) return null;
+  const match = text.match(
+    /\b(\d+(?:[.,]\d+)?)\s*(?:m2|m²|mètres\s*carrés|metres\s*carres)\b/i
+  );
+  if (match && match[1]) {
+    const val = parseFloat(match[1].replace(',', '.'));
+    if (!isNaN(val) && val > 0) return val;
+  }
+  return null;
+}
 
 function formatDateAgo(dateString?: string) {
   if (!dateString) return 'Nouveau';
@@ -110,14 +124,9 @@ function PropertyCardComponent({ property }: PropertyProps) {
   const currentUser = user?.user || user;
   const currentUserId = currentUser?._id;
 
+  // Batch load user favorites once globally, avoiding N redundant network/state updates
   useEffect(() => {
-    if (property?._id && !usePropertyStore.getState().properties[property._id]) {
-      usePropertyStore.getState().addProperty(property);
-    }
-  }, [property]);
-
-  useEffect(() => {
-    if (currentUserId && property?._id) {
+    if (currentUserId && property?._id && !useFavoriteStore.getState().loadedForUserId) {
       checkFavorite(property._id, currentUserId);
     }
   }, [currentUserId, property?._id, checkFavorite]);
@@ -189,8 +198,14 @@ function PropertyCardComponent({ property }: PropertyProps) {
   };
 
   const activeFeatures = property.features 
-    ? Object.entries(property.features).filter(([_, value]) => value).map(([key]) => key)
+    ? Object.entries(property.features)
+        .filter(([key, value]) => Boolean(value) && key !== '_id' && key !== '__v')
+        .map(([key]) => key)
     : [];
+
+  const displayArea = (property.area && Number(property.area) > 0)
+    ? Number(property.area)
+    : extractSurfaceFromText(property.description);
 
   const handleCardClick = (e: React.MouseEvent) => {
     // Let browser handle new tab actions (Ctrl+Click, Cmd+Click, middle click, etc.)
@@ -218,6 +233,7 @@ function PropertyCardComponent({ property }: PropertyProps) {
       };
     }
 
+    usePropertyStore.getState().addProperty(property);
     openPropertyDetail(property._id, property, transitionOrigin);
   };
 
@@ -394,7 +410,7 @@ function PropertyCardComponent({ property }: PropertyProps) {
               </span>
               <span className="flex items-center gap-1 text-[11px]" title="Surface">
                 <Maximize className="h-3.5 w-3.5" />
-                {property.area ? `${property.area}m²` : '-'}
+                {displayArea ? `${displayArea}m²` : '-'}
               </span>
             </div>
 

@@ -70,7 +70,7 @@ const SORT_OPTIONS: { id: SearchSortBy; label: string }[] = [
   { id: 'distance', label: 'Proximité' },
 ];
 
-const CARDS_BATCH_SIZE = 24;
+const CARDS_BATCH_SIZE = 25;
 
 export default function SearchEngineShell() {
   const searchParams = useSearchParams();
@@ -289,6 +289,12 @@ export default function SearchEngineShell() {
         ══════════════════════════════════════════════════════════════════ */}
         <div className="fixed top-2.5 sm:top-4 inset-x-0 z-40 px-3 sm:px-5 pointer-events-none">
           <SearchTopOmnibox
+            autoFocus={
+              searchParams.get('focus') === '1' ||
+              searchParams.get('focus') === 'true' ||
+              searchParams.get('autoFocus') === '1' ||
+              searchParams.get('autoFocus') === 'true'
+            }
             filters={filters}
             activeFiltersCount={activeFiltersCount}
             totalResults={filteredProperties.length}
@@ -543,7 +549,7 @@ export default function SearchEngineShell() {
             MODE 3: FULL BENTO LIST MODE ('list')
         ══════════════════════════════════════════════════════════════════ */}
         {viewMode === 'list' && (
-          <div className="w-full min-h-[100dvh] pt-[106px] sm:pt-[130px] pb-24 sm:pb-32 px-3 sm:px-6 md:px-8 lg:px-16 max-w-[1920px] mx-auto">
+          <div className="w-full min-h-[100dvh] pt-[106px] sm:pt-[130px] pb-24 sm:pb-32 px-4 sm:px-6 md:px-8 lg:px-28 xl:px-32 2xl:px-36 max-w-[2000px] mx-auto">
             {/* List Header & Sort Bar - Space Optimized & Compact */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4 pb-2.5 sm:pb-4 mb-3.5 sm:mb-6 border-b border-zinc-200/70 dark:border-white/10">
               <div>
@@ -639,7 +645,7 @@ export default function SearchEngineShell() {
               </div>
             ) : (
               <>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 sm:gap-6">
+                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 min-[2100px]:grid-cols-6">
                   {visibleGridProperties.map((property) => (
                     <div
                       key={property._id}

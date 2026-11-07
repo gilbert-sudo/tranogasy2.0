@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { usePropertyStore } from './propertyStore';
 
 interface UserStore {
   user: any | null;
@@ -12,6 +13,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
   setUser: (user) => set({ user }),
   logout: () => {
     set({ user: null });
+    usePropertyStore.getState().clearUserProperties();
     if (typeof window !== 'undefined') {
       localStorage.removeItem('user');
     }

@@ -1,5 +1,6 @@
 import { Search } from 'lucide-react';
 import Image from 'next/image';
+import Link from 'next/link';
 
 export default function Hero() {
   return (
@@ -10,10 +11,13 @@ export default function Hero() {
       </div>
       
       <div className="mt-8">
-        <button className="flex items-center gap-2 rounded-full bg-brand-green px-8 py-3 text-lg font-bold text-white shadow-lg transition hover:bg-green-600 active:scale-95">
+        <Link
+          href="/search?focus=1"
+          className="flex items-center gap-2 rounded-full bg-brand-green px-8 py-3 text-lg font-bold text-white shadow-lg transition hover:bg-green-600 active:scale-95 cursor-pointer"
+        >
           <Search className="h-5 w-5" />
           Recherche
-        </button>
+        </Link>
       </div>
     </div>
   );

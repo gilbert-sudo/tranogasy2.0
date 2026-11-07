@@ -278,6 +278,37 @@ export default function CreateListingForm() {
 
       const result = await propertyService.createProperty(payload);
       addPropertyToStore(result);
+      if (result) {
+        usePropertyStore.getState().addUserProperty({
+          ...result,
+          id: result._id,
+          _id: result._id,
+          title: result.title,
+          description: result.description,
+          type: result.type || (result.rent ? 'rent' : 'sale'),
+          houseType: result.houseType
+            ? result.houseType.charAt(0).toUpperCase() + result.houseType.slice(1)
+            : 'Villa',
+          price: result.price || result.rent || 0,
+          rent: result.rent || result.price || 0,
+          city: result.city,
+          neighborhood: result.city?.fokontany || '',
+          area: result.area || 0,
+          rooms: result.rooms || 1,
+          bathrooms: result.bathrooms || 1,
+          images: result.images || [],
+          status:
+            result.status === 'available'
+              ? 'active'
+              : result.status === 'pending'
+              ? 'pending'
+              : 'draft',
+          views: 0,
+          favorites: 0,
+          leads: 0,
+          created_at: result.created_at || new Date().toISOString(),
+        });
+      }
       setCreatedProperty(result);
     } catch (err: any) {
       console.error('Submission failed:', err);

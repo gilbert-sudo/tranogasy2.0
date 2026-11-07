@@ -597,7 +597,7 @@ export default function UserProfileView({
       {/* ══════════════════════════════════════════════════════════════════
           3. USER'S PUBLISHED PROPERTIES PORTFOLIO
       ══════════════════════════════════════════════════════════════════ */}
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 mt-8 sm:mt-10">
+      <div className="max-w-[2000px] mx-auto px-4 sm:px-6 md:px-8 lg:px-28 xl:px-32 2xl:px-36 mt-8 sm:mt-10">
         {/* Filter Tabs + Search within user's listings */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-7">
           {/* Ultra-Rounded Filter Tabs */}
@@ -679,7 +679,7 @@ export default function UserProfileView({
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 min-[2100px]:grid-cols-6">
             {filteredProperties.map((property) => (
               <PropertyCard key={property._id} property={property} />
             ))}

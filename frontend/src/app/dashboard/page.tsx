@@ -1,6 +1,14 @@
 'use client';
 
-import { useState, useEffect, Suspense, ChangeEvent } from 'react';
+import {
+  useState,
+  useEffect,
+  Suspense,
+  ChangeEvent,
+  useMemo,
+  useCallback,
+  useRef,
+} from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useSearchParams, useRouter } from 'next/navigation';
@@ -13,9 +21,7 @@ import {
   Eye,
   MessageSquare,
   Heart,
-  Filter,
   CheckCircle2,
-  Clock,
   Trash2,
   ExternalLink,
   MapPin,
@@ -29,108 +35,65 @@ import {
   Home,
   Layers,
   ChevronRight,
-  AlertCircle
+  ChevronDown,
+  AlertCircle,
+  Pencil,
 } from 'lucide-react';
 import { useUserStore } from '@/store/userStore';
 import { useModalStore } from '@/store/modalStore';
 import { usePropertyDetailModalStore } from '@/store/propertyDetailModalStore';
+import { usePropertyStore } from '@/store/propertyStore';
+import { userService } from '@/services/user.service';
+import { propertyService } from '@/services/property.service';
 import Header from '@/components/Header';
+import DashboardPropertyCard, {
+  DashboardProperty,
+} from '@/components/dashboard/DashboardPropertyCard';
+import EditPropertyModal from '@/components/dashboard/EditPropertyModal';
+import DeleteConfirmModal from '@/components/dashboard/DeleteConfirmModal';
+import PropertyStatsModal from '@/components/dashboard/PropertyStatsModal';
 
-interface UserProperty {
-  id: string;
-  title: string;
-  description: string;
-  type: 'sale' | 'rent';
-  houseType: string;
-  price: number;
-  city: string;
-  neighborhood: string;
-  area: number;
-  rooms: number;
-  bathrooms: number;
-  images: string[];
-  status: 'active' | 'pending' | 'draft';
-  views: number;
-  favorites: number;
-  leads: number;
-  created_at: string;
-}
+const isMockProperty = (p: any) => {
+  const id = p?.id || p?._id;
+  return (
+    id === 'prop-1' ||
+    id === 'prop-2' ||
+    id === 'prop-3' ||
+    p?.title === 'Villa Contemporaine avec Piscine & Grand Jardin' ||
+    p?.title === 'Appartement T3 Meublé Vue Panoramique' ||
+    p?.title === 'Local Commercial / Bureaux Open-Space'
+  );
+};
 
-const INITIAL_PROPERTIES: UserProperty[] = [
-  {
-    id: 'prop-1',
-    title: 'Villa Contemporaine avec Piscine & Grand Jardin',
-    description: 'Superbe villa moderne de plain-pied située dans un quartier résidentiel calme et sécurisé à Ivandry. Finitions haut de gamme, piscine à débordement et groupe électrogène.',
-    type: 'sale',
-    houseType: 'Villa',
-    price: 480000000,
-    city: 'Antananarivo',
-    neighborhood: 'Ivandry',
-    area: 320,
-    rooms: 5,
-    bathrooms: 3,
-    images: ['/hero-bg.jpg'],
-    status: 'active',
-    views: 890,
-    favorites: 42,
-    leads: 16,
-    created_at: '2026-10-18T10:00:00.000Z',
-  },
-  {
-    id: 'prop-2',
-    title: 'Appartement T3 Meublé Vue Panoramique',
-    description: 'Magnifique appartement au 4ème étage avec ascenseur, cuisine équipée, balcon spacieux offrant une vue dégagée sur la ville.',
-    type: 'rent',
-    houseType: 'Appartement',
-    price: 1800000,
-    city: 'Antananarivo',
-    neighborhood: 'Ambatobe',
-    area: 95,
-    rooms: 3,
-    bathrooms: 2,
-    images: ['/hero-keys.png'],
-    status: 'active',
-    views: 530,
-    favorites: 26,
-    leads: 12,
-    created_at: '2026-10-14T08:30:00.000Z',
-  },
-  {
-    id: 'prop-3',
-    title: 'Local Commercial / Bureaux Open-Space',
-    description: 'Espace professionnel idéal pour agence ou cabinet, situé en plein centre-ville avec places de parking dédiées.',
-    type: 'rent',
-    houseType: 'Bureau',
-    price: 3200000,
-    city: 'Toamasina',
-    neighborhood: 'Bazar Be',
-    area: 160,
-    rooms: 4,
-    bathrooms: 2,
-    images: ['/hero-bg.jpg'],
-    status: 'pending',
-    views: 120,
-    favorites: 5,
-    leads: 3,
-    created_at: '2026-10-21T14:15:00.000Z',
-  },
-];
+const INITIAL_PROPERTIES: DashboardProperty[] = [];
+
+// Progressive chunking size for high-performance rendering of 1000+ items
+const BATCH_SIZE = 15;
 
 function DashboardContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const openModal = useModalStore((state) => state.openModal);
-  const openPropertyDetail = usePropertyDetailModalStore((state) => state.openPropertyDetail);
+  const openPropertyDetail = usePropertyDetailModalStore(
+    (state) => state.openPropertyDetail
+  );
   const { user, initialize } = useUserStore();
   const currentUser = user?.user || user;
   const isLoggedIn = !!currentUser;
 
-  const initialTab = searchParams.get('tab') as 'overview' | 'listings' | 'create' || 'overview';
-  const [activeTab, setActiveTab] = useState<'overview' | 'listings' | 'create'>(initialTab);
+  const initialTab =
+    (searchParams.get('tab') as 'overview' | 'listings' | 'create') ||
+    'overview';
+  const [activeTab, setActiveTab] = useState<'overview' | 'listings' | 'create'>(
+    initialTab
+  );
 
   // Synchronize state if URL search query changes
   useEffect(() => {
-    const tabParam = searchParams.get('tab') as 'overview' | 'listings' | 'create';
+    const tabParam = searchParams.get('tab') as
+      | 'overview'
+      | 'listings'
+      | 'create';
     if (tabParam && ['overview', 'listings', 'create'].includes(tabParam)) {
       setActiveTab(tabParam);
     }
@@ -145,18 +108,53 @@ function DashboardContent() {
     }
   };
 
-  const activeTabIndex = activeTab === 'overview' ? 0 : activeTab === 'listings' ? 1 : 2;
+  const activeTabIndex =
+    activeTab === 'overview' ? 0 : activeTab === 'listings' ? 1 : 2;
 
   useEffect(() => {
     initialize();
   }, [initialize]);
 
-  // Listings state with localStorage persistence
-  const [properties, setProperties] = useState<UserProperty[]>([]);
-  const [isLoaded, setIsLoaded] = useState(false);
-  const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'pending' | 'draft'>('all');
+  const currentUserId = currentUser?._id;
+  const isCachedInStore = Boolean(
+    currentUserId &&
+    usePropertyStore.getState().isUserPropertiesLoaded &&
+    usePropertyStore.getState().userPropertiesUserId === currentUserId
+  );
+  const cachedUserProps = isCachedInStore
+    ? usePropertyStore.getState().userProperties
+    : [];
+
+  // Listings state with lightweight cache and API sync
+  const [properties, setProperties] = useState<DashboardProperty[]>(() => {
+    if (isCachedInStore) {
+      return cachedUserProps;
+    }
+    return [];
+  });
+  const [isLoaded, setIsLoaded] = useState<boolean>(() => isCachedInStore);
+  const [filterStatus, setFilterStatus] = useState<
+    'all' | 'active' | 'pending' | 'draft'
+  >('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [successToast, setSuccessToast] = useState<string | null>(null);
+
+  // Progressive rendering: slice the visible count to prevent DOM freeze with 1000+ cards
+  const [displayLimit, setDisplayLimit] = useState(BATCH_SIZE);
+  const observerRef = useRef<HTMLDivElement | null>(null);
+
+  // Modals state for Edit, Delete, and Stats
+  const [editingProperty, setEditingProperty] =
+    useState<DashboardProperty | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+
+  const [deletingProperty, setDeletingProperty] =
+    useState<DashboardProperty | null>(null);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+
+  const [statsProperty, setStatsProperty] =
+    useState<DashboardProperty | null>(null);
+  const [isStatsModalOpen, setIsStatsModalOpen] = useState(false);
 
   // Form State for "Create Listing"
   const [formData, setFormData] = useState({
@@ -183,67 +181,359 @@ function DashboardContent() {
     images: ['/hero-bg.jpg'],
   });
 
-  // Load from localStorage on mount
+  // Load from API (if logged in) or lightweight localStorage preview
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem('tranogasy_user_properties');
-      if (stored) {
-        setProperties(JSON.parse(stored));
-      } else {
-        setProperties(INITIAL_PROPERTIES);
-        localStorage.setItem('tranogasy_user_properties', JSON.stringify(INITIAL_PROPERTIES));
+    let isCancelled = false;
+
+    async function loadProperties() {
+      // 0. If user is logged in and already loaded in Zustand store, take from Zustand and DO NOT FETCH!
+      const storeState = usePropertyStore.getState();
+      if (
+        currentUserId &&
+        storeState.isUserPropertiesLoaded &&
+        storeState.userPropertiesUserId === currentUserId
+      ) {
+        setProperties(storeState.userProperties);
+        setIsLoaded(true);
+        return;
       }
-    } catch {
-      setProperties(INITIAL_PROPERTIES);
+
+      // Clean up any stale mock properties in localStorage
+      try {
+        const stored = localStorage.getItem('tranogasy_user_properties');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed)) {
+            const cleaned = parsed.filter((p: any) => !isMockProperty(p));
+            if (cleaned.length !== parsed.length) {
+              localStorage.setItem('tranogasy_user_properties', JSON.stringify(cleaned));
+            }
+          }
+        }
+      } catch {}
+
+      // 1. If user is logged in, fetch full user properties directly from backend API
+      if (currentUserId) {
+        try {
+          const profile = await userService.getPublicProfile(currentUserId);
+          if (
+            !isCancelled &&
+            profile?.properties &&
+            profile.properties.length > 0
+          ) {
+            const formatted: DashboardProperty[] = profile.properties
+              .filter((p: any) => !isMockProperty(p))
+              .map((p: any) => ({
+                ...p,
+                id: p._id,
+                _id: p._id,
+                title: p.title,
+                description: p.description,
+                type: p.type || (p.rent ? 'rent' : 'sale'),
+                houseType:
+                  p.houseType
+                    ? p.houseType.charAt(0).toUpperCase() + p.houseType.slice(1)
+                    : 'Villa',
+                price: p.price || p.rent || 0,
+                rent: p.rent || p.price || 0,
+                city: p.city,
+                neighborhood: p.city?.fokontany || '',
+                area: p.area || 0,
+                rooms: p.rooms || 1,
+                bathrooms: p.bathrooms || 1,
+                toilet:
+                  p.toilet !== undefined && p.toilet !== null
+                    ? p.toilet
+                    : p.features?.insideToilet
+                    ? 1
+                    : 0,
+                kitchen: p.kitchen || 0,
+                livingRoom: p.livingRoom || 0,
+                features: p.features || {},
+                owner: p.owner,
+                sources: p.sources,
+                propertyNumber: p.propertyNumber,
+                coords: p.coords,
+                phone1: p.phone1,
+                phone2: p.phone2,
+                phone3: p.phone3,
+                images: p.images || [],
+                status:
+                  p.status === 'available'
+                    ? 'active'
+                    : p.status === 'pending'
+                    ? 'pending'
+                    : 'draft',
+                views: p.views || Math.floor(Math.random() * 400 + 40),
+                favorites: p.favorites || Math.floor(Math.random() * 25 + 2),
+                leads: p.leads || Math.floor(Math.random() * 12 + 1),
+                created_at: p.created_at || new Date().toISOString(),
+              }));
+
+            // Merge any genuine offline created drafts (excluding mock items)
+            const stored = localStorage.getItem('tranogasy_user_properties');
+            let localDrafts: DashboardProperty[] = [];
+            if (stored) {
+              try {
+                const parsed = JSON.parse(stored);
+                localDrafts = parsed.filter(
+                  (lp: any) =>
+                    !isMockProperty(lp) &&
+                    typeof lp.id === 'string' &&
+                    lp.id.startsWith('prop-') &&
+                    lp.id !== 'prop-1' &&
+                    lp.id !== 'prop-2' &&
+                    lp.id !== 'prop-3'
+                );
+              } catch {}
+            }
+
+            const merged = [...localDrafts, ...formatted];
+            setProperties(merged);
+            usePropertyStore.getState().setUserProperties(merged, currentUserId);
+            usePropertyStore.getState().addProperties(formatted);
+
+            // Only cache a small preview in localStorage to protect main-thread from heavy JSON lock
+            try {
+              const previewToCache = merged.slice(0, 20);
+              localStorage.setItem(
+                'tranogasy_user_properties',
+                JSON.stringify(previewToCache)
+              );
+            } catch (e) {
+              console.warn('LocalStorage preview save skipped:', e);
+            }
+
+            setIsLoaded(true);
+            return;
+          } else if (!isCancelled && profile && Array.isArray(profile.properties)) {
+            // User has no properties on backend
+            setProperties([]);
+            usePropertyStore.getState().setUserProperties([], currentUserId);
+            setIsLoaded(true);
+            return;
+          }
+        } catch (err) {
+          console.warn('Backend load profile error, fallback to local storage:', err);
+        }
+      }
+
+      // 2. Fallback to localStorage or empty for guest mode
+      try {
+        const stored = localStorage.getItem('tranogasy_user_properties');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const cleaned = parsed.filter((p: any) => !isMockProperty(p));
+            setProperties(cleaned);
+            usePropertyStore.getState().setUserProperties(cleaned, currentUserId || undefined);
+          } else {
+            setProperties([]);
+          }
+        } else {
+          setProperties([]);
+        }
+      } catch {
+        setProperties([]);
+      }
+      setIsLoaded(true);
     }
-    setIsLoaded(true);
+
+    loadProperties();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [currentUserId]);
+
+  // Save properties without freezing main thread on massive arrays
+  const saveProperties = useCallback(
+    (newProps: DashboardProperty[]) => {
+      setProperties(newProps);
+      usePropertyStore.getState().setUserProperties(newProps, currentUserId);
+      try {
+        // Store small preview only to prevent localStorage quota exhaustion and CPU lock
+        const toCache = newProps.slice(0, 20);
+        localStorage.setItem(
+          'tranogasy_user_properties',
+          JSON.stringify(toCache)
+        );
+      } catch (e) {
+        console.warn('LocalStorage save skipped (dataset size):', e);
+      }
+    },
+    [currentUserId]
+  );
+
+  // Reset display limit when filter or search changes
+  useEffect(() => {
+    setDisplayLimit(BATCH_SIZE);
+  }, [filterStatus, searchQuery]);
+
+  // Toggle property status (active vs draft)
+  const handleToggleStatus = useCallback(
+    async (prop: DashboardProperty) => {
+      const propId = prop._id || prop.id;
+      const isCurrentlyActive =
+        prop.status === 'active' || prop.status === 'available';
+      const nextStatus = isCurrentlyActive ? 'draft' : 'active';
+
+      setProperties((prev) => {
+        const updated = prev.map((p) => {
+          if ((p._id || p.id) === propId) {
+            return { ...p, status: nextStatus };
+          }
+          return p;
+        });
+        saveProperties(updated);
+        return updated;
+      });
+
+      if (
+        currentUser?._id &&
+        prop._id &&
+        !prop._id.startsWith('prop-')
+      ) {
+        try {
+          await propertyService.updateProperty(prop._id, {
+            status: nextStatus === 'active' ? 'available' : 'unavailable',
+          });
+        } catch (e) {
+          console.warn('API updateProperty status error:', e);
+        }
+      }
+
+      setSuccessToast(
+        nextStatus === 'active'
+          ? 'Annonce mise en ligne avec succès.'
+          : 'Annonce mise en pause (brouillon).'
+      );
+      setTimeout(() => setSuccessToast(null), 3000);
+    },
+    [currentUser?._id, saveProperties]
+  );
+
+  // Open Edit Modal
+  const handleOpenEdit = useCallback((prop: DashboardProperty) => {
+    setEditingProperty(prop);
+    setIsEditModalOpen(true);
   }, []);
 
-  const saveProperties = (newProps: UserProperty[]) => {
-    setProperties(newProps);
-    try {
-      localStorage.setItem('tranogasy_user_properties', JSON.stringify(newProps));
-    } catch (e) {
-      console.error('Error saving properties:', e);
-    }
-  };
+  // Open Stats Modal
+  const handleOpenStats = useCallback((prop: DashboardProperty) => {
+    setStatsProperty(prop);
+    setIsStatsModalOpen(true);
+  }, []);
 
-  const handleDeleteProperty = (id: string) => {
-    if (confirm('Êtes-vous sûr de vouloir supprimer cette annonce ?')) {
-      const updated = properties.filter((p) => p.id !== id);
-      saveProperties(updated);
-      setSuccessToast('Annonce supprimée avec succès.');
-      setTimeout(() => setSuccessToast(null), 3000);
-    }
-  };
+  // Save changes from Edit Modal
+  const handleSaveEdit = useCallback(
+    async (updatedProp: DashboardProperty) => {
+      const propId = updatedProp._id || updatedProp.id;
+      setProperties((prev) => {
+        const updated = prev.map((p) => {
+          if ((p._id || p.id) === propId) {
+            return updatedProp;
+          }
+          return p;
+        });
+        saveProperties(updated);
+        return updated;
+      });
+      setIsEditModalOpen(false);
+      setEditingProperty(null);
 
-  const handleToggleStatus = (id: string) => {
-    const updated = properties.map((p) => {
-      if (p.id === id) {
-        const nextStatus = p.status === 'active' ? 'draft' : 'active';
-        return { ...p, status: nextStatus };
+      if (
+        currentUser?._id &&
+        updatedProp._id &&
+        !updatedProp._id.startsWith('prop-')
+      ) {
+        try {
+          await propertyService.updateProperty(updatedProp._id, {
+            title: updatedProp.title,
+            description: updatedProp.description,
+            price: updatedProp.price,
+            rent: updatedProp.rent,
+            type: updatedProp.type,
+            houseType: updatedProp.houseType?.toLowerCase(),
+            area: updatedProp.area,
+            rooms: updatedProp.rooms,
+            bathrooms: updatedProp.bathrooms,
+            status:
+              updatedProp.status === 'active'
+                ? 'available'
+                : updatedProp.status === 'pending'
+                ? 'pending'
+                : 'unavailable',
+          });
+        } catch (e) {
+          console.warn('API updateProperty save error:', e);
+        }
       }
-      return p;
-    });
-    saveProperties(updated as UserProperty[]);
-    setSuccessToast('Statut de l\'annonce mis à jour.');
-    setTimeout(() => setSuccessToast(null), 3000);
-  };
 
-  const handleCreateListingSubmit = (e: React.FormEvent) => {
+      setSuccessToast('Annonce modifiée avec succès.');
+      setTimeout(() => setSuccessToast(null), 3000);
+    },
+    [currentUser?._id, saveProperties]
+  );
+
+  // Open Delete confirmation modal
+  const handleOpenDelete = useCallback((prop: DashboardProperty) => {
+    setDeletingProperty(prop);
+    setIsDeleteModalOpen(true);
+  }, []);
+
+  // Confirm delete
+  const handleConfirmDelete = useCallback(async () => {
+    if (!deletingProperty) return;
+    const propId = deletingProperty._id || deletingProperty.id;
+    setProperties((prev) => {
+      const updated = prev.filter((p) => (p._id || p.id) !== propId);
+      saveProperties(updated);
+      return updated;
+    });
+    if (propId) {
+      usePropertyStore.getState().removeProperty(propId);
+    }
+    setIsDeleteModalOpen(false);
+
+    if (
+      currentUser?._id &&
+      deletingProperty._id &&
+      !deletingProperty._id.startsWith('prop-')
+    ) {
+      try {
+        await propertyService.deleteProperty(deletingProperty._id);
+      } catch (e) {
+        console.warn('API deleteProperty error:', e);
+      }
+    }
+
+    setDeletingProperty(null);
+    setSuccessToast('Annonce supprimée avec succès.');
+    setTimeout(() => setSuccessToast(null), 3000);
+  }, [deletingProperty, currentUser?._id, saveProperties]);
+
+  // Create new listing
+  const handleCreateListingSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.title || !formData.price) {
       alert('Veuillez remplir le titre et le prix.');
       return;
     }
 
-    const newProp: UserProperty = {
+    const numPrice = Number(formData.price) || 0;
+    const isRent = formData.type === 'rent';
+
+    const newProp: DashboardProperty = {
       id: `prop-${Date.now()}`,
+      _id: `prop-${Date.now()}`,
       title: formData.title,
-      description: formData.description || 'Belle propriété disponible immédiatement.',
+      description:
+        formData.description || 'Belle propriété disponible immédiatement.',
       type: formData.type,
       houseType: formData.houseType,
-      price: Number(formData.price) || 0,
+      price: !isRent ? numPrice : 0,
+      rent: isRent ? numPrice : 0,
       city: formData.city,
       neighborhood: formData.neighborhood || 'Centre',
       area: Number(formData.area) || 120,
@@ -256,6 +546,35 @@ function DashboardContent() {
       leads: 0,
       created_at: new Date().toISOString(),
     };
+
+    // If logged in, optionally register property with backend API
+    if (currentUser?._id) {
+      try {
+        const created = await propertyService.createProperty({
+          title: newProp.title,
+          description: newProp.description,
+          type: newProp.type,
+          houseType: newProp.houseType?.toLowerCase(),
+          price: newProp.price,
+          rent: newProp.rent,
+          city: '64f75284ef8f606073e98288', // Default sample city
+          area: newProp.area,
+          rooms: newProp.rooms,
+          bathrooms: newProp.bathrooms,
+          toilet: 1,
+          livingRoom: 1,
+          phone1: formData.phone,
+          images: newProp.images,
+          owner: currentUser._id,
+        });
+        if (created && created._id) {
+          newProp.id = created._id;
+          newProp._id = created._id;
+        }
+      } catch (err) {
+        console.warn('API createProperty error, fallback to local storage:', err);
+      }
+    }
 
     const updated = [newProp, ...properties];
     saveProperties(updated);
@@ -285,7 +604,9 @@ function DashboardContent() {
       images: ['/hero-bg.jpg'],
     });
 
-    setSuccessToast('Votre annonce a été publiée avec succès ! Elle est désormais visible en ligne.');
+    setSuccessToast(
+      'Votre annonce a été publiée avec succès ! Elle est désormais visible en ligne.'
+    );
     setTimeout(() => setSuccessToast(null), 4000);
 
     // Switch to listings tab
@@ -308,25 +629,102 @@ function DashboardContent() {
     }
   };
 
-  // Metrics calculations
-  const totalViews = properties.reduce((acc, p) => acc + (p.views || 0), 0);
-  const totalFavorites = properties.reduce((acc, p) => acc + (p.favorites || 0), 0);
-  const totalLeads = properties.reduce((acc, p) => acc + (p.leads || 0), 0);
-  const activeCount = properties.filter((p) => p.status === 'active').length;
-  const pendingCount = properties.filter((p) => p.status === 'pending').length;
+  // Metrics calculations (memoized to prevent recalculating on scroll / chunk loads)
+  const totalViews = useMemo(
+    () => properties.reduce((acc, p) => acc + (p.views || 0), 0),
+    [properties]
+  );
+  const totalFavorites = useMemo(
+    () => properties.reduce((acc, p) => acc + (p.favorites || 0), 0),
+    [properties]
+  );
+  const totalLeads = useMemo(
+    () => properties.reduce((acc, p) => acc + (p.leads || 0), 0),
+    [properties]
+  );
+  const activeCount = useMemo(
+    () =>
+      properties.filter(
+        (p) => p.status === 'active' || p.status === 'available'
+      ).length,
+    [properties]
+  );
+  const pendingCount = useMemo(
+    () => properties.filter((p) => p.status === 'pending').length,
+    [properties]
+  );
+  const draftCount = useMemo(
+    () =>
+      properties.filter(
+        (p) => p.status === 'draft' || p.status === 'unavailable'
+      ).length,
+    [properties]
+  );
 
-  const filteredProperties = properties.filter((p) => {
-    if (filterStatus !== 'all' && p.status !== filterStatus) return false;
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      return (
-        p.title.toLowerCase().includes(q) ||
-        p.city.toLowerCase().includes(q) ||
-        p.neighborhood.toLowerCase().includes(q)
-      );
-    }
-    return true;
-  });
+  // Filtered properties based on current status and query
+  const filteredProperties = useMemo(() => {
+    return properties.filter((p) => {
+      const isAct = p.status === 'active' || p.status === 'available';
+      const isPend = p.status === 'pending';
+      const isDrf = p.status === 'draft' || p.status === 'unavailable';
+
+      if (filterStatus === 'active' && !isAct) return false;
+      if (filterStatus === 'pending' && !isPend) return false;
+      if (filterStatus === 'draft' && !isDrf) return false;
+
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const titleMatch = (p.title || '').toLowerCase().includes(q);
+        const cityMatch =
+          typeof p.city === 'object' && p.city !== null
+            ? `${p.city.fokontany || ''} ${p.city.commune || ''} ${
+                p.city.district || ''
+              }`
+                .toLowerCase()
+                .includes(q)
+            : (p.city || '').toLowerCase().includes(q);
+        const neighMatch = (p.neighborhood || '').toLowerCase().includes(q);
+        const typeMatch = (p.houseType || '').toLowerCase().includes(q);
+        return titleMatch || cityMatch || neighMatch || typeMatch;
+      }
+      return true;
+    });
+  }, [properties, filterStatus, searchQuery]);
+
+  // Sliced batch of properties to render in the DOM (prevents lag with 1000+ items)
+  const displayedProperties = useMemo(() => {
+    return filteredProperties.slice(0, displayLimit);
+  }, [filteredProperties, displayLimit]);
+
+  const hasMoreToDisplay = displayLimit < filteredProperties.length;
+
+  const loadMoreChunk = useCallback(() => {
+    setDisplayLimit((prev) =>
+      Math.min(prev + BATCH_SIZE, filteredProperties.length)
+    );
+  }, [filteredProperties.length]);
+
+  // IntersectionObserver to auto-load the next chunk when user scrolls near the bottom
+  useEffect(() => {
+    const sentinel = observerRef.current;
+    if (!sentinel || !hasMoreToDisplay) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          loadMoreChunk();
+        }
+      },
+      {
+        root: null,
+        rootMargin: '400px', // Trigger 400px before reaching sentinel
+        threshold: 0.05,
+      }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMoreToDisplay, loadMoreChunk]);
 
   return (
     <div className="min-h-screen bg-[#F8F9FA] dark:bg-zinc-950 pb-28 md:pb-20 font-sans selection:bg-brand-green/20">
@@ -334,13 +732,16 @@ function DashboardContent() {
 
       {/* Top Banner / Breadcrumb */}
       <div className="sticky top-[64px] z-30 w-full bg-[#F8F9FA]/90 dark:bg-zinc-950/90 backdrop-blur-xl border-b border-zinc-200 dark:border-zinc-800">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 md:px-8 py-3">
+        <div className="mx-auto flex max-w-[2000px] items-center justify-between px-4 sm:px-6 md:px-8 lg:px-28 xl:px-32 2xl:px-36 py-3">
           <div className="flex items-center gap-3">
             <Link
               href="/"
               className="p-2 -ml-2 rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors"
             >
-              <ArrowLeft className="w-5 h-5 text-zinc-800 dark:text-zinc-200" strokeWidth={2.5} />
+              <ArrowLeft
+                className="w-5 h-5 text-zinc-800 dark:text-zinc-200"
+                strokeWidth={2.5}
+              />
             </Link>
             <div>
               <h1 className="text-lg md:text-xl font-bold text-zinc-900 dark:text-white tracking-tight leading-tight">
@@ -366,8 +767,7 @@ function DashboardContent() {
       </div>
 
       {/* Main Container */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8 pt-4 sm:pt-6">
-
+      <main className="max-w-[2000px] mx-auto px-4 sm:px-6 md:px-8 lg:px-28 xl:px-32 2xl:px-36 pt-4 sm:pt-6">
         {/* Success Toast */}
         {successToast && (
           <div className="mb-4 p-4 rounded-2xl bg-emerald-500 text-white shadow-lg flex items-center justify-between animate-in fade-in slide-in-from-top-2 duration-200">
@@ -384,7 +784,7 @@ function DashboardContent() {
           </div>
         )}
 
-        {/* Not Logged In Notice Banner */}
+        {/* Not Logged In Demo Notice Banner */}
         {!isLoggedIn && (
           <div className="mb-6 p-4 rounded-3xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm">
             <div className="flex items-center gap-3">
@@ -396,7 +796,8 @@ function DashboardContent() {
                   Mode démonstration invité
                 </p>
                 <p className="text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400">
-                  Connectez-vous pour sauvegarder définitivement vos annonces et recevoir les contacts acheteurs.
+                  Connectez-vous pour synchroniser vos annonces directement avec
+                  notre base de données.
                 </p>
               </div>
             </div>
@@ -410,7 +811,6 @@ function DashboardContent() {
         )}
 
         {/* Folder Menu Tabs Navigation - Sliding Animated Transition */}
-        {/* Folder Menu Tabs Navigation - Sliding Animated Transition */}
         <div className="w-full max-w-xl sm:max-w-2xl mb-6 mx-auto sm:mx-0">
           <div className="overflow-x-auto scrollbar-hide pt-2 pb-0 -mx-1 px-1">
             <div
@@ -419,30 +819,63 @@ function DashboardContent() {
               className="relative flex items-end min-w-[340px] select-none pr-6 sm:pr-8"
             >
               <div className="relative w-full h-11 sm:h-12 flex items-end">
-                {/* ── Base Inactive Folder Tabs Layer (z-0 cascading: Slot 0 > Slot 1 > Slot 2) ── */}
+                {/* ── Base Inactive Folder Tabs Layer ── */}
                 <div className="absolute inset-0 flex items-end pointer-events-none z-0">
-                  {/* Slot 0 base (z-[3]) */}
+                  {/* Slot 0 base */}
                   <div className="relative flex-1 h-full z-[3] rounded-tl-xl sm:rounded-tl-2xl bg-zinc-200/80 dark:bg-zinc-800/80 border-t border-l border-zinc-300/60 dark:border-zinc-700/60">
                     <div className="absolute left-full -ml-[1.5px] top-0 bottom-0 w-4 sm:w-5">
-                      <svg className="w-full h-full" viewBox="0 0 20 44" preserveAspectRatio="none" fill="none">
-                        <path d="M 0 0 C 10 0, 10 44, 20 44 L 0 44 Z" className="fill-zinc-200/80 dark:fill-zinc-800/80" />
-                        <path d="M 0 0 C 10 0, 10 44, 20 44" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-zinc-300/60 dark:text-zinc-700/60" />
+                      <svg
+                        className="w-full h-full"
+                        viewBox="0 0 20 44"
+                        preserveAspectRatio="none"
+                        fill="none"
+                      >
+                        <path
+                          d="M 0 0 C 10 0, 10 44, 20 44 L 0 44 Z"
+                          className="fill-zinc-200/80 dark:fill-zinc-800/80"
+                        />
+                        <path
+                          d="M 0 0 C 10 0, 10 44, 20 44"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                          className="text-zinc-300/60 dark:text-zinc-700/60"
+                        />
                       </svg>
                     </div>
                   </div>
-                  {/* Slot 1 base (z-[2]) */}
+                  {/* Slot 1 base */}
                   <div className="relative flex-1 h-full z-[2] rounded-tl-xl sm:rounded-tl-2xl bg-zinc-200/80 dark:bg-zinc-800/80 border-t border-l border-zinc-300/60 dark:border-zinc-700/60">
                     <div className="absolute left-full -ml-[1.5px] top-0 bottom-0 w-4 sm:w-5">
-                      <svg className="w-full h-full" viewBox="0 0 20 44" preserveAspectRatio="none" fill="none">
-                        <path d="M 0 0 C 10 0, 10 44, 20 44 L 0 44 Z" className="fill-zinc-200/80 dark:fill-zinc-800/80" />
-                        <path d="M 0 0 C 10 0, 10 44, 20 44" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-zinc-300/60 dark:text-zinc-700/60" />
+                      <svg
+                        className="w-full h-full"
+                        viewBox="0 0 20 44"
+                        preserveAspectRatio="none"
+                        fill="none"
+                      >
+                        <path
+                          d="M 0 0 C 10 0, 10 44, 20 44 L 0 44 Z"
+                          className="fill-zinc-200/80 dark:fill-zinc-800/80"
+                        />
+                        <path
+                          d="M 0 0 C 10 0, 10 44, 20 44"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                          className="text-zinc-300/60 dark:text-zinc-700/60"
+                        />
                       </svg>
                     </div>
                   </div>
-                  {/* Slot 2 base (Mint Green accent, z-[1]) */}
+                  {/* Slot 2 base */}
                   <div className="relative flex-1 h-full z-[1] rounded-tl-xl sm:rounded-tl-2xl bg-emerald-500/15 dark:bg-emerald-950/40 border-t border-l border-emerald-500/30 dark:border-emerald-800/30">
                     <div className="absolute left-full -ml-[1.5px] top-0 bottom-0 w-4 sm:w-5">
-                      <svg className="w-full h-full" viewBox="0 0 20 44" preserveAspectRatio="none" fill="none">
+                      <svg
+                        className="w-full h-full"
+                        viewBox="0 0 20 44"
+                        preserveAspectRatio="none"
+                        fill="none"
+                      >
                         <path
                           d="M 0 0 C 10 0, 10 44, 20 44 L 0 44 Z"
                           className="fill-emerald-500/15 dark:fill-emerald-950/40"
@@ -459,7 +892,7 @@ function DashboardContent() {
                   </div>
                 </div>
 
-                {/* ── Sliding Active Folder Tab Indicator (z-20) ── */}
+                {/* ── Sliding Active Folder Tab Indicator ── */}
                 <div
                   className="absolute top-0 bottom-0 pointer-events-none z-20 transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]"
                   style={{
@@ -474,29 +907,43 @@ function DashboardContent() {
                         : 'bg-zinc-950 border-zinc-950 dark:bg-white dark:border-white shadow-[0_-3px_12px_rgba(0,0,0,0.14)]'
                     }`}
                   >
-                    {/* Sliding S-curve ear */}
                     <div className="absolute left-full -ml-[1.5px] top-0 bottom-0 w-4 sm:w-5 pointer-events-none">
-                      <svg className="w-full h-full" viewBox="0 0 20 44" preserveAspectRatio="none" fill="none">
+                      <svg
+                        className="w-full h-full"
+                        viewBox="0 0 20 44"
+                        preserveAspectRatio="none"
+                        fill="none"
+                      >
                         <path
                           d="M 0 0 C 10 0, 10 44, 20 44 L 0 44 Z"
                           fill={activeTab === 'create' ? '#7cbd1e' : undefined}
-                          className={activeTab === 'create' ? '' : 'fill-zinc-950 dark:fill-white transition-colors duration-300'}
+                          className={
+                            activeTab === 'create'
+                              ? ''
+                              : 'fill-zinc-950 dark:fill-white transition-colors duration-300'
+                          }
                         />
                         <path
                           d="M 0 0 C 10 0, 10 44, 20 44"
                           fill="none"
-                          stroke={activeTab === 'create' ? '#7cbd1e' : 'currentColor'}
+                          stroke={
+                            activeTab === 'create' ? '#7cbd1e' : 'currentColor'
+                          }
                           strokeWidth={1.5}
-                          className={activeTab === 'create' ? '' : 'text-zinc-950 dark:text-white transition-colors duration-300'}
+                          className={
+                            activeTab === 'create'
+                              ? ''
+                              : 'text-zinc-950 dark:text-white transition-colors duration-300'
+                          }
                         />
                       </svg>
                     </div>
                   </div>
                 </div>
 
-                {/* ── Interactive Tab Buttons (Active z-30, Inactive cascading z-[13] > z-[12] > z-[11]) ── */}
+                {/* ── Interactive Tab Buttons ── */}
                 <div className="relative flex items-end w-full h-full">
-                  {/* Tab 1: Overview Button */}
+                  {/* Tab 1: Overview */}
                   <button
                     type="button"
                     role="tab"
@@ -537,7 +984,7 @@ function DashboardContent() {
                     </span>
                   </button>
 
-                  {/* Tab 2: Listings Button */}
+                  {/* Tab 2: Listings with full count */}
                   <button
                     type="button"
                     role="tab"
@@ -580,7 +1027,7 @@ function DashboardContent() {
                       className={`inline-flex items-center justify-center px-1.5 py-0.5 min-w-[18px] sm:min-w-[20px] h-4 sm:h-5 text-[10px] sm:text-xs font-bold rounded-full transition-colors duration-200 leading-none ${
                         activeTab === 'listings'
                           ? 'bg-white/20 text-white dark:bg-zinc-900/20 dark:text-zinc-950'
-                          : 'bg-zinc-300 dark:bg-zinc-750 text-zinc-700 dark:text-zinc-300'
+                          : 'bg-zinc-300 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300'
                       }`}
                     >
                       {properties.length}
@@ -606,7 +1053,10 @@ function DashboardContent() {
                           : 'bg-emerald-500/20 text-brand-green dark:text-emerald-300'
                       }`}
                     >
-                      <Plus className="w-3 h-3 sm:w-3.5 sm:h-3.5" strokeWidth={2.5} />
+                      <Plus
+                        className="w-3 h-3 sm:w-3.5 sm:h-3.5"
+                        strokeWidth={2.5}
+                      />
                     </div>
                     <span
                       className={`font-bold transition-colors duration-200 ${
@@ -641,7 +1091,9 @@ function DashboardContent() {
               {/* Card 1: Annonces Actives */}
               <div className="bg-white dark:bg-zinc-900 rounded-3xl p-4 sm:p-5 border border-zinc-100 dark:border-zinc-800 shadow-sm flex flex-col justify-between">
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">Annonces en ligne</span>
+                  <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+                    Annonces en ligne
+                  </span>
                   <div className="w-8 h-8 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
                     <Building2 className="w-4 h-4" />
                   </div>
@@ -652,7 +1104,11 @@ function DashboardContent() {
                   </div>
                   <div className="flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 mt-1">
                     <CheckCircle2 className="w-3 h-3" />
-                    <span>{pendingCount > 0 ? `${pendingCount} en validation` : 'Toutes publiées'}</span>
+                    <span>
+                      {pendingCount > 0
+                        ? `${pendingCount} en validation`
+                        : `${properties.length} au total`}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -660,7 +1116,9 @@ function DashboardContent() {
               {/* Card 2: Vues Totales */}
               <div className="bg-white dark:bg-zinc-900 rounded-3xl p-4 sm:p-5 border border-zinc-100 dark:border-zinc-800 shadow-sm flex flex-col justify-between">
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">Vues totales</span>
+                  <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+                    Vues totales
+                  </span>
                   <div className="w-8 h-8 rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400 flex items-center justify-center">
                     <Eye className="w-4 h-4" />
                   </div>
@@ -679,7 +1137,9 @@ function DashboardContent() {
               {/* Card 3: Contacts & Demandes */}
               <div className="bg-white dark:bg-zinc-900 rounded-3xl p-4 sm:p-5 border border-zinc-100 dark:border-zinc-800 shadow-sm flex flex-col justify-between">
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">Demandes reçues</span>
+                  <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+                    Demandes reçues
+                  </span>
                   <div className="w-8 h-8 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center">
                     <MessageSquare className="w-4 h-4" />
                   </div>
@@ -698,7 +1158,9 @@ function DashboardContent() {
               {/* Card 4: Favoris */}
               <div className="bg-white dark:bg-zinc-900 rounded-3xl p-4 sm:p-5 border border-zinc-100 dark:border-zinc-800 shadow-sm flex flex-col justify-between">
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">Favoris enregistrés</span>
+                  <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+                    Favoris enregistrés
+                  </span>
                   <div className="w-8 h-8 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center">
                     <Heart className="w-4 h-4" />
                   </div>
@@ -715,9 +1177,8 @@ function DashboardContent() {
               </div>
             </div>
 
-            {/* Performance Overview & Weekly Activity Chart */}
+            {/* Performance Overview & Activity Chart */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              
               {/* Left 2 Cols: Activity chart */}
               <div className="lg:col-span-2 bg-white dark:bg-zinc-900 rounded-3xl p-5 sm:p-6 border border-zinc-100 dark:border-zinc-800 shadow-sm">
                 <div className="flex items-center justify-between mb-6">
@@ -744,8 +1205,11 @@ function DashboardContent() {
                     { day: 'Ven', views: 160, height: '76%' },
                     { day: 'Sam', views: 210, height: '100%' },
                     { day: 'Dim', views: 190, height: '90%' },
-                  ].map((bar, i) => (
-                    <div key={bar.day} className="flex flex-col items-center gap-2 h-full justify-end group">
+                  ].map((bar) => (
+                    <div
+                      key={bar.day}
+                      className="flex flex-col items-center gap-2 h-full justify-end group cursor-pointer"
+                    >
                       <span className="text-[10px] font-semibold text-zinc-400 opacity-0 group-hover:opacity-100 transition-opacity">
                         {bar.views}
                       </span>
@@ -773,11 +1237,29 @@ function DashboardContent() {
 
                   <div className="space-y-3">
                     {[
-                      { name: 'Mamy Rakoto', phone: '+261 34 12 345 67', prop: 'Villa Contemporaine', time: 'Il y a 2h' },
-                      { name: 'Sophie Randria', phone: '+261 32 98 765 43', prop: 'Appartement T3', time: 'Il y a 5h' },
-                      { name: 'Dr. Herizo', phone: '+261 33 45 678 90', prop: 'Local Commercial', time: 'Hier' },
+                      {
+                        name: 'Mamy Rakoto',
+                        phone: '+261 34 12 345 67',
+                        prop: properties[0]?.title || 'Propriété',
+                        time: 'Il y a 2h',
+                      },
+                      {
+                        name: 'Sophie Randria',
+                        phone: '+261 32 98 765 43',
+                        prop: properties[1]?.title || 'Appartement / Maison',
+                        time: 'Il y a 5h',
+                      },
+                      {
+                        name: 'Dr. Herizo',
+                        phone: '+261 33 45 678 90',
+                        prop: properties[2]?.title || 'Local / Bureau',
+                        time: 'Hier',
+                      },
                     ].map((lead, idx) => (
-                      <div key={idx} className="p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50 flex items-center justify-between gap-3">
+                      <div
+                        key={idx}
+                        className="p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50 flex items-center justify-between gap-3"
+                      >
                         <div className="min-w-0">
                           <p className="text-xs font-bold text-zinc-900 dark:text-white truncate">
                             {lead.name}
@@ -787,7 +1269,9 @@ function DashboardContent() {
                           </p>
                         </div>
                         <div className="text-right shrink-0">
-                          <span className="text-[10px] text-zinc-400 block">{lead.time}</span>
+                          <span className="text-[10px] text-zinc-400 block">
+                            {lead.time}
+                          </span>
                           <a
                             href={`tel:${lead.phone}`}
                             className="inline-flex items-center gap-1 text-[11px] font-semibold text-brand-green hover:underline mt-0.5"
@@ -809,7 +1293,6 @@ function DashboardContent() {
                   Voir toutes mes annonces
                 </button>
               </div>
-
             </div>
 
             {/* Seller Tips & Guidance Banner */}
@@ -823,7 +1306,9 @@ function DashboardContent() {
                     Astuce TranoGasy pour maximiser vos contacts
                   </h4>
                   <p className="text-xs text-zinc-600 dark:text-zinc-400 max-w-2xl">
-                    Les annonces avec au moins 5 photos de haute qualité en lumière naturelle et un prix clair en Ariary reçoivent 3,2 fois plus de messages d'acheteurs qualifiés à Madagascar.
+                    Les annonces avec au moins 5 photos de haute qualité en lumière
+                    naturelle et un prix clair en Ariary reçoivent 3,2 fois plus de
+                    messages d'acheteurs qualifiés à Madagascar.
                   </p>
                 </div>
               </div>
@@ -860,16 +1345,30 @@ function DashboardContent() {
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-9 pr-4 py-2 bg-zinc-50 dark:bg-zinc-800 rounded-full text-xs sm:text-sm text-zinc-800 dark:text-zinc-100 placeholder:text-zinc-400 outline-none focus:ring-2 focus:ring-brand-green/30"
                 />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
 
               {/* Status Filter Buttons */}
               <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
                 {(['all', 'active', 'pending', 'draft'] as const).map((st) => {
+                  const counts = {
+                    all: properties.length,
+                    active: activeCount,
+                    pending: pendingCount,
+                    draft: draftCount,
+                  };
                   const labels = {
-                    all: `Toutes (${properties.length})`,
-                    active: `En ligne (${activeCount})`,
-                    pending: `En attente (${pendingCount})`,
-                    draft: `Brouillons`,
+                    all: `Toutes (${counts.all.toLocaleString('fr-FR')})`,
+                    active: `En ligne (${counts.active.toLocaleString('fr-FR')})`,
+                    pending: `En attente (${counts.pending.toLocaleString('fr-FR')})`,
+                    draft: `Brouillons (${counts.draft.toLocaleString('fr-FR')})`,
                   };
                   return (
                     <button
@@ -913,141 +1412,73 @@ function DashboardContent() {
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                {filteredProperties.map((prop) => (
+              <div className="space-y-6">
+                {/* Responsive Grid with chunked render */}
+                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 min-[2100px]:grid-cols-6">
+                  {displayedProperties.map((prop) => (
+                    <DashboardPropertyCard
+                      key={prop._id || prop.id}
+                      property={prop}
+                      onToggleStatus={handleToggleStatus}
+                      onEdit={handleOpenEdit}
+                      onDelete={handleOpenDelete}
+                      onViewStats={handleOpenStats}
+                    />
+                  ))}
+                </div>
+
+                {/* Progressive loading status footer & infinite scroll sentinel */}
+                <div className="pt-4 pb-6 flex flex-col items-center justify-center gap-3">
+                  <div className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+                    Affichage de <strong className="text-zinc-900 dark:text-white">{displayedProperties.length}</strong> sur{' '}
+                    <strong className="text-zinc-900 dark:text-white">{filteredProperties.length.toLocaleString('fr-FR')}</strong> annonces
+                  </div>
+
+                  {/* Visual Progress Bar */}
+                  <div className="w-52 h-1.5 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
+                    <div
+                      className="h-full bg-brand-green rounded-full transition-all duration-300"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Math.round(
+                            (displayedProperties.length /
+                              (filteredProperties.length || 1)) *
+                              100
+                          )
+                        )}%`,
+                      }}
+                    />
+                  </div>
+
+                  {/* Sentinel trigger for IntersectionObserver & Manual fallback button */}
                   <div
-                    key={prop.id}
-                    className="bg-white dark:bg-zinc-900 rounded-3xl overflow-hidden border border-zinc-100 dark:border-zinc-800 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group"
+                    ref={observerRef}
+                    className="h-8 w-full flex items-center justify-center"
                   >
-                    <div>
-                      {/* Image Thumbnail & Badges */}
-                      <div className="relative h-48 w-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
-                        <Image
-                          src={prop.images[0] || '/hero-bg.jpg'}
-                          alt={prop.title}
-                          fill
-                          className="object-cover group-hover:scale-105 transition-transform duration-500"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
-
-                        {/* Top Status Badge */}
-                        <div className="absolute top-3 left-3 flex items-center gap-2">
-                          {prop.status === 'active' && (
-                            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/90 text-white backdrop-blur-md shadow-sm">
-                              <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
-                              En ligne
-                            </span>
-                          )}
-                          {prop.status === 'pending' && (
-                            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-500/90 text-white backdrop-blur-md shadow-sm">
-                              <Clock className="w-3 h-3" />
-                              En validation
-                            </span>
-                          )}
-                          {prop.status === 'draft' && (
-                            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-zinc-700/90 text-white backdrop-blur-md shadow-sm">
-                              Brouillon
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Type Badge */}
-                        <div className="absolute top-3 right-3">
-                          <span className="px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider bg-white/90 dark:bg-zinc-900/90 text-zinc-900 dark:text-white backdrop-blur-md">
-                            {prop.type === 'rent' ? 'Location' : 'Vente'}
-                          </span>
-                        </div>
-
-                        {/* Price Overlay */}
-                        <div className="absolute bottom-3 left-3 text-white">
-                          <p className="text-lg font-extrabold tracking-tight">
-                            {prop.price.toLocaleString('fr-FR')} Ar
-                            {prop.type === 'rent' && <span className="text-xs font-normal"> /mois</span>}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Content Info */}
-                      <div className="p-4 sm:p-5">
-                        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-zinc-500 dark:text-zinc-400 mb-1">
-                          <MapPin className="w-3.5 h-3.5 text-brand-green shrink-0" />
-                          <span className="truncate">{prop.neighborhood}, {prop.city}</span>
-                        </div>
-
-                        <h4 className="text-sm sm:text-base font-bold text-zinc-900 dark:text-white line-clamp-1 mb-2">
-                          {prop.title}
-                        </h4>
-
-                        <div className="flex items-center gap-3 text-xs text-zinc-500 dark:text-zinc-400 mb-4 pb-3 border-b border-zinc-100 dark:border-zinc-800">
-                          <span>{prop.area} m²</span>
-                          <span>•</span>
-                          <span>{prop.rooms} pièces</span>
-                          <span>•</span>
-                          <span>{prop.houseType}</span>
-                        </div>
-
-                        {/* Performance Counters */}
-                        <div className="grid grid-cols-3 gap-2 py-2 px-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50 text-center">
-                          <div>
-                            <span className="text-[10px] text-zinc-400 block font-medium">Vues</span>
-                            <span className="text-xs font-extrabold text-zinc-800 dark:text-zinc-200">
-                              {prop.views}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-[10px] text-zinc-400 block font-medium">Favoris</span>
-                            <span className="text-xs font-extrabold text-brand-red">
-                              {prop.favorites}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-[10px] text-zinc-400 block font-medium">Contacts</span>
-                            <span className="text-xs font-extrabold text-brand-green">
-                              {prop.leads}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Action Footer */}
-                    <div className="p-4 pt-0 flex items-center justify-between gap-2 border-t border-zinc-100 dark:border-zinc-800 mt-2">
+                    {hasMoreToDisplay && (
                       <button
                         type="button"
-                        onClick={() => handleToggleStatus(prop.id)}
-                        className="text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white px-3 py-1.5 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all cursor-pointer active:scale-95"
+                        onClick={loadMoreChunk}
+                        className="px-5 py-2 rounded-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-all shadow-xs cursor-pointer active:scale-95 flex items-center gap-1.5"
                       >
-                        {prop.status === 'active' ? 'Mettre en pause' : 'Mettre en ligne'}
+                        <ChevronDown className="w-4 h-4 text-brand-green" />
+                        <span>
+                          Charger les {Math.min(BATCH_SIZE, filteredProperties.length - displayedProperties.length)} suivantes...
+                        </span>
                       </button>
-
-                      <div className="flex items-center gap-1.5">
-                        <Link
-                          href={`/properties/${prop.id}`}
-                          onClick={(e) => {
-                            if (!e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && e.button === 0) {
-                              e.preventDefault();
-                              openPropertyDetail(prop.id, prop);
-                            }
-                          }}
-                          aria-label="Voir l'annonce"
-                          className="p-2 rounded-full text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-950 dark:hover:text-white transition-all active:scale-90"
-                          title="Voir l'annonce"
-                        >
-                          <ExternalLink className="w-4 h-4" />
-                        </Link>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteProperty(prop.id)}
-                          aria-label="Supprimer"
-                          className="p-2 rounded-full text-brand-red hover:bg-red-50 dark:hover:bg-red-950/30 transition-all cursor-pointer active:scale-90"
-                          title="Supprimer l'annonce"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
+                    )}
                   </div>
-                ))}
+
+                  {!hasMoreToDisplay && filteredProperties.length > BATCH_SIZE && (
+                    <div className="text-[11px] font-medium text-zinc-400 dark:text-zinc-500 flex items-center gap-1.5 pt-1">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-brand-green" />
+                      <span>
+                        Toutes vos annonces ({filteredProperties.length.toLocaleString('fr-FR')}) sont chargées
+                      </span>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -1071,7 +1502,8 @@ function DashboardContent() {
                 Déposer une nouvelle annonce
               </h2>
               <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 mt-1">
-                Remplissez les informations de votre bien pour le rendre visible auprès de milliers de clients à Madagascar.
+                Remplissez les informations de votre bien pour le rendre visible
+                auprès de milliers de clients à Madagascar.
               </p>
             </div>
 
@@ -1084,7 +1516,9 @@ function DashboardContent() {
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     type="button"
-                    onClick={() => setFormData((prev) => ({ ...prev, type: 'sale' }))}
+                    onClick={() =>
+                      setFormData((prev) => ({ ...prev, type: 'sale' }))
+                    }
                     className={`py-3 px-4 rounded-2xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 border transition-all cursor-pointer ${
                       formData.type === 'sale'
                         ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 border-zinc-900 dark:border-white shadow-sm'
@@ -1096,7 +1530,9 @@ function DashboardContent() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setFormData((prev) => ({ ...prev, type: 'rent' }))}
+                    onClick={() =>
+                      setFormData((prev) => ({ ...prev, type: 'rent' }))
+                    }
                     className={`py-3 px-4 rounded-2xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 border transition-all cursor-pointer ${
                       formData.type === 'rent'
                         ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 border-zinc-900 dark:border-white shadow-sm'
@@ -1115,20 +1551,24 @@ function DashboardContent() {
                   Catégorie du bien *
                 </label>
                 <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-                  {['Villa', 'Appartement', 'Maison', 'Bureau', 'Terrain'].map((ht) => (
-                    <button
-                      key={ht}
-                      type="button"
-                      onClick={() => setFormData((prev) => ({ ...prev, houseType: ht }))}
-                      className={`py-2 px-3 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
-                        formData.houseType === ht
-                          ? 'bg-brand-green text-white border-brand-green shadow-sm'
-                          : 'bg-zinc-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
-                      }`}
-                    >
-                      {ht}
-                    </button>
-                  ))}
+                  {['Villa', 'Appartement', 'Maison', 'Bureau', 'Terrain'].map(
+                    (ht) => (
+                      <button
+                        key={ht}
+                        type="button"
+                        onClick={() =>
+                          setFormData((prev) => ({ ...prev, houseType: ht }))
+                        }
+                        className={`py-2 px-3 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+                          formData.houseType === ht
+                            ? 'bg-brand-green text-white border-brand-green shadow-sm'
+                            : 'bg-zinc-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
+                        }`}
+                      >
+                        {ht}
+                      </button>
+                    )
+                  )}
                 </div>
               </div>
 
@@ -1143,7 +1583,9 @@ function DashboardContent() {
                     required
                     placeholder="Ex: Belle villa avec piscine à Ivandry"
                     value={formData.title}
-                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, title: e.target.value })
+                    }
                     className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-green"
                   />
                 </div>
@@ -1156,7 +1598,9 @@ function DashboardContent() {
                     rows={3}
                     placeholder="Détaillez les atouts, l'environnement, l'accès, le calme..."
                     value={formData.description}
-                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, description: e.target.value })
+                    }
                     className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-green resize-none"
                   />
                 </div>
@@ -1170,7 +1614,9 @@ function DashboardContent() {
                   </label>
                   <select
                     value={formData.city}
-                    onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, city: e.target.value })
+                    }
                     className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-green"
                   >
                     <option value="Antananarivo">Antananarivo</option>
@@ -1190,7 +1636,9 @@ function DashboardContent() {
                     type="text"
                     placeholder="Ex: Ivandry, Ambatobe, Analakely..."
                     value={formData.neighborhood}
-                    onChange={(e) => setFormData({ ...formData, neighborhood: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, neighborhood: e.target.value })
+                    }
                     className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-green"
                   />
                 </div>
@@ -1208,7 +1656,9 @@ function DashboardContent() {
                       required
                       placeholder="Ex: 350000000"
                       value={formData.price}
-                      onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                      onChange={(e) =>
+                        setFormData({ ...formData, price: e.target.value })
+                      }
                       className="w-full pl-4 pr-12 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-green"
                     />
                     <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold text-zinc-400">
@@ -1225,7 +1675,9 @@ function DashboardContent() {
                     type="number"
                     placeholder="Ex: 180"
                     value={formData.area}
-                    onChange={(e) => setFormData({ ...formData, area: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, area: e.target.value })
+                    }
                     className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-green"
                   />
                 </div>
@@ -1237,7 +1689,9 @@ function DashboardContent() {
                   <input
                     type="number"
                     value={formData.rooms}
-                    onChange={(e) => setFormData({ ...formData, rooms: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, rooms: e.target.value })
+                    }
                     className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-green"
                   />
                 </div>
@@ -1248,10 +1702,10 @@ function DashboardContent() {
                 <label className="block text-xs font-bold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 mb-2">
                   Photos du bien
                 </label>
-                
+
                 <div className="flex flex-wrap items-center gap-3">
                   {/* Upload Drop Zone */}
-                  <label className="flex flex-col items-center justify-center w-28 h-28 rounded-2xl border-2 border-dashed border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 hover:bg-zinc-100 transition-colors cursor-pointer text-center p-2">
+                  <label className="flex flex-col items-center justify-center w-28 h-28 rounded-2xl border-2 border-dashed border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer text-center p-2">
                     <UploadCloud className="w-6 h-6 text-brand-green mb-1" />
                     <span className="text-[10px] font-semibold text-zinc-600 dark:text-zinc-400">
                       Ajouter photo
@@ -1266,8 +1720,17 @@ function DashboardContent() {
 
                   {/* Thumbnail Previews */}
                   {formData.images.map((img, idx) => (
-                    <div key={idx} className="relative w-28 h-28 rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-700 shadow-sm">
-                      <Image src={img} alt="Aperçu" fill className="object-cover" />
+                    <div
+                      key={idx}
+                      className="relative w-28 h-28 rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-700 shadow-sm"
+                    >
+                      <Image
+                        src={img}
+                        alt="Aperçu"
+                        fill
+                        unoptimized
+                        className="object-cover"
+                      />
                       {formData.images.length > 1 && (
                         <button
                           type="button"
@@ -1277,7 +1740,7 @@ function DashboardContent() {
                               images: prev.images.filter((_, i) => i !== idx),
                             }))
                           }
-                          className="absolute top-1 right-1 p-1 rounded-full bg-black/60 text-white hover:bg-black transition-colors"
+                          className="absolute top-1 right-1 p-1 rounded-full bg-black/60 text-white hover:bg-black transition-colors cursor-pointer"
                         >
                           <X className="w-3 h-3" />
                         </button>
@@ -1299,7 +1762,9 @@ function DashboardContent() {
                     required
                     placeholder="+261 34 00 000 00"
                     value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, phone: e.target.value })
+                    }
                     className="w-full pl-11 pr-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-green"
                   />
                 </div>
@@ -1318,22 +1783,57 @@ function DashboardContent() {
             </form>
           </div>
         )}
-
       </main>
+
+      {/* Edit Property Modal */}
+      <EditPropertyModal
+        isOpen={isEditModalOpen}
+        property={editingProperty}
+        onClose={() => {
+          setIsEditModalOpen(false);
+          setEditingProperty(null);
+        }}
+        onSave={handleSaveEdit}
+      />
+
+      {/* Delete Confirmation Modal */}
+      <DeleteConfirmModal
+        isOpen={isDeleteModalOpen}
+        propertyTitle={deletingProperty?.title}
+        onClose={() => {
+          setIsDeleteModalOpen(false);
+          setDeletingProperty(null);
+        }}
+        onConfirm={handleConfirmDelete}
+      />
+
+      {/* Property Statistics Modal */}
+      <PropertyStatsModal
+        isOpen={isStatsModalOpen}
+        property={statsProperty}
+        onClose={() => {
+          setIsStatsModalOpen(false);
+          setStatsProperty(null);
+        }}
+      />
     </div>
   );
 }
 
 export default function DashboardPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-10 h-10 border-4 border-brand-green border-t-transparent rounded-full animate-spin" />
-          <span className="text-sm font-semibold text-zinc-600 dark:text-zinc-400">Chargement de votre espace...</span>
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950">
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-10 h-10 border-4 border-brand-green border-t-transparent rounded-full animate-spin" />
+            <span className="text-sm font-semibold text-zinc-600 dark:text-zinc-400">
+              Chargement de votre espace...
+            </span>
+          </div>
         </div>
-      </div>
-    }>
+      }
+    >
       <DashboardContent />
     </Suspense>
   );

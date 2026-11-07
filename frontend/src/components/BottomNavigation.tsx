@@ -109,7 +109,7 @@ export default function BottomNavigation() {
       {isMenuOpen && (
         <div 
           onClick={() => setIsMenuOpen(false)}
-          className="fixed inset-0 z-40 bg-black/30 dark:bg-black/60 backdrop-blur-[2px] transition-opacity animate-in fade-in duration-200"
+          className="fixed inset-0 z-[55] bg-black/30 dark:bg-black/60 backdrop-blur-[2px] transition-opacity animate-in fade-in duration-200"
           aria-hidden="true"
         />
       )}
@@ -118,7 +118,7 @@ export default function BottomNavigation() {
       {isMenuOpen && (
         <div
           ref={menuRef}
-          className="fixed z-50 animate-in fade-in zoom-in-95 slide-in-from-bottom-2 duration-200
+          className="fixed z-[70] animate-in fade-in zoom-in-95 slide-in-from-bottom-2 duration-200
             /* Mobile & Tablet: Centered above bottom navigation bar */
             bottom-22 left-1/2 -translate-x-1/2 w-[92%] max-w-[350px]
             md:bottom-24 md:w-[360px]
@@ -217,7 +217,7 @@ export default function BottomNavigation() {
       )}
 
       {/* ── Fixed Navigation Bar ── */}
-      <nav className={`fixed z-30 transition-all duration-300 bg-white/85 dark:bg-zinc-900/90 backdrop-blur-2xl border-zinc-200/70 dark:border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.12)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.5)] ${isCreateListing ? "hidden lg:flex" : ""}
+      <nav className={`fixed z-[60] transition-all duration-300 bg-white/85 dark:bg-zinc-900/90 backdrop-blur-2xl border-zinc-200/70 dark:border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.12)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.5)] ${isCreateListing ? "hidden lg:flex" : ""}
         bottom-0 left-0 right-0 border-t rounded-none pb-safe pt-1.5
         md:bottom-0 md:left-1/2 md:-translate-x-1/2 md:w-[390px] md:border-x md:border-t md:rounded-t-3xl md:rounded-b-none md:pb-1.5 md:pt-1.5 md:shadow-2xl
         lg:top-1/2 lg:right-0 lg:left-auto lg:bottom-auto lg:translate-x-0 lg:-translate-y-1/2 lg:w-[85px] lg:h-[410px] lg:border-y lg:border-l lg:border-r-0 lg:rounded-l-[2.5rem] lg:rounded-r-none lg:pt-4 lg:pb-4 lg:px-0`}>

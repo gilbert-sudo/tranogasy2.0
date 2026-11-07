@@ -58,4 +58,21 @@ export const propertyService = {
       body: JSON.stringify(data),
     });
   },
+
+  getUserProperties: (userId: string) => {
+    return apiFetch<any[]>(`/properties/user/${encodeURIComponent(userId)}`);
+  },
+
+  updateProperty: (propertyId: string, data: any) => {
+    return apiFetch<any>(`/properties/${encodeURIComponent(propertyId)}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  deleteProperty: (propertyId: string) => {
+    return apiFetch<any>(`/properties/${encodeURIComponent(propertyId)}`, {
+      method: 'DELETE',
+    });
+  },
 };

@@ -10,6 +10,8 @@ interface TopPropertySectionProps {
   onViewAll?: () => void;
   viewAllHref?: string;
   className?: string;
+  activeTab?: 'location' | 'vente';
+  sortBy?: string;
 }
 
 export default function TopPropertySection({
@@ -18,17 +20,22 @@ export default function TopPropertySection({
   onViewAll,
   viewAllHref,
   className = '',
+  activeTab: controlledActiveTab,
+  sortBy: controlledSortBy,
 }: TopPropertySectionProps) {
-  const [activeTab, setActiveTab] = useState<'location' | 'vente'>('location');
-  const [sortBy, setSortBy] = useState('Trier par');
+  const [internalTab, setInternalTab] = useState<'location' | 'vente'>('location');
+  const [internalSort, setInternalSort] = useState('Trier par');
+
+  const activeTab = controlledActiveTab ?? internalTab;
+  const sortBy = controlledSortBy ?? internalSort;
 
   const handleTabClick = (tab: 'location' | 'vente') => {
-    setActiveTab(tab);
+    setInternalTab(tab);
     onTabChange?.(tab);
   };
 
   const handleSortChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setSortBy(e.target.value);
+    setInternalSort(e.target.value);
     onSortChange?.(e.target.value);
   };
 

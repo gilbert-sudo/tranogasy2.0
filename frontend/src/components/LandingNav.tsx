@@ -57,7 +57,7 @@ export default function LandingNav() {
   const [searchQuery, setSearchQuery] = useState('');
 
   const launchSearchEngine = useCallback(
-    (opts?: { openFilters?: boolean; queryOverride?: string; categoryOverride?: string }) => {
+    (opts?: { openFilters?: boolean; queryOverride?: string; categoryOverride?: string; focusSearch?: boolean }) => {
       const params = new URLSearchParams();
       const q = (opts?.queryOverride ?? searchQuery).trim();
       if (q) params.set('q', q);
@@ -74,6 +74,10 @@ export default function LandingNav() {
 
       if (opts?.openFilters) {
         params.set('openFilters', '1');
+      }
+
+      if (opts?.focusSearch) {
+        params.set('focus', '1');
       }
 
       const qs = params.toString();
@@ -331,31 +335,38 @@ export default function LandingNav() {
               }`}
             >
               <div
-                className={`flex items-center gap-2 rounded-full px-4 py-1.5 w-full
+                onClick={() => launchSearchEngine({ focusSearch: true })}
+                className={`flex items-center gap-2 rounded-full px-4 py-1.5 w-full cursor-pointer group
                   bg-white/80 dark:bg-zinc-800/80 backdrop-blur-md
                   transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] min-w-0
                   ${
                     searchFocused
                       ? 'max-w-sm sm:max-w-md md:max-w-lg lg:max-w-xl xl:max-w-2xl ring-2 ring-brand-green/60 shadow-[0_8px_28px_rgba(124,189,30,0.15)] bg-white dark:bg-zinc-800'
-                      : 'max-w-xs sm:max-w-xs md:max-w-sm lg:max-w-md xl:max-w-lg ring-1 ring-zinc-200/80 dark:ring-zinc-700/80 shadow-sm'
+                      : 'max-w-xs sm:max-w-xs md:max-w-sm lg:max-w-md xl:max-w-lg ring-1 ring-zinc-200/80 dark:ring-zinc-700/80 shadow-sm hover:ring-zinc-300 dark:hover:ring-zinc-600'
                   }`}
               >
-                <Search className="h-4 w-4 flex-shrink-0 text-zinc-400" />
+                <Search className="h-4 w-4 flex-shrink-0 text-zinc-400 group-hover:text-brand-green" />
                 <input
                   type="text"
+                  readOnly
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') launchSearchEngine();
-                  }}
                   placeholder="Rechercher une ville, quartier…"
-                  onFocus={() => setSearchFocused(true)}
-                  onBlur={() => setSearchFocused(false)}
-                  className="flex-1 bg-transparent text-sm text-zinc-800 dark:text-zinc-100 placeholder:text-zinc-400 outline-none min-w-0"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    launchSearchEngine({ focusSearch: true });
+                  }}
+                  onFocus={(e) => {
+                    e.preventDefault();
+                    launchSearchEngine({ focusSearch: true });
+                  }}
+                  className="flex-1 bg-transparent text-sm text-zinc-800 dark:text-zinc-100 placeholder:text-zinc-400 outline-none min-w-0 cursor-pointer"
                 />
                 <button
                   type="button"
-                  onClick={() => launchSearchEngine({ openFilters: true })}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    launchSearchEngine({ openFilters: true });
+                  }}
                   aria-label="Filtres"
                   className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 transition-transform active:scale-90 cursor-pointer"
                 >
@@ -397,7 +408,7 @@ export default function LandingNav() {
                   type="button"
                   id="mobile-top-nav-search-btn"
                   aria-label="Rechercher"
-                  onClick={() => launchSearchEngine()}
+                  onClick={() => launchSearchEngine({ focusSearch: true })}
                   className="relative h-11 px-3.5 rounded-full flex items-center gap-2 flex-shrink-0 transition-all duration-200 active:scale-95 cursor-pointer
                     bg-gradient-to-b from-zinc-800 via-zinc-900 to-black text-white
                     border border-white/20 dark:border-white/25
@@ -594,41 +605,48 @@ export default function LandingNav() {
             >
               {/* Search input pill */}
               <div
+                onClick={() => launchSearchEngine({ focusSearch: true })}
                 className={`flex-1 min-w-0 flex items-center h-12 md:h-13 rounded-full pl-4 pr-2
                   bg-white/75 dark:bg-zinc-800/60 backdrop-blur-xl
                   border border-white/85 dark:border-white/10
                   shadow-[0_4px_20px_rgba(0,0,0,0.04)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.25)]
-                  transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                  transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] cursor-pointer group ${
                     searchFocused
                       ? 'ring-3 ring-brand-green/25 border-brand-green bg-white dark:bg-zinc-800 shadow-[0_14px_36px_rgba(124,189,30,0.16)]'
-                      : ''
+                      : 'hover:border-zinc-300 dark:hover:border-zinc-700'
                   }`}
               >
                 <Search
                   className={`h-5 w-5 mr-2.5 flex-shrink-0 transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
                     searchFocused
                       ? 'text-brand-green scale-110'
-                      : 'text-zinc-400 dark:text-zinc-500'
+                      : 'text-zinc-400 dark:text-zinc-500 group-hover:text-brand-green'
                   }`}
                 />
                 <input
                   ref={inputRef}
                   id="main-search"
                   type="text"
+                  readOnly
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') launchSearchEngine();
-                  }}
                   placeholder="Rechercher un quartier, ville, n° bien…"
-                  onFocus={() => setSearchFocused(true)}
-                  onBlur={() => setSearchFocused(false)}
-                  className="w-full bg-transparent text-[15px] md:text-base text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 font-normal outline-none"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    launchSearchEngine({ focusSearch: true });
+                  }}
+                  onFocus={(e) => {
+                    e.preventDefault();
+                    launchSearchEngine({ focusSearch: true });
+                  }}
+                  className="w-full bg-transparent text-[15px] md:text-base text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 font-normal outline-none cursor-pointer"
                 />
                 {searchQuery.trim().length > 0 && (
                   <button
                     type="button"
-                    onClick={() => launchSearchEngine()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      launchSearchEngine({ focusSearch: true });
+                    }}
                     className="px-4 py-2 rounded-full bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 font-outfit font-light text-xs shrink-0 hover:scale-105 active:scale-95 transition-all cursor-pointer"
                   >
                     Aller

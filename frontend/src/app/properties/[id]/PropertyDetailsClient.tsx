@@ -5,7 +5,7 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { X, Share2, Phone, MapPin, Heart, ChevronLeft, BedDouble, Expand, Home, Utensils, Droplets, Grid2X2, ChevronRight, MessageCircle, Send } from 'lucide-react';
 import {
-  FaCar, FaMotorcycle, FaWifi, FaParking, FaShieldAlt, FaSwimmingPool, FaHotTub, FaBed
+  FaCar, FaMotorcycle, FaWifi, FaParking, FaShieldAlt, FaSwimmingPool, FaHotTub, FaBed, FaShower
 } from "react-icons/fa";
 import {
   FaFaucetDrip, FaPlugCircleBolt, FaPlugCircleCheck, FaOilWell, FaKitchenSet
@@ -13,7 +13,7 @@ import {
 import {
   GiWell, GiBrickWall, GiFireplace, GiBathtub, GiSolarPower, GiMountainCave, GiSeatedMouse, GiSeaDragon, GiCastle
 } from "react-icons/gi";
-import { MdOutlineLiving, MdBalcony, MdLandscape, MdOutlineFiberSmartRecord } from "react-icons/md";
+import { MdOutlineLiving, MdBalcony, MdLandscape, MdOutlineFiberSmartRecord, MdWc } from "react-icons/md";
 import { TbAirConditioning, TbBuildingCastle, TbWash } from "react-icons/tb";
 import { TfiLayoutSidebarLeft } from "react-icons/tfi";
 import PropertyLocationDisplayer from '@/components/map/PropertyLocationDisplayer';
@@ -60,6 +60,8 @@ const FEATURE_ICONS: Record<string, { icon: React.ElementType, label: string }> 
   seaView: { icon: GiSeaDragon, label: "Vue mer" },
   mountainView: { icon: GiMountainCave, label: "Vue montagne" },
   panoramicView: { icon: GiSeatedMouse, label: "Vue panoramique" },
+  insideToilet: { icon: MdWc, label: "W.C intérieur" },
+  insideBathroom: { icon: FaShower, label: "Douche intérieure" },
 };
 
 function formatDateAgo(dateString?: string) {
@@ -202,8 +204,40 @@ function PropertyDetailsContent({
     return num.toLocaleString('en-US');
   };
 
+  const extractSurface = (text?: string): number | null => {
+    if (!text) return null;
+    const match = text.match(/\b(\d+(?:[.,]\d+)?)\s*(?:m2|m²|mètres\s*carrés|metres\s*carres)\b/i);
+    if (match && match[1]) {
+      const val = parseFloat(match[1].replace(',', '.'));
+      if (!isNaN(val) && val > 0) return val;
+    }
+    return null;
+  };
+
+  const parsedArea = (property?.area && Number(property.area) > 0)
+    ? Number(property.area)
+    : extractSurface(property?.description);
+
+  const toiletCount = (property?.toilet !== undefined && property?.toilet !== null && Number(property.toilet) > 0)
+    ? Number(property.toilet)
+    : (property?.features?.insideToilet ? 1 : 0);
+
+  const bathroomCount = (property?.bathrooms !== undefined && property?.bathrooms !== null && Number(property.bathrooms) > 0)
+    ? Number(property.bathrooms)
+    : (property?.features?.insideBathroom ? 1 : 0);
+
+  const kitchenCount = (property?.kitchen !== undefined && property?.kitchen !== null && Number(property.kitchen) > 0)
+    ? Number(property.kitchen)
+    : (property?.features?.openKitchen || property?.features?.kitchenFacilities || property?.features?.placardKitchen ? 1 : 0);
+
+  const livingRoomCount = (property?.livingRoom !== undefined && property?.livingRoom !== null && Number(property.livingRoom) > 0)
+    ? Number(property.livingRoom)
+    : (property?.features?.furnishedProperty ? 1 : 0);
+
   const activeFeatures = property?.features 
-    ? Object.entries(property.features).filter(([_, value]) => value).map(([key]) => key)
+    ? Object.entries(property.features)
+        .filter(([key, value]) => Boolean(value) && key !== '_id' && key !== '__v')
+        .map(([key]) => key)
     : [];
 
   const position = property?.coords
@@ -246,11 +280,11 @@ function PropertyDetailsContent({
 
   const stats = [
     { value: property?.rooms || 0, label: "Chambres", icon: BedDouble },
-    { value: property?.livingRoom || 0, label: "Salon", icon: Home },
-    { value: property?.kitchen || 0, label: "Cuisine", icon: Utensils },
-    { value: property?.bathrooms || 0, label: "Douches", icon: Droplets },
-    { value: property?.toilet || 0, label: "W.C", icon: Grid2X2 },
-    { value: property?.area ? `${property.area}` : 0, label: "Surface (m²)", icon: Expand },
+    { value: livingRoomCount || 0, label: "Salon", icon: Home },
+    { value: kitchenCount || 0, label: "Cuisine", icon: Utensils },
+    { value: bathroomCount || 0, label: "Douches", icon: Droplets },
+    { value: toiletCount || 0, label: "W.C", icon: Grid2X2 },
+    { value: parsedArea ? `${parsedArea}` : 'Non précisée', label: "Surface (m²)", icon: Expand },
   ];
 
   const handleMobileScroll = (e: React.UIEvent<HTMLDivElement>) => {

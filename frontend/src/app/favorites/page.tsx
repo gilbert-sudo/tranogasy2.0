@@ -509,7 +509,7 @@ export default function FavoritesPage() {
           <div className="max-w-[2000px] w-full mx-auto px-4 sm:px-6 md:px-8 lg:px-28 xl:px-32 2xl:px-36 py-6 space-y-6">
             {/* PROPERTY CARDS GRID */}
             {filteredProperties.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 min-[2100px]:grid-cols-6 gap-6 pt-2">
+              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 min-[2100px]:grid-cols-6 pt-2">
                 {filteredProperties.map((prop) => (
                   <PropertyCard key={prop._id} property={prop} />
                 ))}

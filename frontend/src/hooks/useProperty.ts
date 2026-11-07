@@ -3,39 +3,64 @@ import { propertyService } from '../services/property.service';
 import { usePropertyStore } from '../store/propertyStore';
 
 export function useProperty(propertyId?: string, initialData?: any) {
-  const getProperty = usePropertyStore(state => state.getProperty);
-  const addProperty = usePropertyStore(state => state.addProperty);
-  
-  // Only initialize state if propertyId is provided, otherwise null.
-  // Use initialData first if available to prevent any network request.
-  const [property, setPropertyState] = useState<any>(
-    initialData || (propertyId ? (getProperty(propertyId) || null) : null)
-  );
-  const [isLoading, setIsLoading] = useState(!initialData && !!propertyId && !property);
+  const getProperty = usePropertyStore((state) => state.getProperty);
+  const addProperty = usePropertyStore((state) => state.addProperty);
+
+  const initial =
+    initialData || (propertyId ? getProperty(propertyId) || null : null);
+  const [property, setPropertyState] = useState<any>(initial);
+  const [isLoading, setIsLoading] = useState(!initial && !!propertyId);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (initialData) {
-      setPropertyState(initialData);
-      return;
+      setPropertyState((prev: any) => ({ ...(prev || {}), ...initialData }));
     }
+  }, [initialData]);
 
-    if (propertyId && !property) {
+  useEffect(() => {
+    if (!propertyId) return;
+
+    // Determine if full data (features, toilet, owner) needs to be fetched from the backend
+    const current = property || initialData || getProperty(propertyId);
+    const hasFullData =
+      Boolean(current) &&
+      Boolean(current.features) &&
+      typeof current.features === 'object' &&
+      Object.keys(current.features).length > 0 &&
+      current.toilet !== undefined;
+
+    // Do not fetch mock/offline draft IDs
+    const isOfflineDraft = typeof propertyId === 'string' && propertyId.startsWith('prop-');
+
+    if (!hasFullData && !isOfflineDraft) {
+      let isCancelled = false;
       const fetchProperty = async () => {
-        setIsLoading(true);
+        if (!current) {
+          setIsLoading(true);
+        }
         try {
           const data = await propertyService.getPropertyById(propertyId);
-          setPropertyState(data);
-          addProperty(data);
+          if (!isCancelled && data) {
+            setPropertyState((prev: any) => ({ ...(prev || {}), ...data }));
+            addProperty(data);
+          }
         } catch (err: any) {
-          setError(err.message || 'Erreur lors du chargement de la propriété.');
+          if (!isCancelled && !current) {
+            setError(err.message || 'Erreur lors du chargement de la propriété.');
+          }
         } finally {
-          setIsLoading(false);
+          if (!isCancelled) {
+            setIsLoading(false);
+          }
         }
       };
       fetchProperty();
+      return () => {
+        isCancelled = true;
+      };
     }
-  }, [propertyId, property, initialData, addProperty]);
+  }, [propertyId, initialData, addProperty, getProperty]);
 
   const fetchPropertyById = async (id: string) => {
     setIsLoading(true);
@@ -57,6 +82,6 @@ export function useProperty(propertyId?: string, initialData?: any) {
     property,
     isLoading,
     error,
-    fetchPropertyById
+    fetchPropertyById,
   };
 }

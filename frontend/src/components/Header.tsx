@@ -22,13 +22,20 @@ export default function Header({ onSearchClick }: HeaderProps) {
   const currentUser = user?.user || user;
   const isLoggedIn = !!currentUser;
 
-  const handleSearchSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSearchRedirect = (opts?: { openFilters?: boolean }) => {
     if (onSearchClick) {
       onSearchClick();
     } else {
-      router.push('/');
+      const params = new URLSearchParams();
+      if (opts?.openFilters) params.set('openFilters', '1');
+      params.set('focus', '1');
+      router.push(`/search?${params.toString()}`);
     }
+  };
+
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    handleSearchRedirect();
   };
 
   return (
@@ -60,24 +67,35 @@ export default function Header({ onSearchClick }: HeaderProps) {
         <div className="hidden md:flex justify-center items-center min-w-0 flex-1">
           <form
             onSubmit={handleSearchSubmit}
-            className={`flex items-center gap-2 rounded-full px-4 py-1.5 w-full
+            onClick={() => handleSearchRedirect()}
+            className={`flex items-center gap-2 rounded-full px-4 py-1.5 w-full cursor-pointer group
               bg-white/80 dark:bg-zinc-800/80 backdrop-blur-md
               max-w-xs sm:max-w-sm md:max-w-md lg:max-w-lg xl:max-w-xl
               shadow-sm min-w-0
-              ${searchFocused ? 'ring-2 ring-zinc-400 dark:ring-zinc-600' : 'ring-1 ring-zinc-200/80 dark:ring-zinc-700/80'}`}
+              ${searchFocused ? 'ring-2 ring-zinc-400 dark:ring-zinc-600' : 'ring-1 ring-zinc-200/80 dark:ring-zinc-700/80 hover:ring-zinc-300 dark:hover:ring-zinc-600'}`}
           >
-            <Search className="h-4 w-4 flex-shrink-0 text-zinc-400" />
+            <Search className="h-4 w-4 flex-shrink-0 text-zinc-400 group-hover:text-brand-green" />
             <input
               type="text"
+              readOnly
               value={searchValue}
-              onChange={(e) => setSearchValue(e.target.value)}
               placeholder="Rechercher une ville, quartier…"
-              onFocus={() => setSearchFocused(true)}
-              onBlur={() => setSearchFocused(false)}
-              className="flex-1 bg-transparent text-sm text-zinc-800 dark:text-zinc-100 placeholder:text-zinc-400 outline-none min-w-0"
+              onClick={(e) => {
+                e.preventDefault();
+                handleSearchRedirect();
+              }}
+              onFocus={(e) => {
+                e.preventDefault();
+                handleSearchRedirect();
+              }}
+              className="flex-1 bg-transparent text-sm text-zinc-800 dark:text-zinc-100 placeholder:text-zinc-400 outline-none min-w-0 cursor-pointer"
             />
             <button
-              type="submit"
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleSearchRedirect({ openFilters: true });
+              }}
               aria-label="Filtres"
               className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 transition-transform active:scale-90 cursor-pointer"
             >
@@ -113,13 +131,7 @@ export default function Header({ onSearchClick }: HeaderProps) {
               type="button"
               id="header-mobile-search-btn"
               aria-label="Rechercher"
-              onClick={() => {
-                if (onSearchClick) {
-                  onSearchClick();
-                } else {
-                  router.push('/');
-                }
-              }}
+              onClick={() => handleSearchRedirect()}
               className="relative h-11 px-3.5 rounded-full flex items-center gap-2 flex-shrink-0 transition-all duration-200 active:scale-95 cursor-pointer
                 bg-gradient-to-b from-zinc-800 via-zinc-900 to-black text-white
                 border border-white/20 dark:border-white/25
