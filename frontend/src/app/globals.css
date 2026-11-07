@@ -244,6 +244,82 @@
   font-family: var(--font-outfit), var(--font-geist-sans), sans-serif;
 }
 
+/* Dual Range Price Slider Thumbs */
+.dual-range-input {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  pointer-events: none;
+  touch-action: none;
+}
+
+.dual-range-input::-webkit-slider-runnable-track {
+  height: 8px;
+  background: transparent;
+}
+
+.dual-range-input::-moz-range-track {
+  height: 8px;
+  background: transparent;
+}
+
+.dual-range-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  pointer-events: auto;
+  width: 24px;
+  height: 24px;
+  border-radius: 9999px;
+  background-color: #ffffff;
+  border: 3.5px solid #7cbd1e;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25), 0 0 0 3px rgba(124, 189, 30, 0.16);
+  margin-top: -8px;
+  cursor: grab;
+  will-change: transform;
+  transition: transform 0.1s ease-out, box-shadow 0.12s ease, background-color 0.12s ease;
+}
+
+.dual-range-input::-webkit-slider-thumb:hover {
+  transform: scale(1.12);
+  box-shadow: 0 4px 14px rgba(124, 189, 30, 0.35), 0 0 0 5px rgba(124, 189, 30, 0.22);
+}
+
+.dual-range-input::-webkit-slider-thumb:active {
+  cursor: grabbing;
+  transform: scale(1.2);
+  background-color: #7cbd1e;
+  border-color: #ffffff;
+  box-shadow: 0 4px 16px rgba(124, 189, 30, 0.45), 0 0 0 6px rgba(124, 189, 30, 0.28);
+}
+
+.dual-range-input::-moz-range-thumb {
+  appearance: none;
+  pointer-events: auto;
+  width: 24px;
+  height: 24px;
+  border-radius: 9999px;
+  background-color: #ffffff;
+  border: 3.5px solid #7cbd1e;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25), 0 0 0 3px rgba(124, 189, 30, 0.16);
+  cursor: grab;
+  box-sizing: border-box;
+  will-change: transform;
+  transition: transform 0.1s ease-out, box-shadow 0.12s ease, background-color 0.12s ease;
+}
+
+.dual-range-input::-moz-range-thumb:hover {
+  transform: scale(1.12);
+  box-shadow: 0 4px 14px rgba(124, 189, 30, 0.35), 0 0 0 5px rgba(124, 189, 30, 0.22);
+}
+
+.dual-range-input::-moz-range-thumb:active {
+  cursor: grabbing;
+  transform: scale(1.2);
+  background-color: #7cbd1e;
+  border-color: #ffffff;
+  box-shadow: 0 4px 16px rgba(124, 189, 30, 0.45), 0 0 0 6px rgba(124, 189, 30, 0.28);
+}
+
 /* Prevent browser rectangular tap highlights and focus box flash */
 button, [role="tab"] {
   -webkit-tap-highlight-color: transparent !important;

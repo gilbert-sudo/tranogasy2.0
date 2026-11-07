@@ -11,12 +11,17 @@ import TikTokMapModal from './TikTokMapModal';
 import TikTokCommentsDrawer from './TikTokCommentsDrawer';
 import TikTokSkeleton from './TikTokSkeleton';
 import { usePropertyStore } from '@/store/propertyStore';
+import { usePropertyDetailModalStore } from '@/store/propertyDetailModalStore';
 
 interface TranogasyFeedProps {
   initialProperties?: FeedProperty[];
+  embeddedInSearch?: boolean;
 }
 
-export default function TranogasyFeed({ initialProperties = [] }: TranogasyFeedProps) {
+export default function TranogasyFeed({
+  initialProperties = [],
+  embeddedInSearch = false,
+}: TranogasyFeedProps) {
   const [properties, setProperties] = useState<FeedProperty[]>(initialProperties);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [scrollDirection, setScrollDirection] = useState<'down' | 'up'>('down');
@@ -28,6 +33,7 @@ export default function TranogasyFeed({ initialProperties = [] }: TranogasyFeedP
   const [isDesktop, setIsDesktop] = useState(false);
 
   // Modals state
+  const [selectedProperty, setSelectedProperty] = useState<FeedProperty | null>(null);
   const [showContactModal, setShowContactModal] = useState(false);
   const [showMapModal, setShowMapModal] = useState(false);
   const [showDetailsDrawer, setShowDetailsDrawer] = useState(false);
@@ -37,6 +43,7 @@ export default function TranogasyFeed({ initialProperties = [] }: TranogasyFeedP
   const containerRef = useRef<HTMLDivElement>(null);
   const isScrollingRef = useRef(false);
   const addProperties = usePropertyStore((state) => state.addProperties);
+  const openPropertyDetail = usePropertyDetailModalStore((state) => state.openPropertyDetail);
 
   // Screen size detection for responsive desktop layout
   useEffect(() => {
@@ -275,6 +282,7 @@ export default function TranogasyFeed({ initialProperties = [] }: TranogasyFeedP
   };
 
   const currentProperty = properties[currentIndex] || properties[0];
+  const activeProperty = selectedProperty || currentProperty;
 
   if (isLoading) {
     return <TikTokSkeleton />;
@@ -299,7 +307,11 @@ export default function TranogasyFeed({ initialProperties = [] }: TranogasyFeedP
   }
 
   return (
-    <div className="w-full h-[calc(100dvh-4rem)] md:h-[100dvh] bg-black text-white relative overflow-hidden select-none">
+    <div
+      className={`w-full ${
+        embeddedInSearch ? 'h-[100dvh]' : 'h-[calc(100dvh-4rem)] md:h-[100dvh]'
+      } bg-black text-white relative overflow-hidden select-none`}
+    >
       {/* Toast Alert */}
       {toastMessage && (
         <div className="fixed top-8 left-1/2 -translate-x-1/2 z-[200] flex items-center gap-2 px-5 py-2.5 rounded-full bg-zinc-900/90 text-white backdrop-blur-md border border-white/20 shadow-2xl text-xs font-bold animate-in fade-in slide-in-from-top-4 duration-300">
@@ -309,9 +321,19 @@ export default function TranogasyFeed({ initialProperties = [] }: TranogasyFeedP
       )}
 
       {/* Main Container: 2-column on Desktop, full phone viewport on Mobile */}
-      <div className="w-full h-full max-w-[1440px] mx-auto flex items-center justify-center lg:gap-6 xl:gap-8 lg:pl-6 lg:pr-[120px] xl:pl-8 xl:pr-[130px]">
+      <div
+        className={`w-full h-full max-w-[1440px] mx-auto flex items-center justify-center lg:gap-6 xl:gap-8 lg:pl-6 lg:pr-[120px] xl:pl-8 xl:pr-[130px] ${
+          embeddedInSearch ? 'lg:pt-20 lg:pb-8' : ''
+        }`}
+      >
         {/* Left Column (or single column on mobile): Reel Viewport */}
-        <div className="w-full lg:w-[480px] xl:w-[500px] h-full lg:h-[calc(100dvh-40px)] relative overflow-hidden lg:rounded-[2.5rem] lg:border lg:border-white/10 lg:shadow-2xl bg-black shrink-0">
+        <div
+          className={`w-full lg:w-[480px] xl:w-[500px] h-full ${
+            embeddedInSearch
+              ? 'lg:h-[calc(100dvh-105px)]'
+              : 'lg:h-[calc(100dvh-40px)]'
+          } relative overflow-hidden lg:rounded-[2.5rem] lg:border lg:border-white/10 lg:shadow-2xl bg-black shrink-0`}
+        >
           {/* Scroll Snap Feed Container */}
           <div
             ref={containerRef}
@@ -329,17 +351,38 @@ export default function TranogasyFeed({ initialProperties = [] }: TranogasyFeedP
               return (
                 <div
                   key={property._id || idx}
-                  className="w-full h-[calc(100dvh-4rem)] md:h-[100dvh] lg:h-[calc(100dvh-40px)] snap-start snap-always relative shrink-0 bg-black"
+                  className={`w-full ${
+                    embeddedInSearch
+                      ? 'h-[100dvh] lg:h-[calc(100dvh-105px)]'
+                      : 'h-[calc(100dvh-4rem)] md:h-[100dvh] lg:h-[calc(100dvh-40px)]'
+                  } snap-start snap-always relative shrink-0 bg-black`}
                 >
                   {isWithinWindow ? (
                     <TikTokCard
                       property={property}
                       isActive={currentIndex === idx}
                       isDesktop={isDesktop}
-                      onOpenDetails={() => setShowDetailsDrawer(true)}
-                      onOpenMap={() => setShowMapModal(true)}
-                      onOpenContact={() => setShowContactModal(true)}
-                      onOpenComments={() => setShowCommentsDrawer(true)}
+                      embeddedInSearch={embeddedInSearch}
+                      onOpenDetails={() => {
+                        if (isDesktop) {
+                          openPropertyDetail(property._id, property);
+                        } else {
+                          setSelectedProperty(property);
+                          setShowDetailsDrawer(true);
+                        }
+                      }}
+                      onOpenMap={() => {
+                        setSelectedProperty(property);
+                        setShowMapModal(true);
+                      }}
+                      onOpenContact={() => {
+                        setSelectedProperty(property);
+                        setShowContactModal(true);
+                      }}
+                      onOpenComments={() => {
+                        setSelectedProperty(property);
+                        setShowCommentsDrawer(true);
+                      }}
                       onShare={() => handleShare(property)}
                     />
                   ) : (
@@ -355,7 +398,13 @@ export default function TranogasyFeed({ initialProperties = [] }: TranogasyFeedP
 
         {/* Right Column: Desktop Synchronized Details Panel + Sticking Navigation Controls */}
         {isDesktop && (
-          <div className="hidden lg:flex items-center gap-3 xl:gap-4 h-[calc(100dvh-40px)] flex-1 min-w-0">
+          <div
+            className={`hidden lg:flex items-center gap-3 xl:gap-4 ${
+              embeddedInSearch
+                ? 'h-[calc(100dvh-105px)]'
+                : 'h-[calc(100dvh-40px)]'
+            } flex-1 min-w-0`}
+          >
             {/* Details Panel */}
             <div className="flex-1 h-full overflow-hidden">
               {currentProperty ? (
@@ -405,14 +454,17 @@ export default function TranogasyFeed({ initialProperties = [] }: TranogasyFeedP
       </div>
 
       {/* Mobile Slide-Up Details Drawer */}
-      {!isDesktop && currentProperty && (
+      {!isDesktop && activeProperty && (
         <TikTokDetailsDrawer
-          key={currentProperty._id || currentIndex}
-          property={currentProperty}
+          key={activeProperty._id || currentIndex}
+          property={activeProperty}
           direction={scrollDirection}
           isDesktop={false}
           isOpen={showDetailsDrawer}
-          onClose={() => setShowDetailsDrawer(false)}
+          onClose={() => {
+            setShowDetailsDrawer(false);
+            setSelectedProperty(null);
+          }}
           onOpenContact={() => {
             setShowDetailsDrawer(false);
             setShowContactModal(true);
@@ -421,31 +473,40 @@ export default function TranogasyFeed({ initialProperties = [] }: TranogasyFeedP
             setShowDetailsDrawer(false);
             setShowCommentsDrawer(true);
           }}
-          onShare={() => handleShare(currentProperty)}
+          onShare={() => handleShare(activeProperty)}
         />
       )}
 
       {/* Global Interactive Map Modal */}
-      {showMapModal && currentProperty && (
+      {showMapModal && activeProperty && (
         <TikTokMapModal
-          property={currentProperty}
-          onClose={() => setShowMapModal(false)}
+          property={activeProperty}
+          onClose={() => {
+            setShowMapModal(false);
+            setSelectedProperty(null);
+          }}
         />
       )}
 
       {/* Global Contact Modal */}
-      {showContactModal && currentProperty && (
+      {showContactModal && activeProperty && (
         <TikTokContactModal
-          property={currentProperty}
-          onClose={() => setShowContactModal(false)}
+          property={activeProperty}
+          onClose={() => {
+            setShowContactModal(false);
+            setSelectedProperty(null);
+          }}
         />
       )}
 
       {/* Global Comments Drawer / Modal */}
       <TikTokCommentsDrawer
-        property={currentProperty}
+        property={activeProperty}
         isOpen={showCommentsDrawer}
-        onClose={() => setShowCommentsDrawer(false)}
+        onClose={() => {
+          setShowCommentsDrawer(false);
+          setSelectedProperty(null);
+        }}
         isDesktop={isDesktop}
       />
     </div>

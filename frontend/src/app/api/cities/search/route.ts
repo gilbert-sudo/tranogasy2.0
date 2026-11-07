@@ -46,48 +46,69 @@ const fallbackPopularCities = [
   { _id: '64f75284ef8f606073e981f5', province: 'Mahajanga', region: 'Boeny', district: 'Mahajanga I', commune: 'Mahajanga', fokontany: 'Bord de la mer', coords: { lat: -15.7167, lng: 46.3167 } },
 ];
 
+function removeDiacritics(text: string = ''): string {
+  return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const q = searchParams.get('q') || '';
   const limit = parseInt(searchParams.get('limit') || '20', 10);
 
   try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 900);
     const res = await fetch(`${BACKEND_URL}/cities/search?q=${encodeURIComponent(q)}&limit=${limit}`, {
       headers: { 'Accept': 'application/json' },
+      signal: controller.signal,
     });
+    clearTimeout(timer);
     if (res.ok) {
       const data = await res.json();
-      return NextResponse.json(data);
+      if (Array.isArray(data) && data.length > 0) {
+        return NextResponse.json(data);
+      }
     }
-  } catch (backendErr) {
-    console.warn('Backend cities search error, fallback:', backendErr);
+  } catch {
+    // Fast fallback to local madagascar.json dataset
   }
 
   if (!q.trim()) {
-    return NextResponse.json(fallbackPopularCities);
+    return NextResponse.json(fallbackPopularCities.slice(0, limit));
   }
 
-  // Fallback to searching local madagascar.json dataset
+  // Fallback to searching local madagascar.json dataset with relevance ranking
   const localList = getLocalMadagascarCities();
-  if (localList.length > 0) {
-    const cleanQ = q.trim().toLowerCase();
-    const keywords = cleanQ.split(/\s+/).filter(Boolean);
+  const sourceList = localList.length > 0 ? localList : fallbackPopularCities;
 
-    const matches = localList.filter((c) => {
-      const text = `${c.fokontany} ${c.commune} ${c.district} ${c.region}`.toLowerCase();
-      return keywords.every((kw) => text.includes(kw));
-    });
+  const cleanQ = removeDiacritics(q.trim().toLowerCase());
+  const keywords = cleanQ.split(/\s+/).filter(Boolean);
 
-    return NextResponse.json(matches.slice(0, limit));
+  const scored: Array<{ city: any; score: number }> = [];
+
+  for (let i = 0; i < sourceList.length; i++) {
+    const c = sourceList[i];
+    const fkt = removeDiacritics((c.fokontany || '').toLowerCase());
+    const com = removeDiacritics((c.commune || '').toLowerCase());
+    const dist = removeDiacritics((c.district || '').toLowerCase());
+    const reg = removeDiacritics((c.region || '').toLowerCase());
+    const fullText = `${fkt} ${com} ${dist} ${reg}`;
+
+    if (!keywords.every((kw) => fullText.includes(kw))) continue;
+
+    let score = 10;
+    if (fkt === cleanQ) score += 100;
+    else if (fkt.startsWith(cleanQ)) score += 75;
+    else if (fkt.includes(cleanQ)) score += 50;
+
+    if (com === cleanQ) score += 45;
+    else if (com.startsWith(cleanQ)) score += 30;
+
+    if (reg === 'analamanga') score += 5;
+
+    scored.push({ city: c, score });
   }
 
-  const lowerQ = q.toLowerCase();
-  const filtered = fallbackPopularCities.filter(c =>
-    c.fokontany.toLowerCase().includes(lowerQ) ||
-    c.commune.toLowerCase().includes(lowerQ) ||
-    c.district.toLowerCase().includes(lowerQ) ||
-    c.region.toLowerCase().includes(lowerQ)
-  );
-
-  return NextResponse.json(filtered.slice(0, limit));
+  scored.sort((a, b) => b.score - a.score);
+  return NextResponse.json(scored.slice(0, limit).map((item) => item.city));
 }

@@ -333,9 +333,12 @@ export default function LandingNav() {
               <div
                 className={`flex items-center gap-2 rounded-full px-4 py-1.5 w-full
                   bg-white/80 dark:bg-zinc-800/80 backdrop-blur-md
-                  max-w-xs sm:max-w-sm md:max-w-md lg:max-w-lg xl:max-w-xl
-                  shadow-sm min-w-0
-                  ${searchFocused ? 'ring-2 ring-zinc-400 dark:ring-zinc-600' : 'ring-1 ring-zinc-200/80 dark:ring-zinc-700/80'}`}
+                  transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] min-w-0
+                  ${
+                    searchFocused
+                      ? 'max-w-sm sm:max-w-md md:max-w-lg lg:max-w-xl xl:max-w-2xl ring-2 ring-brand-green/60 shadow-[0_8px_28px_rgba(124,189,30,0.15)] bg-white dark:bg-zinc-800'
+                      : 'max-w-xs sm:max-w-xs md:max-w-sm lg:max-w-md xl:max-w-lg ring-1 ring-zinc-200/80 dark:ring-zinc-700/80 shadow-sm'
+                  }`}
               >
                 <Search className="h-4 w-4 flex-shrink-0 text-zinc-400" />
                 <input
@@ -582,20 +585,32 @@ export default function LandingNav() {
             </h1>
 
             {/* ── Search Bar Row: Pill Input + Separate Circular Filter Button + Map Mode Button ── */}
-            <div className="flex items-center gap-2.5 sm:gap-3 w-full max-w-2xl mb-4 sm:mb-5">
+            <div
+              className={`flex items-center gap-2.5 sm:gap-3 w-full mb-4 sm:mb-5 transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                searchFocused
+                  ? 'max-w-full sm:max-w-3xl lg:max-w-4xl'
+                  : 'max-w-full sm:max-w-xl md:max-w-2xl'
+              }`}
+            >
               {/* Search input pill */}
               <div
                 className={`flex-1 min-w-0 flex items-center h-12 md:h-13 rounded-full pl-4 pr-2
                   bg-white/75 dark:bg-zinc-800/60 backdrop-blur-xl
                   border border-white/85 dark:border-white/10
                   shadow-[0_4px_20px_rgba(0,0,0,0.04)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.25)]
-                  transition-all ${
+                  transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
                     searchFocused
-                      ? 'ring-2 ring-zinc-400 dark:ring-zinc-500 bg-white dark:bg-zinc-800'
+                      ? 'ring-3 ring-brand-green/25 border-brand-green bg-white dark:bg-zinc-800 shadow-[0_14px_36px_rgba(124,189,30,0.16)]'
                       : ''
                   }`}
               >
-                <Search className="h-5 w-5 text-zinc-400 dark:text-zinc-500 mr-2.5 flex-shrink-0" />
+                <Search
+                  className={`h-5 w-5 mr-2.5 flex-shrink-0 transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                    searchFocused
+                      ? 'text-brand-green scale-110'
+                      : 'text-zinc-400 dark:text-zinc-500'
+                  }`}
+                />
                 <input
                   ref={inputRef}
                   id="main-search"

@@ -11,6 +11,7 @@ import {
   ChevronRight,
   Plus,
   Compass,
+  Info,
   MessageCircle
 } from 'lucide-react';
 import {
@@ -92,6 +93,7 @@ interface TikTokCardProps {
   property: FeedProperty;
   isActive: boolean;
   isDesktop?: boolean;
+  embeddedInSearch?: boolean;
   onOpenDetails: () => void;
   onOpenMap: () => void;
   onOpenContact: () => void;
@@ -103,6 +105,7 @@ export default function TikTokCard({
   property,
   isActive,
   isDesktop = false,
+  embeddedInSearch = false,
   onOpenDetails,
   onOpenMap,
   onOpenContact,
@@ -263,7 +266,13 @@ export default function TikTokCard({
       <div className="absolute bottom-0 left-0 right-0 h-64 bg-gradient-to-t from-black/95 via-black/60 to-transparent pointer-events-none z-10" />
 
       {/* Top Header Badges */}
-      <div className="absolute top-4 left-4 z-20 flex items-center gap-2">
+      <div
+        className={`absolute left-3 sm:left-4 z-20 flex items-center gap-2 ${
+          embeddedInSearch
+            ? 'top-16 sm:top-[74px] lg:top-4'
+            : 'top-4'
+        }`}
+      >
         <span
           className={`px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider shadow-md ${
             property.type === 'rent'
@@ -280,7 +289,13 @@ export default function TikTokCard({
         )}
       </div>
 
-      <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
+      <div
+        className={`absolute right-3 sm:right-4 z-20 flex items-center gap-2 ${
+          embeddedInSearch
+            ? 'top-16 sm:top-[74px] lg:top-4'
+            : 'top-4'
+        }`}
+      >
         {images.length > 1 && (
           <span className="px-2.5 py-1 rounded-full bg-black/50 backdrop-blur-md border border-white/10 text-white text-xs font-semibold">
             {imageIndex + 1}/{images.length}
@@ -293,7 +308,13 @@ export default function TikTokCard({
 
       {/* Horizontal Thumbnail Gallery at Top (Classic Tranogasy Feed feature!) */}
       {images.length > 1 && (
-        <div className="absolute top-14 left-1/2 -translate-x-1/2 z-20 max-w-[92%] flex items-center gap-1.5 p-1.5 rounded-2xl bg-black/50 backdrop-blur-md border border-white/10 overflow-x-auto no-scrollbar">
+        <div
+          className={`absolute left-1/2 -translate-x-1/2 z-20 max-w-[92%] flex items-center gap-1.5 p-1.5 rounded-2xl bg-black/50 backdrop-blur-md border border-white/10 overflow-x-auto no-scrollbar ${
+            embeddedInSearch
+              ? 'top-[98px] sm:top-[112px] lg:top-14'
+              : 'top-14'
+          }`}
+        >
           {images.map((src, idx) => (
             <button
               key={idx}
@@ -322,7 +343,13 @@ export default function TikTokCard({
 
 
       {/* RIGHT ACTION COLUMN (True TikTok / Reels Style - Pure Icon-Oriented, No Background) */}
-      <div className="absolute bottom-20 md:bottom-24 right-2.5 md:right-3.5 z-20 flex flex-col items-center gap-4.5">
+      <div
+        className={`absolute right-2.5 md:right-3.5 z-30 flex flex-col items-center ${
+          embeddedInSearch
+            ? 'bottom-[62px] sm:bottom-[68px] lg:bottom-14 gap-2.5 sm:gap-3.5'
+            : 'bottom-6 md:bottom-8 gap-3.5 sm:gap-4'
+        }`}
+      >
         {/* Advertiser Avatar with Plus Badge */}
         <Link
           href={profileHref}
@@ -420,26 +447,30 @@ export default function TikTokCard({
           </span>
         </button>
 
-        {/* Details Button (Icon-oriented, no background) */}
-        {!isDesktop && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpenDetails();
-            }}
-            className="flex flex-col items-center gap-1 group cursor-pointer bg-transparent border-none p-0 focus:outline-none transition-transform hover:scale-110 active:scale-90"
-            title="Détails du bien"
-          >
-            <Compass className="w-7 h-7 md:w-8 md:h-8 text-white drop-shadow-[0_2px_5px_rgba(0,0,0,0.9)] stroke-[2.2]" />
-            <span className="text-[11px] font-semibold text-white tracking-wide drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]">
-              Détails
-            </span>
-          </button>
-        )}
+        {/* Details Button (Industry standard market icon: Info) */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenDetails();
+          }}
+          className="flex flex-col items-center gap-1 group cursor-pointer bg-transparent border-none p-0 focus:outline-none transition-transform hover:scale-110 active:scale-90"
+          title="Détails du bien"
+        >
+          <Info className="w-7 h-7 md:w-8 md:h-8 text-white drop-shadow-[0_2px_5px_rgba(0,0,0,0.9)] stroke-[2.2]" />
+          <span className="text-[11px] font-semibold text-white tracking-wide drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]">
+            Détails
+          </span>
+        </button>
       </div>
 
       {/* BOTTOM SECTION: TikTok Carousel Pill (directly on image) + Property Details */}
-      <div className="absolute bottom-6 md:bottom-8 left-0 right-0 z-20 pointer-events-none flex flex-col items-center">
+      <div
+        className={`absolute left-0 right-0 z-20 pointer-events-none flex flex-col items-center ${
+          embeddedInSearch
+            ? 'bottom-[62px] sm:bottom-[68px] lg:bottom-14'
+            : 'bottom-6 md:bottom-8'
+        }`}
+      >
         {/* TikTok Carousel Controls: directly on the image, right above property info */}
         {images.length > 1 && (
           <div

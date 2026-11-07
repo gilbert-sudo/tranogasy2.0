@@ -17,6 +17,7 @@ import {
   X,
   Plus,
   Minus,
+  Eye,
 } from 'lucide-react';
 import { Circle } from '@/components/map/Circle';
 import { cityService } from '@/services/city.service';
@@ -596,7 +597,7 @@ function MapCameraSync({
   return null;
 }
 
-export default function FuturisticSearchMap({
+function FuturisticSearchMapComponent({
   properties,
   selectedPropertyId,
   onSelectProperty,
@@ -935,6 +936,41 @@ export default function FuturisticSearchMap({
 
       {/* ── Floating Right-Side Futuristic Map Control Capsule ── */}
       <div className="absolute right-3 sm:right-5 top-1/2 -translate-y-1/2 z-20 flex flex-col gap-2.5 pointer-events-auto">
+        {/* 0. Quick Card Preview Toggle (Aperçu des Cartes) */}
+        {properties.length > 0 && (
+          <button
+            type="button"
+            onClick={() => {
+              if (selectedPropertyId) {
+                onSelectProperty(null as any);
+              } else if (properties[0]) {
+                onSelectProperty(properties[0]);
+              }
+            }}
+            title={
+              selectedPropertyId
+                ? "Masquer l'aperçu des cartes"
+                : `Aperçu des cartes (${properties.length})`
+            }
+            className={`group relative flex h-12 w-12 sm:h-13 sm:w-13 items-center justify-center rounded-full backdrop-blur-2xl border transition-all duration-300 active:scale-90 cursor-pointer shadow-[0_8px_28px_rgba(0,0,0,0.14)] ${
+              selectedPropertyId
+                ? 'bg-brand-green text-white border-white/40 shadow-[0_8px_28px_rgba(124,189,30,0.45)]'
+                : 'bg-white/85 dark:bg-zinc-900/85 text-zinc-800 dark:text-zinc-100 border-white/80 dark:border-white/10 hover:bg-white dark:hover:bg-zinc-800'
+            }`}
+          >
+            <Eye className="w-5 h-5 group-hover:scale-110 transition-transform" />
+            <span
+              className={`absolute -top-1 -right-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold leading-none shadow-xs ${
+                selectedPropertyId
+                  ? 'bg-zinc-950 text-white'
+                  : 'bg-brand-green text-white'
+              }`}
+            >
+              {properties.length}
+            </span>
+          </button>
+        )}
+
         {/* 1. Place Radar Zone on Map */}
         <button
           type="button"
@@ -1015,4 +1051,7 @@ export default function FuturisticSearchMap({
     </div>
   );
 }
+
+const FuturisticSearchMap = memo(FuturisticSearchMapComponent);
+export default FuturisticSearchMap;
 

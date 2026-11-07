@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 
 function SearchLoadingFallback() {
   return (
-    <div className="w-full h-[100dvh] bg-zinc-50 dark:bg-zinc-950 flex flex-col items-center justify-center p-6 select-none">
+    <div className="w-full h-[100dvh] -mb-16 md:-mb-24 lg:-mb-8 bg-zinc-50 dark:bg-zinc-950 flex flex-col items-center justify-center p-6 select-none">
       <div className="relative flex items-center justify-center mb-5">
         <span className="w-20 h-20 rounded-full bg-brand-green/20 animate-radar-wave absolute" />
         <div className="w-14 h-14 rounded-full bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 flex items-center justify-center shadow-2xl">

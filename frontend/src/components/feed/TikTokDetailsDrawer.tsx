@@ -2,7 +2,8 @@
 
 import React, { useRef, useEffect } from 'react';
 import Link from 'next/link';
-import { X, MapPin, Phone, Share2, BedDouble, Home, Utensils, Droplets, Grid2X2, Expand, MessageCircle, ChevronRight } from 'lucide-react';
+import { X, MapPin, Phone, Share2, BedDouble, Home, Utensils, Droplets, Grid2X2, Expand, MessageCircle, ChevronRight, Maximize2 } from 'lucide-react';
+import { usePropertyDetailModalStore } from '@/store/propertyDetailModalStore';
 import {
   FaCar, FaMotorcycle, FaWifi, FaParking, FaShieldAlt, FaSwimmingPool, FaHotTub, FaBed
 } from "react-icons/fa";
@@ -192,13 +193,14 @@ export default function TikTokDetailsDrawer({
   onOpenComments,
 }: TikTokDetailsDrawerProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const openPropertyDetail = usePropertyDetailModalStore((state) => state.openPropertyDetail);
 
-  // Automatically reset scroll position to top when switching properties
+  // Automatically reset scroll position to top when switching properties or opening
   useEffect(() => {
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTo({ top: 0, behavior: 'instant' });
     }
-  }, [property?._id]);
+  }, [property?._id, isOpen]);
 
   if (isLoading || !property) {
     return <TikTokDetailsSkeleton isDesktop={isDesktop} onClose={onClose} />;
@@ -272,13 +274,30 @@ export default function TikTokDetailsDrawer({
             )}
           </div>
 
-          {!isDesktop && onClose && (
-            <button
-              onClick={onClose}
-              className="w-8 h-8 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:text-zinc-900 dark:hover:text-white flex items-center justify-center transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
+          {!isDesktop && (
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  onClose?.();
+                  openPropertyDetail(property._id, property);
+                }}
+                className="w-8 h-8 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:text-zinc-900 dark:hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+                title="Plein écran (Tous les détails)"
+              >
+                <Maximize2 className="w-4 h-4" />
+              </button>
+              {onClose && (
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="w-8 h-8 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:text-zinc-900 dark:hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+                  title="Fermer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              )}
+            </div>
           )}
         </div>
 
@@ -463,7 +482,7 @@ export default function TikTokDetailsDrawer({
     <>
       {/* Semi-transparent Backdrop */}
       <div
-        className={`fixed inset-0 z-[100] bg-black/60 backdrop-blur-xs transition-opacity duration-300 ${
+        className={`fixed inset-0 z-[110] bg-black/60 backdrop-blur-sm transition-opacity duration-300 ${
           isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         }`}
         onClick={onClose}
@@ -471,13 +490,13 @@ export default function TikTokDetailsDrawer({
 
       {/* Slide-Up Sheet */}
       <div
-        className={`fixed left-0 right-0 bottom-0 z-[110] bg-white dark:bg-zinc-900 rounded-t-[2.5rem] shadow-2xl border-t border-zinc-200 dark:border-zinc-800 max-h-[88dvh] p-6 pb-24 transition-transform duration-300 ease-out flex flex-col ${
-          isOpen ? 'translate-y-0' : 'translate-y-full'
+        className={`fixed left-0 right-0 bottom-0 z-[120] bg-white dark:bg-zinc-900 rounded-t-[2.5rem] shadow-2xl border-t border-zinc-200 dark:border-zinc-800 h-[85dvh] max-h-[88dvh] p-5 sm:p-6 pb-4 sm:pb-6 transition-transform duration-300 ease-out flex flex-col overflow-hidden ${
+          isOpen ? 'translate-y-0 pointer-events-auto' : 'translate-y-full pointer-events-none'
         }`}
       >
         {/* Pull Indicator Pill */}
-        <div className="w-12 h-1.5 bg-zinc-300 dark:bg-zinc-700 rounded-full mx-auto -mt-2 mb-4 shrink-0" />
-        <div className="flex-1 overflow-hidden">{content}</div>
+        <div className="w-12 h-1.5 bg-zinc-300 dark:bg-zinc-700 rounded-full mx-auto -mt-1 mb-4 shrink-0" />
+        <div className="flex-1 overflow-hidden min-h-0">{content}</div>
       </div>
     </>
   );

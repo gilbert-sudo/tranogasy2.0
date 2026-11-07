@@ -138,9 +138,18 @@ export default function SearchEngineShell() {
     return () => observer.disconnect();
   }, [viewMode, visibleCount, filteredProperties.length]);
 
+  // Freeze background map/card canvas while the filter modal is open so sliding/clicking filters never triggers 200+ marker or card DOM re-renders behind the backdrop
+  const committedCanvasPropertiesRef = useRef<any[]>(filteredProperties);
+  if (!isFilterModalOpen) {
+    committedCanvasPropertiesRef.current = filteredProperties;
+  }
+  const canvasProperties = isFilterModalOpen
+    ? committedCanvasPropertiesRef.current
+    : filteredProperties;
+
   const visibleGridProperties = useMemo(() => {
-    return filteredProperties.slice(0, visibleCount);
-  }, [filteredProperties, visibleCount]);
+    return canvasProperties.slice(0, visibleCount);
+  }, [canvasProperties, visibleCount]);
 
   const handleOpenFilterModal = useCallback(() => {
     setIsFilterModalOpen(true);
@@ -270,26 +279,29 @@ export default function SearchEngineShell() {
 
   return (
     <APIProvider apiKey={GOOGLE_MAPS_API_KEY} libraries={['places']}>
-      <div className="relative w-full min-h-[100dvh] bg-zinc-50 dark:bg-zinc-950 font-sans selection:bg-brand-green/20">
+      <div
+        className={`relative w-full -mb-16 md:-mb-24 lg:-mb-8 ${
+          viewMode === 'list' ? 'min-h-[100dvh]' : 'h-[100dvh] overflow-hidden'
+        } bg-zinc-50 dark:bg-zinc-950 font-sans selection:bg-brand-green/20`}
+      >
         {/* ══════════════════════════════════════════════════════════════════
-            FLOATING LIQUID-GLASS TOP OMNIBOX (Shown in map, split, and list modes)
+            FLOATING LIQUID-GLASS TOP OMNIBOX (Shown in all modes: map, split, list, feed)
         ══════════════════════════════════════════════════════════════════ */}
-        {viewMode !== 'feed' && (
-          <div className="fixed top-3 sm:top-4 inset-x-0 z-30 px-3 sm:px-5 pointer-events-none">
-            <SearchTopOmnibox
-              filters={filters}
-              activeFiltersCount={activeFiltersCount}
-              totalResults={filteredProperties.length}
-              onSetFilter={setFilter}
-              onToggleFeature={toggleFeature}
-              onSetLocationZone={handleLocationZoneSelected}
-              onClearLocationZone={clearLocationZone}
-              onOpenFilterModal={handleOpenFilterModal}
-              onLocateUser={locateUserAndCenter}
-              isLocatingUser={isLocatingUser}
-            />
-          </div>
-        )}
+        <div className="fixed top-2.5 sm:top-4 inset-x-0 z-40 px-3 sm:px-5 pointer-events-none">
+          <SearchTopOmnibox
+            filters={filters}
+            activeFiltersCount={activeFiltersCount}
+            totalResults={filteredProperties.length}
+            showCategoryRibbon={viewMode !== 'feed'}
+            onSetFilter={setFilter}
+            onToggleFeature={toggleFeature}
+            onSetLocationZone={handleLocationZoneSelected}
+            onClearLocationZone={clearLocationZone}
+            onOpenFilterModal={handleOpenFilterModal}
+            onLocateUser={locateUserAndCenter}
+            isLocatingUser={isLocatingUser}
+          />
+        </div>
 
         {/* ══════════════════════════════════════════════════════════════════
             MODE 1: INTERACTIVE FULL-SCREEN MAP MODE ('map')
@@ -297,7 +309,7 @@ export default function SearchEngineShell() {
         {viewMode === 'map' && (
           <div className="relative w-full h-[100dvh] overflow-hidden select-none">
             <FuturisticSearchMap
-              properties={filteredProperties}
+              properties={canvasProperties}
               selectedPropertyId={selectedPropertyId}
               onSelectProperty={handleSelectPropertyObject}
               mapCenter={mapCenter}
@@ -315,28 +327,6 @@ export default function SearchEngineShell() {
               isRadarClickMode={isRadarClickMode}
               onSetRadarClickMode={setIsRadarClickMode}
             />
-
-            {/* Quick Preview Launcher Pill when no marker is selected */}
-            {!selectedPropertyId && filteredProperties.length > 0 && (
-              <div className="fixed bottom-[98px] sm:bottom-[92px] left-1/2 -translate-x-1/2 z-20 pointer-events-none flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleFocusPropertyOnMap(filteredProperties[0]._id)}
-                  className="pointer-events-auto flex items-center gap-2.5 px-6 py-3 rounded-full
-                    bg-white/90 dark:bg-zinc-900/90 backdrop-blur-2xl
-                    border border-white/90 dark:border-white/15
-                    shadow-[0_12px_32px_rgba(0,0,0,0.14)]
-                    text-zinc-900 dark:text-white font-outfit font-light text-xs sm:text-sm tracking-wide
-                    hover:scale-105 active:scale-95 transition-all cursor-pointer group"
-                >
-                  <Eye className="w-4 h-4 text-brand-green group-hover:scale-110 transition-transform" />
-                  <span>
-                    Aperçu des Cartes{' '}
-                    <strong className="font-medium">({filteredProperties.length})</strong>
-                  </span>
-                </button>
-              </div>
-            )}
 
             {/* Empty results floating glass alert on Map */}
             {!isLoading && filteredProperties.length === 0 && (
@@ -388,7 +378,7 @@ export default function SearchEngineShell() {
             MODE 2: HYBRID SPLIT MODE ('split' — Bento Grid + Live Map)
         ══════════════════════════════════════════════════════════════════ */}
         {viewMode === 'split' && (
-          <div className="w-full h-[100dvh] overflow-hidden flex flex-col pt-[168px] sm:pt-[134px] bg-zinc-50 dark:bg-zinc-950">
+          <div className="w-full h-[100dvh] overflow-hidden flex flex-col pt-[106px] sm:pt-[130px] bg-zinc-50 dark:bg-zinc-950">
             <div className="flex-1 flex overflow-hidden w-full max-w-[2000px] mx-auto">
               {/* Left Scrollable Bento Results Pane */}
               <div className="w-full lg:w-[54%] xl:w-[52%] h-full overflow-y-auto px-4 sm:px-6 lg:px-8 pb-36 scrollbar-hide">
@@ -402,8 +392,8 @@ export default function SearchEngineShell() {
                       </span>
                     </span>
                     {filters.searchCoords && filters.searchRadius > 0 && (
-                      <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-brand-green/12 text-brand-green text-xs font-outfit font-light">
-                        <Radar className="w-3.5 h-3.5" />
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-800 dark:text-zinc-100 text-xs font-outfit font-normal">
+                        <Radar className="w-3.5 h-3.5 text-brand-green" />
                         {filters.searchPlaceName || 'Zone'} •{' '}
                         {filters.searchRadius >= 1000
                           ? `${(filters.searchRadius / 1000).toFixed(1)} km`
@@ -411,7 +401,7 @@ export default function SearchEngineShell() {
                         <button
                           type="button"
                           onClick={clearLocationZone}
-                          className="ml-0.5 hover:text-zinc-900 dark:hover:text-white cursor-pointer"
+                          className="ml-0.5 text-zinc-400 hover:text-red-500 transition-colors cursor-pointer"
                         >
                           <X className="w-3 h-3" />
                         </button>
@@ -477,17 +467,17 @@ export default function SearchEngineShell() {
                             }`}
                           >
                             <PropertyCard property={property} />
-                            {/* Locate on right-hand map quick pill */}
+                            {/* Locate on right-hand map quick pill (placed on thumbnail image header so it never hides specs/amenities) */}
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleFocusPropertyOnMap(property._id);
                               }}
-                              className="hidden lg:flex items-center gap-1.5 absolute bottom-3.5 right-3.5 z-10
-                                px-3.5 py-1.5 rounded-full
-                                bg-zinc-950/85 dark:bg-white/95
-                                text-white dark:text-zinc-950
+                              className="hidden lg:flex items-center gap-1.5 absolute top-3.5 right-20 xl:right-24 z-10
+                                px-3 py-1 rounded-full
+                                bg-zinc-950/80 hover:bg-zinc-950 text-white
+                                border border-white/20 backdrop-blur-md
                                 font-outfit font-light text-[11px] tracking-wide
                                 shadow-md hover:scale-105 active:scale-95 transition-all cursor-pointer"
                             >
@@ -553,12 +543,12 @@ export default function SearchEngineShell() {
             MODE 3: FULL BENTO LIST MODE ('list')
         ══════════════════════════════════════════════════════════════════ */}
         {viewMode === 'list' && (
-          <div className="w-full min-h-[100dvh] pt-[174px] sm:pt-[142px] pb-36 px-4 sm:px-6 md:px-8 lg:px-16 max-w-[1920px] mx-auto">
-            {/* List Header & Sort Bar */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 mb-6 border-b border-zinc-200/70 dark:border-white/10">
+          <div className="w-full min-h-[100dvh] pt-[106px] sm:pt-[130px] pb-24 sm:pb-32 px-3 sm:px-6 md:px-8 lg:px-16 max-w-[1920px] mx-auto">
+            {/* List Header & Sort Bar - Space Optimized & Compact */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4 pb-2.5 sm:pb-4 mb-3.5 sm:mb-6 border-b border-zinc-200/70 dark:border-white/10">
               <div>
-                <div className="flex items-center gap-2.5">
-                  <h1 className="font-outfit font-medium text-xl sm:text-2xl text-zinc-900 dark:text-white tracking-tight">
+                <div className="flex items-center gap-2">
+                  <h1 className="font-outfit font-medium text-base sm:text-xl text-zinc-900 dark:text-white tracking-tight">
                     {filteredProperties.length}{' '}
                     <span className="font-light text-zinc-500 dark:text-zinc-400">
                       {filteredProperties.length > 1
@@ -570,27 +560,31 @@ export default function SearchEngineShell() {
                     <button
                       type="button"
                       onClick={resetFilters}
-                      className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-zinc-200/70 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-outfit font-light text-xs hover:bg-zinc-300/70 dark:hover:bg-zinc-700 transition-all cursor-pointer"
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-zinc-200/70 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-outfit font-light text-[11px] sm:text-xs hover:bg-zinc-300/70 dark:hover:bg-zinc-700 transition-all cursor-pointer"
                     >
                       <RotateCcw className="w-3 h-3" />
                       <span>Réinitialiser ({activeFiltersCount})</span>
                     </button>
                   )}
                 </div>
-                <p className="font-outfit font-light text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 mt-0.5">
-                  {filters.searchCoords && filters.searchRadius > 0
-                    ? `Dans un rayon de ${
-                        filters.searchRadius >= 1000
-                          ? `${(filters.searchRadius / 1000).toFixed(1)} km`
-                          : `${filters.searchRadius} m`
-                      } autour de ${filters.searchPlaceName || 'votre point radar'}`
-                    : 'Exploration sur tout Madagascar • Tri intelligent en temps réel'}
-                </p>
+                {filters.searchCoords && filters.searchRadius > 0 ? (
+                  <p className="font-outfit font-light text-xs text-brand-green mt-0.5">
+                    Dans un rayon de{' '}
+                    {filters.searchRadius >= 1000
+                      ? `${(filters.searchRadius / 1000).toFixed(1)} km`
+                      : `${filters.searchRadius} m`}{' '}
+                    autour de {filters.searchPlaceName || 'votre point radar'}
+                  </p>
+                ) : (
+                  <p className="hidden sm:block font-outfit font-light text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 mt-0.5">
+                    Exploration sur tout Madagascar • Tri intelligent en temps réel
+                  </p>
+                )}
               </div>
 
               {/* Sort Selector Pills */}
-              <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide">
-                <div className="flex items-center gap-1.5 text-xs font-outfit font-light text-zinc-400 mr-1 shrink-0">
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+                <div className="hidden sm:flex items-center gap-1 text-xs font-outfit font-light text-zinc-400 mr-1 shrink-0">
                   <ArrowUpDown className="w-3.5 h-3.5" />
                   <span>Trier :</span>
                 </div>
@@ -601,9 +595,9 @@ export default function SearchEngineShell() {
                       key={opt.id}
                       type="button"
                       onClick={() => setFilter('sortBy', opt.id)}
-                      className={`px-5 py-2.5 rounded-full font-outfit text-xs sm:text-sm transition-all cursor-pointer whitespace-nowrap ${
+                      className={`px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-full font-outfit text-xs sm:text-sm transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                         active
-                          ? 'bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 font-normal shadow-md'
+                          ? 'bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 font-normal shadow-xs'
                           : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 font-light border border-zinc-200/80 dark:border-white/10 hover:border-zinc-300'
                       }`}
                     >
@@ -653,6 +647,7 @@ export default function SearchEngineShell() {
                       className="relative group"
                     >
                       <PropertyCard property={property} />
+                      {/* View on map hover pill (placed on thumbnail header so it never hides specs/amenities) */}
                       <button
                         type="button"
                         onClick={(e) => {
@@ -660,14 +655,14 @@ export default function SearchEngineShell() {
                           handleFocusPropertyOnMap(property._id);
                           setViewMode('map');
                         }}
-                        className="opacity-0 group-hover:opacity-100 flex items-center gap-1.5 absolute bottom-3.5 right-3.5 z-10
-                          px-4 py-2 rounded-full
-                          bg-zinc-950/90 dark:bg-white/95
-                          text-white dark:text-zinc-950
-                          font-outfit font-light text-xs tracking-wide
+                        className="opacity-0 group-hover:opacity-100 flex items-center gap-1.5 absolute top-3.5 right-20 xl:right-24 z-10
+                          px-3 py-1 rounded-full
+                          bg-zinc-950/80 hover:bg-zinc-950 text-white
+                          border border-white/20 backdrop-blur-md
+                          font-outfit font-light text-[11px] tracking-wide
                           shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer"
                       >
-                        <MapIcon className="w-3.5 h-3.5 text-brand-green" />
+                        <MapIcon className="w-3 h-3 text-brand-green" />
                         <span>Voir sur la carte</span>
                       </button>
                     </div>
@@ -702,40 +697,10 @@ export default function SearchEngineShell() {
         ══════════════════════════════════════════════════════════════════ */}
         {viewMode === 'feed' && (
           <div className="relative w-full h-[100dvh] overflow-hidden bg-zinc-950">
-            {/* Floating Top Bar for Feed Mode */}
-            <div className="fixed top-4 inset-x-0 z-40 px-4 sm:px-6 pointer-events-none flex items-center justify-between max-w-6xl mx-auto">
-              <button
-                type="button"
-                onClick={() => setViewMode('map')}
-                className="pointer-events-auto flex items-center gap-2.5 px-6 py-3 rounded-full
-                  bg-black/65 hover:bg-black/80 backdrop-blur-2xl
-                  border border-white/20 text-white
-                  font-outfit font-light text-xs sm:text-sm tracking-wide
-                  shadow-[0_12px_32px_rgba(0,0,0,0.4)]
-                  hover:scale-105 active:scale-95 transition-all cursor-pointer"
-              >
-                <MapIcon className="w-4 h-4 text-brand-green" />
-                <span>Retour à la Carte</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setIsFilterModalOpen(true)}
-                className="pointer-events-auto flex items-center gap-2 px-6 py-3 rounded-full
-                  bg-black/65 hover:bg-black/80 backdrop-blur-2xl
-                  border border-white/20 text-white
-                  font-outfit font-light text-xs sm:text-sm tracking-wide
-                  shadow-[0_12px_32px_rgba(0,0,0,0.4)]
-                  hover:scale-105 active:scale-95 transition-all cursor-pointer"
-              >
-                <SlidersHorizontal className="w-4 h-4 text-brand-green" />
-                <span>Filtres ({filteredProperties.length})</span>
-              </button>
-            </div>
-
             {filteredProperties.length > 0 ? (
               <TranogasyFeed
                 key={feedSignature}
+                embeddedInSearch
                 initialProperties={filteredProperties as unknown as FeedProperty[]}
               />
             ) : (
@@ -764,10 +729,10 @@ export default function SearchEngineShell() {
         {/* ══════════════════════════════════════════════════════════════════
             FLOATING BOTTOM DOCK: PREVIEW CAROUSEL (MAP MODE) + LIQUID-GLASS HUD
         ══════════════════════════════════════════════════════════════════ */}
-        <div className="fixed bottom-3 sm:bottom-5 inset-x-0 z-30 flex flex-col gap-2.5 pointer-events-none">
+        <div className="fixed bottom-1.5 sm:bottom-3 inset-x-0 z-30 flex flex-col items-center gap-2 pointer-events-none">
           {viewMode === 'map' && (
             <MapPropertyPreviewCarousel
-              properties={filteredProperties}
+              properties={canvasProperties}
               selectedPropertyId={selectedPropertyId}
               onSelectProperty={(prop) => {
                 if (!prop) {
