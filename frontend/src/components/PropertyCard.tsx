@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, memo } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { BedDouble, Bath, Maximize, MapPin, Heart, Check, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -17,6 +17,7 @@ import { MdOutlineLiving, MdBalcony, MdLandscape, MdOutlineFiberSmartRecord } fr
 import { TbAirConditioning, TbBuildingCastle, TbWash } from "react-icons/tb";
 import { TfiLayoutSidebarLeft } from "react-icons/tfi";
 import { usePropertyStore } from '@/store/propertyStore';
+import { useFavoriteStore } from '@/store/favoriteStore';
 import { useFavorite } from '@/hooks/useFavorite';
 import { useUserStore } from '@/store/userStore';
 import { usePropertyDetailModalStore } from '@/store/propertyDetailModalStore';
@@ -100,27 +101,26 @@ interface PropertyProps {
   };
 }
 
-export default function PropertyCard({ property }: PropertyProps) {
-  const addProperty = usePropertyStore(state => state.addProperty);
-  const user = useUserStore(state => state.user);
-  const { favorites, checkFavorite, toggleFavorite } = useFavorite();
-  const openPropertyDetail = usePropertyDetailModalStore(state => state.openPropertyDetail);
-  
-  const isFavorite = favorites[property._id] || false;
-  
-  useEffect(() => {
-    if (property) {
-      addProperty(property);
-    }
-  }, [property, addProperty]);
+function PropertyCardComponent({ property }: PropertyProps) {
+  const user = useUserStore((state) => state.user);
+  const isFavorite = useFavoriteStore((state) => Boolean(state.favorites[property._id]));
+  const { checkFavorite, toggleFavorite } = useFavorite();
+  const openPropertyDetail = usePropertyDetailModalStore((state) => state.openPropertyDetail);
 
   const currentUser = user?.user || user;
-  
+  const currentUserId = currentUser?._id;
+
   useEffect(() => {
-    if (currentUser && property) {
-      checkFavorite(property._id, currentUser._id);
+    if (property?._id && !usePropertyStore.getState().properties[property._id]) {
+      usePropertyStore.getState().addProperty(property);
     }
-  }, [currentUser, property, checkFavorite]);
+  }, [property]);
+
+  useEffect(() => {
+    if (currentUserId && property?._id) {
+      checkFavorite(property._id, currentUserId);
+    }
+  }, [currentUserId, property?._id, checkFavorite]);
 
   const handleFavoriteClick = async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -423,3 +423,15 @@ export default function PropertyCard({ property }: PropertyProps) {
     </Link>
   );
 }
+
+const PropertyCard = memo(
+  PropertyCardComponent,
+  (prev, next) =>
+    prev.property._id === next.property._id &&
+    prev.property.price === next.property.price &&
+    prev.property.rent === next.property.rent &&
+    prev.property.title === next.property.title &&
+    prev.property.type === next.property.type
+);
+
+export default PropertyCard;

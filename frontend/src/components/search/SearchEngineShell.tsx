@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { APIProvider } from '@vis.gl/react-google-maps';
 import {
@@ -70,9 +70,13 @@ const SORT_OPTIONS: { id: SearchSortBy; label: string }[] = [
   { id: 'distance', label: 'Proximité' },
 ];
 
+const CARDS_BATCH_SIZE = 24;
+
 export default function SearchEngineShell() {
   const searchParams = useSearchParams();
   const initializedFromUrlRef = useRef(false);
+  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
+  const [visibleCount, setVisibleCount] = useState(CARDS_BATCH_SIZE);
 
   const {
     filteredProperties,
@@ -86,7 +90,6 @@ export default function SearchEngineShell() {
     isFilterModalOpen,
     isRadarClickMode,
     selectedPropertyId,
-    hoveredPropertyId,
     mapCenter,
     mapZoom,
     mapTypeId,
@@ -107,6 +110,45 @@ export default function SearchEngineShell() {
     setMapTypeId,
     locateUserAndCenter,
   } = usePropertySearch();
+
+  // Reset progressive list window when filters or viewMode change
+  useEffect(() => {
+    setVisibleCount(CARDS_BATCH_SIZE);
+  }, [filters, viewMode]);
+
+  // Progressive infinite-scroll batching for 'split' and 'list' modes
+  useEffect(() => {
+    if (viewMode !== 'split' && viewMode !== 'list') return;
+    if (visibleCount >= filteredProperties.length) return;
+    const sentinel = loadMoreSentinelRef.current;
+    if (!sentinel || typeof IntersectionObserver === 'undefined') return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setVisibleCount((prev) =>
+            Math.min(filteredProperties.length, prev + CARDS_BATCH_SIZE)
+          );
+        }
+      },
+      { rootMargin: '450px' }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [viewMode, visibleCount, filteredProperties.length]);
+
+  const visibleGridProperties = useMemo(() => {
+    return filteredProperties.slice(0, visibleCount);
+  }, [filteredProperties, visibleCount]);
+
+  const handleOpenFilterModal = useCallback(() => {
+    setIsFilterModalOpen(true);
+  }, [setIsFilterModalOpen]);
+
+  const handleCloseFilterModal = useCallback(() => {
+    setIsFilterModalOpen(false);
+  }, [setIsFilterModalOpen]);
 
   // Initialize search state from URL query params when arriving from Home / LandingNav
   useEffect(() => {
@@ -242,7 +284,7 @@ export default function SearchEngineShell() {
               onToggleFeature={toggleFeature}
               onSetLocationZone={handleLocationZoneSelected}
               onClearLocationZone={clearLocationZone}
-              onOpenFilterModal={() => setIsFilterModalOpen(true)}
+              onOpenFilterModal={handleOpenFilterModal}
               onLocateUser={locateUserAndCenter}
               isLocatingUser={isLocatingUser}
             />
@@ -257,9 +299,7 @@ export default function SearchEngineShell() {
             <FuturisticSearchMap
               properties={filteredProperties}
               selectedPropertyId={selectedPropertyId}
-              hoveredPropertyId={hoveredPropertyId}
               onSelectProperty={handleSelectPropertyObject}
-              onHoverProperty={setHoveredPropertyId}
               mapCenter={mapCenter}
               mapZoom={mapZoom}
               mapTypeId={mapTypeId}
@@ -420,42 +460,64 @@ export default function SearchEngineShell() {
                     </button>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                    {filteredProperties.map((property) => {
-                      const isSelected = selectedPropertyId === property._id;
-                      return (
-                        <div
-                          key={property._id}
-                          onMouseEnter={() => setHoveredPropertyId(property._id)}
-                          onMouseLeave={() => setHoveredPropertyId(null)}
-                          className={`relative rounded-[1.5rem] transition-all duration-300 ${
-                            isSelected
-                              ? 'ring-2 ring-brand-green ring-offset-2 dark:ring-offset-zinc-950'
-                              : ''
-                          }`}
-                        >
-                          <PropertyCard property={property} />
-                          {/* Locate on right-hand map quick pill */}
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleFocusPropertyOnMap(property._id);
-                            }}
-                            className="hidden lg:flex items-center gap-1.5 absolute bottom-3.5 right-3.5 z-10
-                              px-3.5 py-1.5 rounded-full
-                              bg-zinc-950/80 dark:bg-white/90 backdrop-blur-md
-                              text-white dark:text-zinc-950
-                              font-outfit font-light text-[11px] tracking-wide
-                              shadow-md hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                  <>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                      {visibleGridProperties.map((property) => {
+                        const isSelected = selectedPropertyId === property._id;
+                        return (
+                          <div
+                            key={property._id}
+                            onMouseEnter={() => setHoveredPropertyId(property._id)}
+                            onMouseLeave={() => setHoveredPropertyId(null)}
+                            style={{ contentVisibility: 'auto', containIntrinsicSize: '0 340px' }}
+                            className={`relative rounded-[1.5rem] transition-all duration-300 ${
+                              isSelected
+                                ? 'ring-2 ring-brand-green ring-offset-2 dark:ring-offset-zinc-950'
+                                : ''
+                            }`}
                           >
-                            <Navigation className="w-3 h-3 text-brand-green" />
-                            <span>Localiser</span>
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
+                            <PropertyCard property={property} />
+                            {/* Locate on right-hand map quick pill */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleFocusPropertyOnMap(property._id);
+                              }}
+                              className="hidden lg:flex items-center gap-1.5 absolute bottom-3.5 right-3.5 z-10
+                                px-3.5 py-1.5 rounded-full
+                                bg-zinc-950/85 dark:bg-white/95
+                                text-white dark:text-zinc-950
+                                font-outfit font-light text-[11px] tracking-wide
+                                shadow-md hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                            >
+                              <Navigation className="w-3 h-3 text-brand-green" />
+                              <span>Localiser</span>
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {visibleCount < filteredProperties.length && (
+                      <div
+                        ref={loadMoreSentinelRef}
+                        className="flex justify-center py-8"
+                      >
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setVisibleCount((prev) =>
+                              Math.min(filteredProperties.length, prev + CARDS_BATCH_SIZE)
+                            )
+                          }
+                          className="px-7 py-3 rounded-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-200 font-outfit font-light text-xs tracking-wider shadow-xs hover:border-brand-green transition-all cursor-pointer"
+                        >
+                          Afficher plus de biens ({filteredProperties.length - visibleCount} restants)
+                        </button>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
 
@@ -465,9 +527,7 @@ export default function SearchEngineShell() {
                   <FuturisticSearchMap
                     properties={filteredProperties}
                     selectedPropertyId={selectedPropertyId}
-                    hoveredPropertyId={hoveredPropertyId}
                     onSelectProperty={handleSelectPropertyObject}
-                    onHoverProperty={setHoveredPropertyId}
                     mapCenter={mapCenter}
                     mapZoom={mapZoom}
                     mapTypeId={mapTypeId}
@@ -584,30 +644,55 @@ export default function SearchEngineShell() {
                 </div>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 sm:gap-6">
-                {filteredProperties.map((property) => (
-                  <div key={property._id} className="relative group">
-                    <PropertyCard property={property} />
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 sm:gap-6">
+                  {visibleGridProperties.map((property) => (
+                    <div
+                      key={property._id}
+                      style={{ contentVisibility: 'auto', containIntrinsicSize: '0 340px' }}
+                      className="relative group"
+                    >
+                      <PropertyCard property={property} />
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleFocusPropertyOnMap(property._id);
+                          setViewMode('map');
+                        }}
+                        className="opacity-0 group-hover:opacity-100 flex items-center gap-1.5 absolute bottom-3.5 right-3.5 z-10
+                          px-4 py-2 rounded-full
+                          bg-zinc-950/90 dark:bg-white/95
+                          text-white dark:text-zinc-950
+                          font-outfit font-light text-xs tracking-wide
+                          shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                      >
+                        <MapIcon className="w-3.5 h-3.5 text-brand-green" />
+                        <span>Voir sur la carte</span>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                {visibleCount < filteredProperties.length && (
+                  <div
+                    ref={loadMoreSentinelRef}
+                    className="flex justify-center py-10"
+                  >
                     <button
                       type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleFocusPropertyOnMap(property._id);
-                        setViewMode('map');
-                      }}
-                      className="opacity-0 group-hover:opacity-100 flex items-center gap-1.5 absolute bottom-3.5 right-3.5 z-10
-                        px-4 py-2 rounded-full
-                        bg-zinc-950/85 dark:bg-white/90 backdrop-blur-md
-                        text-white dark:text-zinc-950
-                        font-outfit font-light text-xs tracking-wide
-                        shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                      onClick={() =>
+                        setVisibleCount((prev) =>
+                          Math.min(filteredProperties.length, prev + CARDS_BATCH_SIZE)
+                        )
+                      }
+                      className="px-8 py-3.5 rounded-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-200 font-outfit font-light text-xs sm:text-sm tracking-wider shadow-xs hover:border-brand-green transition-all cursor-pointer"
                     >
-                      <MapIcon className="w-3.5 h-3.5 text-brand-green" />
-                      <span>Voir sur la carte</span>
+                      Afficher plus de biens ({filteredProperties.length - visibleCount} restants)
                     </button>
                   </div>
-                ))}
-              </div>
+                )}
+              </>
             )}
           </div>
         )}
@@ -700,7 +785,7 @@ export default function SearchEngineShell() {
             activeFiltersCount={activeFiltersCount}
             viewMode={viewMode}
             onSetViewMode={setViewMode}
-            onOpenFilterModal={() => setIsFilterModalOpen(true)}
+            onOpenFilterModal={handleOpenFilterModal}
           />
         </div>
 
@@ -709,7 +794,7 @@ export default function SearchEngineShell() {
         ══════════════════════════════════════════════════════════════════ */}
         <AdvancedFilterModal
           isOpen={isFilterModalOpen}
-          onClose={() => setIsFilterModalOpen(false)}
+          onClose={handleCloseFilterModal}
           filters={filters}
           priceStats={priceStats}
           totalMatching={filteredProperties.length}

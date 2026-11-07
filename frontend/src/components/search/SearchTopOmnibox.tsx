@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
 import Link from 'next/link';
 import { useMapsLibrary } from '@vis.gl/react-google-maps';
 import {
@@ -86,7 +86,7 @@ interface SearchTopOmniboxProps {
   isLocatingUser: boolean;
 }
 
-export default function SearchTopOmnibox({
+function SearchTopOmniboxComponent({
   filters,
   activeFiltersCount,
   totalResults,
@@ -115,6 +115,7 @@ export default function SearchTopOmnibox({
 
   const containerRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
+  const queryFilterDebounceRef = useRef<NodeJS.Timeout | null>(null);
 
   // Sync external query changes
   useEffect(() => {
@@ -210,8 +211,17 @@ export default function SearchTopOmnibox({
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setInputText(val);
-    onSetFilter('query', val);
     setIsDropdownOpen(true);
+
+    // Debounce global filter store update to keep typing 60fps smooth
+    if (queryFilterDebounceRef.current) clearTimeout(queryFilterDebounceRef.current);
+    if (!val.trim()) {
+      onSetFilter('query', '');
+    } else {
+      queryFilterDebounceRef.current = setTimeout(() => {
+        onSetFilter('query', val);
+      }, 140);
+    }
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
@@ -719,4 +729,7 @@ export default function SearchTopOmnibox({
     </div>
   );
 }
+
+const SearchTopOmnibox = memo(SearchTopOmniboxComponent);
+export default SearchTopOmnibox;
 

@@ -1,9 +1,29 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { getDistance } from 'geolib';
 import { propertyService } from '@/services/property.service';
 import { cityService, removeDiacritics } from '@/services/city.service';
 import { usePropertyStore } from '@/store/propertyStore';
 import { useSearchStore, DEFAULT_ANTANANARIVO_CENTER } from '@/store/searchStore';
+
+// Fast inline Haversine distance in meters (avoids geolib object allocation overhead in tight loops)
+const DEG_TO_RAD = Math.PI / 180;
+const EARTH_RADIUS_M = 6371000;
+
+export function fastDistanceMeters(
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number
+): number {
+  const dLat = (lat2 - lat1) * DEG_TO_RAD;
+  const dLng = (lng2 - lng1) * DEG_TO_RAD;
+  const a =
+    Math.sin(dLat * 0.5) * Math.sin(dLat * 0.5) +
+    Math.cos(lat1 * DEG_TO_RAD) *
+      Math.cos(lat2 * DEG_TO_RAD) *
+      Math.sin(dLng * 0.5) *
+      Math.sin(dLng * 0.5);
+  return Math.round(EARTH_RADIUS_M * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+}
 
 // Deterministic hash for a string (property._id) -> [0, 1)
 function deterministicHash(str: string, seed = 0): number {
@@ -109,7 +129,6 @@ export function usePropertySearch(initialProperties?: any[]) {
   const isDisplayModeModalOpen = useSearchStore((s) => s.isDisplayModeModalOpen);
   const isRadarClickMode = useSearchStore((s) => s.isRadarClickMode);
   const selectedPropertyId = useSearchStore((s) => s.selectedPropertyId);
-  const hoveredPropertyId = useSearchStore((s) => s.hoveredPropertyId);
   const mapCenter = useSearchStore((s) => s.mapCenter);
   const mapZoom = useSearchStore((s) => s.mapZoom);
   const mapTypeId = useSearchStore((s) => s.mapTypeId);
@@ -232,6 +251,62 @@ export function usePropertySearch(initialProperties?: any[]) {
     [setUserLocation, setMapCenter, setMapZoom, setLocationZone]
   );
 
+  // Pre-index catalog properties once so filtering, sorting & map coordinates never recompute strings/hashes on every keystroke
+  const indexedCatalog = useMemo(() => {
+    return catalogProperties.filter(Boolean).map((prop) => {
+      const mapCoords = prop._mapCoords || getPropertyMapCoords(prop);
+      const score = prop._score ?? calculatePropertyRelevanceScore(prop);
+      const createdAtMs = prop.created_at ? Date.parse(prop.created_at) || 0 : 0;
+
+      const houseTypeNorm = removeDiacritics((prop.houseType || '').toLowerCase());
+      const titleNorm = removeDiacritics((prop.title || '').toLowerCase());
+      const descNorm = removeDiacritics((prop.description || '').toLowerCase());
+      const propNumNorm = removeDiacritics(String(prop.propertyNumber || '').toLowerCase());
+      const fokontanyNorm = removeDiacritics((prop.city?.fokontany || '').toLowerCase());
+      const communeNorm = removeDiacritics((prop.city?.commune || '').toLowerCase());
+      const districtNorm = removeDiacritics((prop.city?.district || '').toLowerCase());
+      const regionNorm = removeDiacritics((prop.city?.region || '').toLowerCase());
+
+      const isVillaCandidate =
+        houseTypeNorm === 'villa' ||
+        titleNorm.includes('villa') ||
+        descNorm.includes('villa') ||
+        (houseTypeNorm === 'maison' &&
+          Boolean(prop.features?.swimmingPool || prop.features?.garden));
+
+      const isBureauCandidate =
+        houseTypeNorm === 'bureau' ||
+        titleNorm.includes('bureau') ||
+        titleNorm.includes('commercial') ||
+        descNorm.includes('usage bureau');
+
+      const searchBlob = `${titleNorm} ${descNorm} ${propNumNorm} ${fokontanyNorm} ${communeNorm} ${districtNorm} ${regionNorm}`;
+      const roomsNum = Number(prop.rooms) || 0;
+      const totalRoomsNum = roomsNum + (Number(prop.livingRoom) || 0);
+      const bathroomsNum = Number(prop.bathrooms) || 0;
+      const areaNum = Number(prop.area) || 0;
+      const effectivePrice =
+        prop.type === 'sale' ? Number(prop.price) || 0 : Number(prop.rent) || 0;
+
+      return {
+        ...prop,
+        _mapCoords: mapCoords,
+        _score: score,
+        _createdAtMs: createdAtMs,
+        _houseTypeNorm: houseTypeNorm,
+        _isVillaCandidate: isVillaCandidate,
+        _isBureauCandidate: isBureauCandidate,
+        _searchBlob: searchBlob,
+        _roomsNum: roomsNum,
+        _totalRoomsNum: totalRoomsNum,
+        _bathroomsNum: bathroomsNum,
+        _areaNum: areaNum,
+        _effectivePrice: effectivePrice,
+        _distanceMeters: null as number | null,
+      };
+    });
+  }, [catalogProperties]);
+
   // Price statistics and 24-bucket histogram for the active offer type
   const priceStats = useMemo(() => {
     const activeType = filters.type === 'sale' ? 'sale' : 'rent';
@@ -240,13 +315,14 @@ export function usePropertySearch(initialProperties?: any[]) {
     const step = activeType === 'sale' ? 500_000 : 25_000;
 
     const validPrices: number[] = [];
-    catalogProperties.forEach((p) => {
-      if (filters.type !== 'all' && p.type !== activeType) return;
-      const val = p.type === 'sale' ? p.price : p.rent;
-      if (typeof val === 'number' && val > 0 && val <= maxCap) {
+    for (let i = 0; i < indexedCatalog.length; i++) {
+      const p = indexedCatalog[i];
+      if (filters.type !== 'all' && p.type !== activeType) continue;
+      const val = p._effectivePrice;
+      if (val > 0 && val <= maxCap) {
         validPrices.push(val);
       }
-    });
+    }
 
     if (validPrices.length === 0) {
       return {
@@ -254,74 +330,75 @@ export function usePropertySearch(initialProperties?: any[]) {
         max: defaultMax,
         avg: Math.round(defaultMax / 3),
         step,
-        histogram: Array.from({ length: 24 }, (_, i) => Math.max(15, Math.round(Math.sin((i / 24) * Math.PI) * 85))),
+        histogram: Array.from({ length: 24 }, (_, i) =>
+          Math.max(15, Math.round(Math.sin((i / 24) * Math.PI) * 85))
+        ),
       };
     }
 
-    const rawMin = Math.min(...validPrices);
-    const rawMax = Math.max(...validPrices);
+    let rawMin = validPrices[0];
+    let rawMax = validPrices[0];
+    let sum = 0;
+    for (let i = 0; i < validPrices.length; i++) {
+      const v = validPrices[i];
+      if (v < rawMin) rawMin = v;
+      if (v > rawMax) rawMax = v;
+      sum += v;
+    }
+
     const min = Math.max(0, Math.floor(rawMin / step) * step);
     const max = Math.max(min + step * 10, Math.ceil(rawMax / step) * step);
-    const avg = Math.round(validPrices.reduce((a, b) => a + b, 0) / validPrices.length);
+    const avg = Math.round(sum / validPrices.length);
 
     const bucketCount = 24;
     const bucketWidth = (max - min) / bucketCount || 1;
     const counts = new Array(bucketCount).fill(0);
 
-    validPrices.forEach((p) => {
-      const idx = Math.min(bucketCount - 1, Math.max(0, Math.floor((p - min) / bucketWidth)));
+    for (let i = 0; i < validPrices.length; i++) {
+      const idx = Math.min(
+        bucketCount - 1,
+        Math.max(0, Math.floor((validPrices[i] - min) / bucketWidth))
+      );
       counts[idx]++;
-    });
+    }
 
     const maxBucket = Math.max(...counts, 1);
     const histogram = counts.map((c) => Math.max(8, Math.round((c / maxBucket) * 100)));
 
     return { min, max, avg, step, histogram };
-  }, [catalogProperties, filters.type]);
+  }, [indexedCatalog, filters.type]);
 
-  // Step 1: Filter properties by all non-radius criteria
+  // Step 1: Filter properties by all non-radius criteria (O(N) over pre-indexed fields)
   const rawFilteredWithoutRadius = useMemo(() => {
     const cleanQuery = removeDiacritics(filters.query.trim().toLowerCase());
+    const tokens = cleanQuery ? cleanQuery.split(/\s+/).filter(Boolean) : [];
+    const targetHouseType =
+      filters.houseType !== 'all'
+        ? removeDiacritics(filters.houseType.toLowerCase())
+        : 'all';
     const activeFeatureKeys = Object.entries(filters.features)
       .filter(([_, val]) => Boolean(val))
       .map(([key]) => key);
 
-    return catalogProperties.filter((prop) => {
-      if (!prop) return false;
-
+    return indexedCatalog.filter((prop) => {
       // 1. Offer Type (rent / sale / all)
       if (filters.type !== 'all' && prop.type !== filters.type) {
         return false;
       }
 
       // 2. Property Category (appartement / maison / villa / bureau / all)
-      if (filters.houseType !== 'all') {
-        const propHouseType = removeDiacritics((prop.houseType || '').toLowerCase());
-        const propTitle = removeDiacritics((prop.title || '').toLowerCase());
-        const propDesc = removeDiacritics((prop.description || '').toLowerCase());
-        const targetType = removeDiacritics(filters.houseType.toLowerCase());
-
-        if (targetType === 'villa') {
-          const isVilla =
-            propHouseType === 'villa' ||
-            propTitle.includes('villa') ||
-            propDesc.includes('villa') ||
-            (propHouseType === 'maison' && (prop.features?.swimmingPool || prop.features?.garden));
-          if (!isVilla) return false;
-        } else if (targetType === 'bureau') {
-          const isBureau =
-            propHouseType === 'bureau' ||
-            propTitle.includes('bureau') ||
-            propTitle.includes('commercial') ||
-            propDesc.includes('usage bureau');
-          if (!isBureau) return false;
-        } else if (propHouseType !== targetType) {
+      if (targetHouseType !== 'all') {
+        if (targetHouseType === 'villa') {
+          if (!prop._isVillaCandidate) return false;
+        } else if (targetHouseType === 'bureau') {
+          if (!prop._isBureauCandidate) return false;
+        } else if (prop._houseTypeNorm !== targetHouseType) {
           return false;
         }
       }
 
       // 3. Budget Min & Max
-      const propPrice = prop.type === 'sale' ? prop.price : prop.rent;
+      const propPrice = prop._effectivePrice;
       if (filters.budgetMin !== null && filters.budgetMin > 0) {
         if (!propPrice || propPrice < filters.budgetMin) return false;
       }
@@ -329,26 +406,24 @@ export function usePropertySearch(initialProperties?: any[]) {
         if (!propPrice || propPrice > filters.budgetMax) return false;
       }
 
-      // 4. Minimum Rooms (matches rooms + livingRoom like original Tranogasy or rooms directly)
+      // 4. Minimum Rooms
       if (filters.minRooms > 0) {
-        const totalRooms = (Number(prop.rooms) || 0) + (Number(prop.livingRoom) || 0);
-        if (totalRooms < filters.minRooms && (Number(prop.rooms) || 0) < filters.minRooms) {
+        if (
+          prop._totalRoomsNum < filters.minRooms &&
+          prop._roomsNum < filters.minRooms
+        ) {
           return false;
         }
       }
 
       // 5. Minimum Bathrooms
-      if (filters.minBathrooms > 0) {
-        if ((Number(prop.bathrooms) || 0) < filters.minBathrooms) {
-          return false;
-        }
+      if (filters.minBathrooms > 0 && prop._bathroomsNum < filters.minBathrooms) {
+        return false;
       }
 
       // 6. Minimum Surface Area
-      if (filters.minArea !== null && filters.minArea > 0) {
-        if ((Number(prop.area) || 0) < filters.minArea) {
-          return false;
-        }
+      if (filters.minArea !== null && filters.minArea > 0 && prop._areaNum < filters.minArea) {
+        return false;
       }
 
       // 7. Inside / Outside WC & Shower
@@ -359,7 +434,8 @@ export function usePropertySearch(initialProperties?: any[]) {
       if (filters.insideBathroom === 'outside' && Boolean(feat.insideBathroom) !== false) return false;
 
       // 8. Selected Amenities / Features
-      for (const key of activeFeatureKeys) {
+      for (let i = 0; i < activeFeatureKeys.length; i++) {
+        const key = activeFeatureKeys[i];
         if (key === 'electricity') {
           if (!(feat.electricityJirama || feat.electricityPower || feat.solarPanels)) {
             return false;
@@ -374,103 +450,92 @@ export function usePropertySearch(initialProperties?: any[]) {
       }
 
       // 9. Keyword / Fokontany / Commune / Property Number search
-      if (cleanQuery) {
-        const title = removeDiacritics((prop.title || '').toLowerCase());
-        const desc = removeDiacritics((prop.description || '').toLowerCase());
-        const propNum = removeDiacritics(String(prop.propertyNumber || '').toLowerCase());
-        const fokontany = removeDiacritics((prop.city?.fokontany || '').toLowerCase());
-        const commune = removeDiacritics((prop.city?.commune || '').toLowerCase());
-        const district = removeDiacritics((prop.city?.district || '').toLowerCase());
-        const region = removeDiacritics((prop.city?.region || '').toLowerCase());
-
-        const tokens = cleanQuery.split(/\s+/).filter(Boolean);
-        const searchableBlob = `${title} ${desc} ${propNum} ${fokontany} ${commune} ${district} ${region}`;
-        const allTokensMatch = tokens.every((token) => searchableBlob.includes(token));
-        if (!allTokensMatch) return false;
+      if (tokens.length > 0) {
+        const blob = prop._searchBlob;
+        for (let i = 0; i < tokens.length; i++) {
+          if (!blob.includes(tokens[i])) return false;
+        }
       }
 
       return true;
     });
-  }, [catalogProperties, filters]);
+  }, [indexedCatalog, filters]);
 
-  // Step 2: Apply Geo-Radius filtering + enrich with map coordinates & distance + sort
+  // Step 2: Apply Geo-Radius filtering + distance calculation + sort
   const filteredProperties = useMemo(() => {
     const center = filters.searchCoords;
     const radius = filters.searchRadius;
     const refPoint = center || userLocation;
+    const selectedCityId = filters.selectedCity?._id
+      ? String(filters.selectedCity._id)
+      : null;
 
     const results: any[] = [];
 
-    for (const prop of rawFilteredWithoutRadius) {
-      const mapCoords = getPropertyMapCoords(prop);
-      let distanceMeters: number | null = null;
+    for (let i = 0; i < rawFilteredWithoutRadius.length; i++) {
+      const prop = rawFilteredWithoutRadius[i];
+      const mapCoords = prop._mapCoords;
 
-      if (refPoint) {
-        try {
-          distanceMeters = getDistance(
-            { latitude: refPoint.lat, longitude: refPoint.lng },
-            { latitude: mapCoords.lat, longitude: mapCoords.lng }
-          );
-        } catch {
-          distanceMeters = null;
-        }
-      }
-
-      // If geo-radius zone is active, check distance from searchCoords
       if (center && radius > 0) {
-        const distFromZone = getDistance(
-          { latitude: center.lat, longitude: center.lng },
-          { latitude: mapCoords.lat, longitude: mapCoords.lng }
+        const distFromZone = fastDistanceMeters(
+          center.lat,
+          center.lng,
+          mapCoords.lat,
+          mapCoords.lng
         );
-        // Also match if selectedCity._id matches property.city._id directly
         const isSameCityId =
-          filters.selectedCity?._id &&
+          selectedCityId !== null &&
           prop.city?._id &&
-          String(filters.selectedCity._id) === String(prop.city._id);
+          selectedCityId === String(prop.city._id);
 
         if (distFromZone > radius && !isSameCityId) {
           continue;
         }
-        distanceMeters = distFromZone;
-      }
 
-      results.push({
-        ...prop,
-        _mapCoords: mapCoords,
-        _distanceMeters: distanceMeters,
-        _score: calculatePropertyRelevanceScore(prop),
-      });
+        results.push({
+          ...prop,
+          _distanceMeters: distFromZone,
+        });
+      } else if (refPoint) {
+        const distFromRef = fastDistanceMeters(
+          refPoint.lat,
+          refPoint.lng,
+          mapCoords.lat,
+          mapCoords.lng
+        );
+        results.push({
+          ...prop,
+          _distanceMeters: distFromRef,
+        });
+      } else {
+        // Keep exact reference from indexedCatalog when no geo-distance is active!
+        results.push(prop);
+      }
     }
 
-    // Sort results
-    const sorted = [...results];
+    // Sort results using pre-computed numeric fields
     if (filters.sortBy === 'price_asc') {
-      sorted.sort((a, b) => {
-        const pA = (a.type === 'sale' ? a.price : a.rent) || Infinity;
-        const pB = (b.type === 'sale' ? b.price : b.rent) || Infinity;
-        return pA - pB;
-      });
+      results.sort((a, b) => (a._effectivePrice || Infinity) - (b._effectivePrice || Infinity));
     } else if (filters.sortBy === 'price_desc') {
-      sorted.sort((a, b) => {
-        const pA = (a.type === 'sale' ? a.price : a.rent) || 0;
-        const pB = (b.type === 'sale' ? b.price : b.rent) || 0;
-        return pB - pA;
-      });
+      results.sort((a, b) => (b._effectivePrice || 0) - (a._effectivePrice || 0));
     } else if (filters.sortBy === 'distance') {
-      sorted.sort((a, b) => (a._distanceMeters ?? Infinity) - (b._distanceMeters ?? Infinity));
+      results.sort((a, b) => (a._distanceMeters ?? Infinity) - (b._distanceMeters ?? Infinity));
     } else if (filters.sortBy === 'relevance') {
-      sorted.sort((a, b) => (b._score ?? 0) - (a._score ?? 0));
+      results.sort((a, b) => (b._score ?? 0) - (a._score ?? 0));
     } else {
       // 'newest'
-      sorted.sort((a, b) => {
-        const tA = a.created_at ? new Date(a.created_at).getTime() : 0;
-        const tB = b.created_at ? new Date(b.created_at).getTime() : 0;
-        return tB - tA;
-      });
+      results.sort((a, b) => (b._createdAtMs || 0) - (a._createdAtMs || 0));
     }
 
-    return sorted;
-  }, [rawFilteredWithoutRadius, filters.searchCoords, filters.searchRadius, filters.selectedCity, filters.sortBy, userLocation]);
+    return results;
+  }, [
+    rawFilteredWithoutRadius,
+    filters.searchCoords,
+    filters.searchRadius,
+    filters.selectedCity,
+    filters.sortBy,
+    userLocation,
+  ]);
 
   // Count how many active filters the user has set
   const activeFiltersCount = useMemo(() => {
@@ -518,7 +583,6 @@ export function usePropertySearch(initialProperties?: any[]) {
     isDisplayModeModalOpen,
     isRadarClickMode,
     selectedPropertyId,
-    hoveredPropertyId,
     mapCenter,
     mapZoom,
     mapTypeId,

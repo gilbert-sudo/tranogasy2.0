@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
 import {
   Map,
   AdvancedMarker,
@@ -24,14 +24,469 @@ import {
   formatCompactPrice,
   getPropertyMapCoords,
 } from '@/hooks/usePropertySearch';
-import { DEFAULT_ANTANANARIVO_CENTER } from '@/store/searchStore';
+import {
+  useSearchStore,
+  DEFAULT_ANTANANARIVO_CENTER,
+} from '@/store/searchStore';
 
 const GOOGLE_MAP_ID = '80e7a8f8db80acb5';
+
+interface MapBoundsLiteral {
+  north: number;
+  south: number;
+  east: number;
+  west: number;
+}
+
+interface PropertyClusterItem {
+  id: string;
+  isCluster: boolean;
+  lat: number;
+  lng: number;
+  count: number;
+  minPrice: number | null;
+  maxPrice: number | null;
+  hasTopProperty: boolean;
+  bounds: MapBoundsLiteral;
+  properties: any[];
+  property?: any;
+}
+
+// Convert (lat, lng) into Web Mercator world pixel coordinates at a given zoom level
+function latLngToWorldPixel(lat: number, lng: number, zoom: number): { x: number; y: number } {
+  const scale = 256 * Math.pow(2, zoom);
+  const x = ((lng + 180) / 360) * scale;
+  const sinLat = Math.sin((lat * Math.PI) / 180);
+  const clampedSin = Math.max(-0.9999, Math.min(0.9999, sinLat));
+  const y =
+    (0.5 - Math.log((1 + clampedSin) / (1 - clampedSin)) / (4 * Math.PI)) * scale;
+  return { x, y };
+}
+
+// Estimate fallback viewport bounds around center & zoom before Google Map fires its first idle event
+function estimateBoundsFromCenterZoom(
+  center: { lat: number; lng: number },
+  zoom: number
+): MapBoundsLiteral {
+  // Approximate degree span for a typical screen at given zoom
+  const latSpan = Math.min(15, 360 / Math.pow(2, Math.max(4, zoom - 1)));
+  const lngSpan = Math.min(20, (360 / Math.pow(2, Math.max(4, zoom - 1))) * 1.4);
+  return {
+    north: center.lat + latSpan,
+    south: center.lat - latSpan,
+    east: center.lng + lngSpan,
+    west: center.lng - lngSpan,
+  };
+}
+
+// Fast O(N) spatial grid clustering + viewport culling
+function computeViewportClusters(
+  properties: any[],
+  zoom: number,
+  bounds: MapBoundsLiteral,
+  selectedPropertyId: string | null
+): PropertyClusterItem[] {
+  if (!properties || properties.length === 0) return [];
+
+  // Add 25% padding around viewport bounds so markers near screen edges don't pop during slight pans
+  const latPad = Math.max(0.004, (bounds.north - bounds.south) * 0.25);
+  const lngPad = Math.max(0.004, (bounds.east - bounds.west) * 0.25);
+  const minLat = bounds.south - latPad;
+  const maxLat = bounds.north + latPad;
+  const minLng = bounds.west - lngPad;
+  const maxLng = bounds.east + lngPad;
+
+  // Determine pixel clustering radius based on zoom level
+  const roundedZoom = Math.round(zoom);
+  const shouldCluster = roundedZoom < 17;
+  const clusterRadiusPx =
+    roundedZoom <= 10
+      ? 90
+      : roundedZoom <= 12
+      ? 76
+      : roundedZoom === 13
+      ? 64
+      : roundedZoom === 14
+      ? 54
+      : roundedZoom === 15
+      ? 44
+      : roundedZoom === 16
+      ? 32
+      : 0;
+
+  const radiusSq = clusterRadiusPx * clusterRadiusPx;
+
+  interface InternalCluster {
+    sumLat: number;
+    sumLng: number;
+    sumX: number;
+    sumY: number;
+    cx: number;
+    cy: number;
+    count: number;
+    minPrice: number | null;
+    maxPrice: number | null;
+    hasTopProperty: boolean;
+    bounds: MapBoundsLiteral;
+    properties: any[];
+  }
+
+  const grid = new globalThis.Map<string, InternalCluster[]>();
+  const clusters: InternalCluster[] = [];
+  let standaloneSelectedItem: PropertyClusterItem | null = null;
+
+  for (let i = 0; i < properties.length; i++) {
+    const prop = properties[i];
+    const coords = prop._mapCoords || getPropertyMapCoords(prop);
+    const { lat, lng } = coords;
+
+    const isSelected = selectedPropertyId !== null && prop._id === selectedPropertyId;
+
+    // Viewport culling (always keep selected property visible)
+    if (
+      !isSelected &&
+      (lat < minLat || lat > maxLat || lng < minLng || lng > maxLng)
+    ) {
+      continue;
+    }
+
+    const priceVal =
+      prop._effectivePrice ??
+      (prop.type === 'sale' ? Number(prop.price) || 0 : Number(prop.rent) || 0);
+
+    // Keep the currently selected property as an unclustered individual badge so it's always highlighted
+    if (isSelected) {
+      standaloneSelectedItem = {
+        id: `prop-${prop._id}`,
+        isCluster: false,
+        lat,
+        lng,
+        count: 1,
+        minPrice: priceVal > 0 ? priceVal : null,
+        maxPrice: priceVal > 0 ? priceVal : null,
+        hasTopProperty: Boolean(prop.topProperty),
+        bounds: { north: lat, south: lat, east: lng, west: lng },
+        properties: [prop],
+        property: prop,
+      };
+      continue;
+    }
+
+    if (!shouldCluster || clusterRadiusPx <= 0) {
+      clusters.push({
+        sumLat: lat,
+        sumLng: lng,
+        sumX: 0,
+        sumY: 0,
+        cx: 0,
+        cy: 0,
+        count: 1,
+        minPrice: priceVal > 0 ? priceVal : null,
+        maxPrice: priceVal > 0 ? priceVal : null,
+        hasTopProperty: Boolean(prop.topProperty),
+        bounds: { north: lat, south: lat, east: lng, west: lng },
+        properties: [prop],
+      });
+      continue;
+    }
+
+    const { x, y } = latLngToWorldPixel(lat, lng, roundedZoom);
+    const cellX = Math.floor(x / clusterRadiusPx);
+    const cellY = Math.floor(y / clusterRadiusPx);
+
+    let bestCluster: InternalCluster | null = null;
+    let bestDistSq = radiusSq;
+
+    // Search 3x3 neighboring grid cells for closest cluster centroid
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        const key = `${cellX + dx}:${cellY + dy}`;
+        const cellList = grid.get(key);
+        if (!cellList) continue;
+        for (let j = 0; j < cellList.length; j++) {
+          const candidate = cellList[j];
+          const dX = candidate.cx - x;
+          const dY = candidate.cy - y;
+          const distSq = dX * dX + dY * dY;
+          if (distSq <= bestDistSq) {
+            bestDistSq = distSq;
+            bestCluster = candidate;
+          }
+        }
+      }
+    }
+
+    if (bestCluster) {
+      bestCluster.sumLat += lat;
+      bestCluster.sumLng += lng;
+      bestCluster.sumX += x;
+      bestCluster.sumY += y;
+      bestCluster.count += 1;
+      bestCluster.cx = bestCluster.sumX / bestCluster.count;
+      bestCluster.cy = bestCluster.sumY / bestCluster.count;
+      if (priceVal > 0) {
+        bestCluster.minPrice =
+          bestCluster.minPrice === null
+            ? priceVal
+            : Math.min(bestCluster.minPrice, priceVal);
+        bestCluster.maxPrice =
+          bestCluster.maxPrice === null
+            ? priceVal
+            : Math.max(bestCluster.maxPrice, priceVal);
+      }
+      if (prop.topProperty) bestCluster.hasTopProperty = true;
+      if (lat > bestCluster.bounds.north) bestCluster.bounds.north = lat;
+      if (lat < bestCluster.bounds.south) bestCluster.bounds.south = lat;
+      if (lng > bestCluster.bounds.east) bestCluster.bounds.east = lng;
+      if (lng < bestCluster.bounds.west) bestCluster.bounds.west = lng;
+      bestCluster.properties.push(prop);
+    } else {
+      const newCluster: InternalCluster = {
+        sumLat: lat,
+        sumLng: lng,
+        sumX: x,
+        sumY: y,
+        cx: x,
+        cy: y,
+        count: 1,
+        minPrice: priceVal > 0 ? priceVal : null,
+        maxPrice: priceVal > 0 ? priceVal : null,
+        hasTopProperty: Boolean(prop.topProperty),
+        bounds: { north: lat, south: lat, east: lng, west: lng },
+        properties: [prop],
+      };
+      clusters.push(newCluster);
+      const cellKey = `${cellX}:${cellY}`;
+      const existing = grid.get(cellKey);
+      if (existing) {
+        existing.push(newCluster);
+      } else {
+        grid.set(cellKey, [newCluster]);
+      }
+    }
+  }
+
+  // Cap rendered items to 90 max in viewport for guaranteed 60fps smoothness
+  const result: PropertyClusterItem[] = [];
+  if (standaloneSelectedItem) {
+    result.push(standaloneSelectedItem);
+  }
+
+  const maxToRender = Math.min(clusters.length, 90);
+  for (let i = 0; i < maxToRender; i++) {
+    const c = clusters[i];
+    if (c.count === 1) {
+      const p = c.properties[0];
+      result.push({
+        id: `prop-${p._id}`,
+        isCluster: false,
+        lat: c.sumLat,
+        lng: c.sumLng,
+        count: 1,
+        minPrice: c.minPrice,
+        maxPrice: c.maxPrice,
+        hasTopProperty: c.hasTopProperty,
+        bounds: c.bounds,
+        properties: c.properties,
+        property: p,
+      });
+    } else {
+      const avgLat = c.sumLat / c.count;
+      const avgLng = c.sumLng / c.count;
+      result.push({
+        id: `cluster-${c.properties[0]._id}-${c.count}`,
+        isCluster: true,
+        lat: avgLat,
+        lng: avgLng,
+        count: c.count,
+        minPrice: c.minPrice,
+        maxPrice: c.maxPrice,
+        hasTopProperty: c.hasTopProperty,
+        bounds: c.bounds,
+        properties: c.properties,
+      });
+    }
+  }
+
+  return result;
+}
+
+// ── Memoized Individual Property Price Pill Marker (High-contrast against map, NO green dot, NO expensive backdrop-blur) ──
+const PropertyBadgeMarker = memo(function PropertyBadgeMarker({
+  property,
+  lat,
+  lng,
+  isSelected,
+  onSelectProperty,
+}: {
+  property: any;
+  lat: number;
+  lng: number;
+  isSelected: boolean;
+  onSelectProperty: (property: any) => void;
+}) {
+  // Targeted subscription: only re-renders this specific marker if hovered from Split View card list
+  const isHoveredFromList = useSearchStore(
+    (s) => s.hoveredPropertyId !== null && s.hoveredPropertyId === property._id
+  );
+  const isHighlighted = isSelected || isHoveredFromList;
+
+  const displayPrice = property.type === 'sale' ? property.price : property.rent;
+  const formattedPrice = useMemo(() => formatCompactPrice(displayPrice), [displayPrice]);
+  const isSale = property.type === 'sale';
+
+  const handleClick = useCallback(() => {
+    onSelectProperty(property);
+  }, [onSelectProperty, property]);
+
+  return (
+    <AdvancedMarker
+      position={{ lat, lng }}
+      zIndex={isSelected ? 120 : isHoveredFromList ? 110 : property.topProperty ? 50 : 25}
+      onClick={handleClick}
+    >
+      <div
+        className={`group relative flex flex-col items-center cursor-pointer transition-transform duration-200 ease-out will-change-transform ${
+          isHighlighted
+            ? 'scale-115 -translate-y-1.5 z-50'
+            : 'hover:scale-110 hover:-translate-y-1'
+        }`}
+      >
+        {/* High-Contrast Ultra-Rounded Price Pill */}
+        <div
+          className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all duration-200 ${
+            isHighlighted
+              ? 'bg-brand-green text-white border-2 border-white ring-4 ring-brand-green/40 shadow-[0_12px_28px_rgba(0,0,0,0.45),0_4px_10px_rgba(124,189,30,0.45)]'
+              : isSale
+              ? 'bg-zinc-900 text-white border-[1.5px] border-amber-400 ring-1 ring-black/30 shadow-[0_8px_20px_rgba(0,0,0,0.36),0_2px_6px_rgba(0,0,0,0.24)] group-hover:bg-zinc-950'
+              : 'bg-zinc-900 text-white border-[1.5px] border-white ring-1 ring-black/25 shadow-[0_8px_20px_rgba(0,0,0,0.36),0_2px_6px_rgba(0,0,0,0.24)] group-hover:bg-zinc-950 group-hover:border-brand-green group-hover:ring-brand-green/40'
+          }`}
+        >
+          {property.topProperty && (
+            <Sparkles className="w-3 h-3 text-amber-400 shrink-0" />
+          )}
+
+          {/* Crisp Bold Price Text */}
+          <span className="text-xs sm:text-[13px] font-semibold tracking-tight whitespace-nowrap leading-none">
+            {formattedPrice}{' '}
+            <span
+              className={`text-[10px] font-normal ${
+                isHighlighted ? 'text-white/90' : 'text-zinc-300'
+              }`}
+            >
+              Ar
+            </span>
+          </span>
+
+          {/* High-Contrast Room Count Tag */}
+          {property.rooms > 0 && (
+            <span
+              className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${
+                isHighlighted
+                  ? 'bg-zinc-950 text-white'
+                  : isSale
+                  ? 'bg-amber-400 text-zinc-950'
+                  : 'bg-brand-green text-white'
+              }`}
+            >
+              {property.rooms}p
+            </span>
+          )}
+        </div>
+
+        {/* Distinct Pointer Stem */}
+        <div
+          className={`w-2.5 h-2.5 rotate-45 -mt-1.5 border-r border-b transition-colors duration-200 shadow-xs ${
+            isHighlighted
+              ? 'bg-brand-green border-white'
+              : isSale
+              ? 'bg-zinc-900 border-amber-400'
+              : 'bg-zinc-900 border-white group-hover:border-brand-green'
+          }`}
+        />
+      </div>
+    </AdvancedMarker>
+  );
+});
+
+// ── Memoized Spatial Cluster Marker ──
+const PropertyClusterMarker = memo(function PropertyClusterMarker({
+  cluster,
+  onClusterClick,
+}: {
+  cluster: PropertyClusterItem;
+  onClusterClick: (cluster: PropertyClusterItem) => void;
+}) {
+  const formattedMinPrice = useMemo(
+    () => (cluster.minPrice ? formatCompactPrice(cluster.minPrice) : null),
+    [cluster.minPrice]
+  );
+
+  const handleClick = useCallback(() => {
+    onClusterClick(cluster);
+  }, [onClusterClick, cluster]);
+
+  // Size tier based on cluster density
+  const isLarge = cluster.count >= 20;
+  const isMedium = cluster.count >= 6 && cluster.count < 20;
+
+  return (
+    <AdvancedMarker
+      position={{ lat: cluster.lat, lng: cluster.lng }}
+      zIndex={cluster.count >= 20 ? 80 : cluster.count >= 6 ? 70 : 60}
+      onClick={handleClick}
+    >
+      <div
+        className="group relative flex flex-col items-center cursor-pointer transition-transform duration-200 ease-out hover:scale-110 active:scale-95 will-change-transform"
+        title={`${cluster.count} biens dans cette zone — Cliquer pour zoomer`}
+      >
+        {/* High-Contrast Cluster Capsule */}
+        <div
+          className={`flex items-center gap-1.5 rounded-full bg-white text-zinc-950 border-2 border-brand-green ring-3 ring-brand-green/25 shadow-[0_10px_24px_rgba(0,0,0,0.34),0_2px_6px_rgba(0,0,0,0.2)] transition-all group-hover:bg-zinc-950 group-hover:text-white ${
+            isLarge
+              ? 'p-1.5 pr-3.5'
+              : isMedium
+              ? 'p-1 pr-3'
+              : 'p-1 pr-2.5'
+          }`}
+        >
+          {/* Count Badge */}
+          <span
+            className={`flex items-center justify-center rounded-full bg-brand-green text-white font-bold leading-none shrink-0 shadow-xs ${
+              isLarge
+                ? 'h-7 min-w-7 px-2 text-xs'
+                : isMedium
+                ? 'h-6 min-w-6 px-1.5 text-xs'
+                : 'h-5.5 min-w-5.5 px-1.5 text-[11px]'
+            }`}
+          >
+            {cluster.count}
+          </span>
+
+          {/* Min Price or Label */}
+          <span className="text-[11px] sm:text-xs font-medium tracking-tight whitespace-nowrap leading-none">
+            {formattedMinPrice ? (
+              <>
+                <span className="font-normal opacity-70">dès </span>
+                <strong className="font-bold">{formattedMinPrice}</strong>
+              </>
+            ) : (
+              <span>biens</span>
+            )}
+          </span>
+        </div>
+
+        {/* Pointer Stem */}
+        <div className="w-2.5 h-2.5 rotate-45 -mt-1.5 bg-white group-hover:bg-zinc-950 border-r-2 border-b-2 border-brand-green transition-colors" />
+      </div>
+    </AdvancedMarker>
+  );
+});
 
 interface FuturisticSearchMapProps {
   properties: any[];
   selectedPropertyId: string | null;
-  hoveredPropertyId: string | null;
+  hoveredPropertyId?: string | null;
   onSelectProperty: (property: any) => void;
   onHoverProperty?: (propertyId: string | null) => void;
   mapCenter: { lat: number; lng: number };
@@ -59,14 +514,54 @@ function MapCameraSync({
   mapCenter,
   mapZoom,
   selectedProperty,
+  onViewportChange,
 }: {
   mapCenter: { lat: number; lng: number };
   mapZoom: number;
   selectedProperty: any | null;
+  onViewportChange: (zoom: number, bounds: MapBoundsLiteral) => void;
 }) {
   const map = useMap();
   const prevCenterRef = useRef<string>('');
   const prevSelectedIdRef = useRef<string | null>(null);
+  const rafRef = useRef<number | null>(null);
+
+  // Listen to map idle and zoom_changed for viewport culling & clustering
+  useEffect(() => {
+    if (!map) return;
+
+    const syncViewport = () => {
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+      }
+      rafRef.current = requestAnimationFrame(() => {
+        const z = map.getZoom() ?? 13;
+        const b = map.getBounds();
+        if (b) {
+          const ne = b.getNorthEast();
+          const sw = b.getSouthWest();
+          onViewportChange(z, {
+            north: ne.lat(),
+            south: sw.lat(),
+            east: ne.lng(),
+            west: sw.lng(),
+          });
+        }
+      });
+    };
+
+    const idleListener = map.addListener('idle', syncViewport);
+    const zoomListener = map.addListener('zoom_changed', syncViewport);
+    syncViewport();
+
+    return () => {
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+      }
+      idleListener.remove();
+      zoomListener.remove();
+    };
+  }, [map, onViewportChange]);
 
   // Sync when mapCenter or mapZoom explicitly changes from store actions
   useEffect(() => {
@@ -104,9 +599,7 @@ function MapCameraSync({
 export default function FuturisticSearchMap({
   properties,
   selectedPropertyId,
-  hoveredPropertyId,
   onSelectProperty,
-  onHoverProperty,
   mapCenter,
   mapZoom,
   mapTypeId,
@@ -124,19 +617,97 @@ export default function FuturisticSearchMap({
 }: FuturisticSearchMapProps) {
   const map = useMap();
 
-  // Cap visible markers to 150 for silky 60fps performance
-  const visibleMarkers = useMemo(() => {
-    return properties.slice(0, 150);
-  }, [properties]);
+  const [viewport, setViewport] = useState<{
+    zoom: number;
+    bounds: MapBoundsLiteral;
+  }>(() => ({
+    zoom: mapZoom || 13,
+    bounds: estimateBoundsFromCenterZoom(
+      mapCenter || DEFAULT_ANTANANARIVO_CENTER,
+      mapZoom || 13
+    ),
+  }));
+
+  const handleViewportChange = useCallback(
+    (newZoom: number, newBounds: MapBoundsLiteral) => {
+      setViewport((prev) => {
+        const zoomChanged = Math.round(prev.zoom) !== Math.round(newZoom);
+        const latSpan = Math.max(0.0001, prev.bounds.north - prev.bounds.south);
+        const lngSpan = Math.max(0.0001, prev.bounds.east - prev.bounds.west);
+        const movedSignificantly =
+          Math.abs(prev.bounds.north - newBounds.north) > latSpan * 0.12 ||
+          Math.abs(prev.bounds.west - newBounds.west) > lngSpan * 0.12;
+
+        if (!zoomChanged && !movedSignificantly) {
+          return prev;
+        }
+        return { zoom: newZoom, bounds: newBounds };
+      });
+    },
+    []
+  );
+
+  // Compute spatial clusters & viewport-culled markers in <0.5ms
+  const clusteredItems = useMemo(() => {
+    return computeViewportClusters(
+      properties,
+      viewport.zoom,
+      viewport.bounds,
+      selectedPropertyId
+    );
+  }, [properties, viewport.zoom, viewport.bounds, selectedPropertyId]);
 
   const selectedProperty = useMemo(() => {
     if (!selectedPropertyId) return null;
     return properties.find((p) => p._id === selectedPropertyId) || null;
   }, [properties, selectedPropertyId]);
 
+  // Handle clicking a cluster: smoothly zoom into its bounds or expand
+  const handleClusterClick = useCallback(
+    (cluster: PropertyClusterItem) => {
+      if (!map) return;
+      const currentZoom = map.getZoom() || viewport.zoom || 13;
+      const latSpan = Math.abs(cluster.bounds.north - cluster.bounds.south);
+      const lngSpan = Math.abs(cluster.bounds.east - cluster.bounds.west);
+
+      // If all properties in the cluster are at the exact same coordinates or already zoomed in deep
+      if (currentZoom >= 16 || (latSpan < 0.0006 && lngSpan < 0.0006)) {
+        if (currentZoom < 17) {
+          map.panTo({ lat: cluster.lat, lng: cluster.lng });
+          map.setZoom(Math.min(18, currentZoom + 2));
+        } else if (cluster.properties.length > 0) {
+          onSelectProperty(cluster.properties[0]);
+        }
+        return;
+      }
+
+      if (typeof window !== 'undefined' && window.google?.maps) {
+        const gBounds = new window.google.maps.LatLngBounds(
+          { lat: cluster.bounds.south, lng: cluster.bounds.west },
+          { lat: cluster.bounds.north, lng: cluster.bounds.east }
+        );
+        map.fitBounds(gBounds, {
+          top: 140,
+          bottom: 200,
+          left: 60,
+          right: 60,
+        });
+      } else {
+        map.panTo({ lat: cluster.lat, lng: cluster.lng });
+        map.setZoom(Math.min(17, currentZoom + 2));
+      }
+    },
+    [map, viewport.zoom, onSelectProperty]
+  );
+
   // Fit bounds to all currently filtered properties
   const handleFitBounds = useCallback(() => {
-    if (!map || visibleMarkers.length === 0 || typeof window === 'undefined' || !window.google?.maps) {
+    if (
+      !map ||
+      properties.length === 0 ||
+      typeof window === 'undefined' ||
+      !window.google?.maps
+    ) {
       return;
     }
 
@@ -157,7 +728,7 @@ export default function FuturisticSearchMap({
     }
 
     const bounds = new window.google.maps.LatLngBounds();
-    visibleMarkers.slice(0, 60).forEach((prop) => {
+    properties.slice(0, 80).forEach((prop) => {
       const coords = prop._mapCoords || getPropertyMapCoords(prop);
       bounds.extend({ lat: coords.lat, lng: coords.lng });
     });
@@ -168,7 +739,7 @@ export default function FuturisticSearchMap({
       left: 40,
       right: 60,
     });
-  }, [map, visibleMarkers, searchCoords, searchRadius]);
+  }, [map, properties, searchCoords, searchRadius]);
 
   // Zoom in / out controls
   const handleZoomDelta = useCallback(
@@ -230,6 +801,7 @@ export default function FuturisticSearchMap({
           mapCenter={mapCenter}
           mapZoom={mapZoom}
           selectedProperty={selectedProperty}
+          onViewportChange={handleViewportChange}
         />
 
         {/* ── 1. Active Geo-Search Radar Circle & Center Beacon ── */}
@@ -254,7 +826,7 @@ export default function FuturisticSearchMap({
               <div className="relative flex flex-col items-center pointer-events-auto">
                 {/* Pulsing Radar Halo */}
                 <span className="absolute -inset-3 rounded-full bg-brand-green/35 animate-radar-wave pointer-events-none" />
-                <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-zinc-950/90 text-white border border-brand-green/60 shadow-[0_8px_24px_rgba(124,189,30,0.4)] backdrop-blur-xl">
+                <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-zinc-950/95 text-white border border-brand-green/60 shadow-[0_8px_24px_rgba(124,189,30,0.4)]">
                   <span className="w-2 h-2 rounded-full bg-brand-green animate-pulse" />
                   <span className="text-[11px] font-light tracking-wide whitespace-nowrap max-w-[140px] truncate">
                     {searchPlaceName || 'Radar actif'}
@@ -307,94 +879,28 @@ export default function FuturisticSearchMap({
           </>
         )}
 
-        {/* ── 3. Futuristic Property Price Pill Markers ── */}
-        {visibleMarkers.map((property) => {
-          const coords = property._mapCoords || getPropertyMapCoords(property);
-          const isSelected = selectedPropertyId === property._id;
-          const isHovered = hoveredPropertyId === property._id;
-          const isHighlighted = isSelected || isHovered;
-          const displayPrice = property.type === 'sale' ? property.price : property.rent;
-          const formattedPrice = formatCompactPrice(displayPrice);
-          const isSale = property.type === 'sale';
+        {/* ── 3. Spatial Clustered & Viewport-Culled Property Badges ── */}
+        {clusteredItems.map((item) => {
+          if (item.isCluster) {
+            return (
+              <PropertyClusterMarker
+                key={item.id}
+                cluster={item}
+                onClusterClick={handleClusterClick}
+              />
+            );
+          }
 
+          const prop = item.property;
           return (
-            <AdvancedMarker
-              key={property._id}
-              position={{ lat: coords.lat, lng: coords.lng }}
-              zIndex={isSelected ? 120 : isHovered ? 110 : property.topProperty ? 50 : 10}
-              onClick={() => onSelectProperty(property)}
-            >
-              <div
-                onMouseEnter={() => onHoverProperty?.(property._id)}
-                onMouseLeave={() => onHoverProperty?.(null)}
-                className={`group relative flex flex-col items-center cursor-pointer transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-                  isHighlighted
-                    ? 'scale-115 -translate-y-1.5 z-50'
-                    : 'hover:scale-110 hover:-translate-y-1'
-                }`}
-              >
-                {/* Glow Halo when selected */}
-                {isHighlighted && (
-                  <span className="absolute -inset-1.5 rounded-full bg-brand-green/35 blur-md animate-pulse pointer-events-none" />
-                )}
-
-                {/* Main Ultra-Rounded Price Pill */}
-                <div
-                  className={`relative flex items-center gap-1.5 px-3.5 py-1.5 rounded-full transition-all duration-300 backdrop-blur-xl ${
-                    isHighlighted
-                      ? 'bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 ring-2 ring-brand-green shadow-[0_10px_28px_rgba(0,0,0,0.45)]'
-                      : isSale
-                      ? 'bg-zinc-900/92 text-white border border-amber-400/50 shadow-[0_6px_18px_rgba(0,0,0,0.22)] hover:bg-zinc-950'
-                      : 'bg-white/95 dark:bg-zinc-900/95 text-zinc-900 dark:text-white border border-zinc-200/90 dark:border-white/15 shadow-[0_6px_18px_rgba(0,0,0,0.16)] hover:border-brand-green/60'
-                  }`}
-                >
-                  {/* Offer Type / Top Property Dot */}
-                  {property.topProperty ? (
-                    <Sparkles className="w-3 h-3 text-amber-400 shrink-0" />
-                  ) : (
-                    <span
-                      className={`w-2 h-2 rounded-full shrink-0 ${
-                        isHighlighted
-                          ? 'bg-brand-green animate-ping'
-                          : isSale
-                          ? 'bg-amber-400'
-                          : 'bg-brand-green'
-                      }`}
-                    />
-                  )}
-
-                  {/* Price Text (Thin/Medium futuristic typography) */}
-                  <span className="text-xs sm:text-[13px] font-medium tracking-tight whitespace-nowrap leading-none">
-                    {formattedPrice}{' '}
-                    <span className="text-[10px] font-light opacity-75">Ar</span>
-                  </span>
-
-                  {/* Subtle Room Count Tag */}
-                  {property.rooms > 0 && (
-                    <span
-                      className={`text-[10px] font-light px-1.5 py-0.5 rounded-full leading-none ${
-                        isHighlighted
-                          ? 'bg-white/15 dark:bg-zinc-900/15 text-emerald-300 dark:text-brand-green'
-                          : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400'
-                      }`}
-                    >
-                      {property.rooms}p
-                    </span>
-                  )}
-                </div>
-
-                {/* Pointer Stem */}
-                <div
-                  className={`w-2 h-2 rotate-45 -mt-1 transition-colors duration-300 ${
-                    isHighlighted
-                      ? 'bg-zinc-950 dark:bg-white'
-                      : isSale
-                      ? 'bg-zinc-900/92'
-                      : 'bg-white/95 dark:bg-zinc-900/95'
-                  }`}
-                />
-              </div>
-            </AdvancedMarker>
+            <PropertyBadgeMarker
+              key={item.id}
+              property={prop}
+              lat={item.lat}
+              lng={item.lng}
+              isSelected={selectedPropertyId === prop._id}
+              onSelectProperty={onSelectProperty}
+            />
           );
         })}
       </Map>

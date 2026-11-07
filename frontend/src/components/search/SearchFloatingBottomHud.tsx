@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { memo } from 'react';
 import {
   Map as MapIcon,
   Columns2,
@@ -95,7 +95,7 @@ interface SearchFloatingBottomHudProps {
   onOpenFilterModal: () => void;
 }
 
-export default function SearchFloatingBottomHud({
+function SearchFloatingBottomHudComponent({
   filters,
   totalResults,
   activeFiltersCount,
@@ -250,4 +250,7 @@ export default function SearchFloatingBottomHud({
     </div>
   );
 }
+
+const SearchFloatingBottomHud = memo(SearchFloatingBottomHudComponent);
+export default SearchFloatingBottomHud;
 

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, memo } from 'react';
 import {
   X,
   RotateCcw,
@@ -80,7 +80,7 @@ const RADIUS_PILLS = [
   { label: '10 km', value: 10000 },
 ];
 
-export default function AdvancedFilterModal({
+function AdvancedFilterModalComponent({
   isOpen,
   onClose,
   filters,
@@ -838,4 +838,11 @@ export default function AdvancedFilterModal({
     </div>
   );
 }
+
+const AdvancedFilterModal = memo(
+  AdvancedFilterModalComponent,
+  (prev, next) => !prev.isOpen && !next.isOpen
+);
+
+export default AdvancedFilterModal;
 
