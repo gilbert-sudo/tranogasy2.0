@@ -329,8 +329,7 @@ export default function PhoneAuthFlow({
               {/* Passwordless & Automatic Account Creation Info */}
               <div className="pt-2 md:pt-1 text-center">
                 <p className="text-[13px] md:text-[11.5px] leading-relaxed font-medium text-zinc-500 dark:text-zinc-400 max-w-[315px] md:max-w-[275px] mx-auto">
-                  Aucun mot de passe requis. Un code SMS vérifiera votre numéro. 
-                  <a href="https://storyset.com/people">People illustrations by Storyset</a>
+                  Aucun mot de passe requis. Un code SMS vérifiera votre numéro.
                 </p>
               </div>
             </form>
@@ -345,7 +344,7 @@ export default function PhoneAuthFlow({
             {/* Step 2 Vector Illustration */}
             <div className="relative w-full flex-1 md:flex-none min-h-[210px] max-h-[370px] md:min-h-0 md:h-[210px] mx-auto flex items-center justify-center">
               <Image
-                src="/images/login-step2-verify.png"
+                src="/images/enter-otp-animate.svg"
                 alt="Vérification par SMS TranoGasy"
                 fill
                 className="object-contain p-1 md:p-0 drop-shadow-[0_10px_24px_rgba(0,0,0,0.04)]"
@@ -436,7 +435,7 @@ export default function PhoneAuthFlow({
             {/* Step 3 Vector Illustration */}
             <div className="relative w-full flex-1 md:flex-none min-h-[200px] max-h-[340px] md:min-h-0 md:h-[205px] mx-auto flex items-center justify-center">
               <Image
-                src="/images/login-step3-welcome.png"
+                src="/images/resume-animate.svg"
                 alt="Bienvenue dans la communauté TranoGasy"
                 fill
                 className="object-contain p-1 md:p-0 drop-shadow-[0_10px_24px_rgba(0,0,0,0.04)]"
