@@ -40,9 +40,20 @@ import ListingLocationPicker from './ListingLocationPicker';
 import ListingAmenitiesSelector from './ListingAmenitiesSelector';
 import ListingLivePreviewCard from './ListingLivePreviewCard';
 
-export default function CreateListingForm() {
+export interface CreateListingFormProps {
+  embedded?: boolean;
+  onSuccess?: (createdProperty: any) => void;
+  onCancel?: () => void;
+}
+
+export default function CreateListingForm({
+  embedded = false,
+  onSuccess,
+  onCancel,
+}: CreateListingFormProps = {}) {
   const router = useRouter();
   const { user, initialize } = useUserStore();
+  const currentUser = user?.user || user;
   const openModal = useModalStore((state) => state.openModal);
   const addPropertyToStore = usePropertyStore((state) => state.addProperty);
 
@@ -153,10 +164,10 @@ export default function CreateListingForm() {
   }, [initialize]);
 
   useEffect(() => {
-    if (user?.phone && !phone1) {
-      setPhone1(user.phone);
+    if (currentUser?.phone && !phone1) {
+      setPhone1(currentUser.phone);
     }
-  }, [user, phone1]);
+  }, [currentUser, phone1]);
 
   const toggleFeature = useCallback((key: string) => {
     setFeatures((prev) => {
@@ -227,7 +238,7 @@ export default function CreateListingForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!user) {
+    if (!currentUser) {
       openModal('login');
       return;
     }
@@ -260,7 +271,7 @@ export default function CreateListingForm() {
         insideToilet,
         insideBathroom,
         images: images.filter((img) => (img.status === 'done' && img.src) || img.src).map((img) => img.src),
-        owner: user._id || user.id,
+        owner: currentUser._id || currentUser.id,
         phone1: phone1.trim(),
         phone2: null,
         phone3: null,
@@ -310,6 +321,9 @@ export default function CreateListingForm() {
         });
       }
       setCreatedProperty(result);
+      if (onSuccess) {
+        onSuccess(result);
+      }
     } catch (err: any) {
       console.error('Submission failed:', err);
       setFormError(err.message || "Erreur lors de la création de l'annonce. Veuillez réessayer.");
@@ -321,7 +335,7 @@ export default function CreateListingForm() {
   // SUCCESS CELEBRATION MODAL
   if (createdProperty) {
     return (
-      <div className="w-full min-h-screen flex items-center justify-center p-4 sm:p-6 bg-zinc-50 dark:bg-zinc-950 animate-in fade-in zoom-in-95 duration-300">
+      <div className={`w-full flex items-center justify-center p-4 sm:p-6 ${embedded ? 'py-12' : 'min-h-screen bg-zinc-50 dark:bg-zinc-950'} animate-in fade-in zoom-in-95 duration-300`}>
         <div className="w-full max-w-lg bg-white dark:bg-zinc-900 rounded-3xl p-6 sm:p-10 text-center space-y-6 shadow-2xl border border-zinc-100 dark:border-zinc-800">
           <div className="w-18 h-18 sm:w-20 sm:h-20 rounded-full bg-brand-green/15 text-brand-green flex items-center justify-center mx-auto shadow-inner">
             <CheckCircle2 className="w-10 h-10 sm:w-12 sm:h-12" />
@@ -352,7 +366,13 @@ export default function CreateListingForm() {
             </button>
             <button
               type="button"
-              onClick={() => router.push('/dashboard?tab=listings')}
+              onClick={() => {
+                if (onCancel) {
+                  onCancel();
+                } else {
+                  router.push('/dashboard?tab=listings');
+                }
+              }}
               className="flex-1 py-3.5 px-5 rounded-2xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 font-bold text-sm transition-all cursor-pointer"
             >
               Mon tableau de bord
@@ -454,54 +474,76 @@ export default function CreateListingForm() {
   );
 
   return (
-    <div className="w-full min-h-screen bg-transparent text-zinc-900 dark:text-white">
-      {/* ── BORDERLESS TOP BAR ── */}
-      <header className="sticky top-0 z-30 w-full backdrop-blur-xl bg-white/80 dark:bg-zinc-950/80 px-4 sm:px-8 py-3.5 flex items-center justify-between border-b border-zinc-200/40 dark:border-zinc-800/40">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => router.back()}
-            className="w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all text-zinc-700 dark:text-zinc-200 cursor-pointer"
-            aria-label="Retour"
-          >
-            <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5" />
-          </button>
-          <div>
-            <h1 className="text-base sm:text-xl font-extrabold tracking-tight flex items-center gap-2">
-              <span>Créer une annonce</span>
-              <span className="hidden sm:inline-block text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-brand-green/10 text-brand-green">
-                TranoGasy
-              </span>
-            </h1>
-            <p className="text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400 hidden xs:block">
-              Complétez les informations pour publier votre bien
-            </p>
+    <div className={`w-full ${embedded ? 'bg-transparent' : 'min-h-screen bg-transparent'} text-zinc-900 dark:text-white`}>
+      {/* ── BORDERLESS TOP BAR (Standalone only) ── */}
+      {!embedded && (
+        <header className="sticky top-0 z-30 w-full backdrop-blur-xl bg-white/80 dark:bg-zinc-950/80 px-4 sm:px-8 py-3.5 flex items-center justify-between border-b border-zinc-200/40 dark:border-zinc-800/40">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => (onCancel ? onCancel() : router.back())}
+              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all text-zinc-700 dark:text-zinc-200 cursor-pointer"
+              aria-label="Retour"
+            >
+              <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5" />
+            </button>
+            <div>
+              <h1 className="text-base sm:text-xl font-extrabold tracking-tight flex items-center gap-2">
+                <span>Créer une annonce</span>
+                <span className="hidden sm:inline-block text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-brand-green/10 text-brand-green">
+                  TranoGasy
+                </span>
+              </h1>
+              <p className="text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400 hidden xs:block">
+                Complétez les informations pour publier votre bien
+              </p>
+            </div>
           </div>
-        </div>
 
-        {/* Action Pills */}
-        <div className="flex items-center gap-2">
-          {/* Mobile Preview Toggle */}
+          {/* Action Pills */}
+          <div className="flex items-center gap-2">
+            {/* Mobile Preview Toggle */}
+            <button
+              type="button"
+              onClick={() => setShowMobilePreview(!showMobilePreview)}
+              className="lg:hidden flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 transition-all cursor-pointer"
+            >
+              <Eye className="w-3.5 h-3.5 text-brand-green" />
+              <span>{showMobilePreview ? 'Formulaire' : 'Aperçu'}</span>
+            </button>
+
+            <Link
+              href="/dashboard"
+              className="hidden sm:flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors"
+            >
+              Tableau de bord
+            </Link>
+          </div>
+        </header>
+      )}
+
+      {/* Embedded Mobile Bar */}
+      {embedded && (
+        <div className="lg:hidden flex items-center justify-between p-3.5 mb-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 shadow-xs">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-brand-green animate-pulse" />
+            <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">
+              {showMobilePreview ? 'Aperçu en direct' : 'Formulaire de publication'}
+            </span>
+          </div>
           <button
             type="button"
             onClick={() => setShowMobilePreview(!showMobilePreview)}
-            className="lg:hidden flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 transition-all cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 transition-all cursor-pointer"
           >
             <Eye className="w-3.5 h-3.5 text-brand-green" />
-            <span>{showMobilePreview ? 'Formulaire' : 'Aperçu'}</span>
+            <span>{showMobilePreview ? 'Retour au formulaire' : 'Voir aperçu'}</span>
           </button>
-
-          <Link
-            href="/dashboard"
-            className="hidden sm:flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors"
-          >
-            Tableau de bord
-          </Link>
         </div>
-      </header>
+      )}
 
       {/* ── MAIN FULL-PAGE VIEWPORT CANVAS ── */}
-      <main className="w-full px-4 sm:px-8 lg:px-12 py-6 sm:py-8 pb-20 sm:pb-24">
+      <main className={`w-full ${embedded ? 'py-4 pb-28' : 'px-4 sm:px-8 lg:px-12 py-6 sm:py-8 pb-20 sm:pb-24'}`}>
         <div className="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
           
           {/* ────────────── LEFT COLUMN: BORDERLESS FORM ────────────── */}
@@ -1303,14 +1345,14 @@ export default function CreateListingForm() {
       {/* ── STICKY BOTTOM ACTION BAR (MINIMALIST, LUXURIOUS & VERY ROUNDED) ── */}
       <aside
         aria-label="Actions de publication"
-        className="fixed bottom-0 inset-x-0 z-40 bg-white/92 dark:bg-zinc-950/92 backdrop-blur-2xl border-t border-zinc-200/60 dark:border-zinc-800/60 shadow-[0_-10px_35px_rgba(0,0,0,0.06)] dark:shadow-[0_-10px_35px_rgba(0,0,0,0.4)] py-2 sm:py-2.5 px-4 sm:px-8 lg:px-12"
+        className="fixed bottom-0 inset-x-0 z-[70] bg-white/95 dark:bg-zinc-950/95 backdrop-blur-2xl border-t border-zinc-200/60 dark:border-zinc-800/60 shadow-[0_-10px_35px_rgba(0,0,0,0.06)] dark:shadow-[0_-10px_35px_rgba(0,0,0,0.4)] py-2 sm:py-2.5 px-4 sm:px-8 lg:px-12"
       >
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
           
           {/* Annuler Button (Less margin, generous padding, large font) */}
           <button
             type="button"
-            onClick={() => router.back()}
+            onClick={() => (onCancel ? onCancel() : router.back())}
             className="flex items-center justify-center gap-2 px-5 sm:px-7 py-2.5 sm:py-3 rounded-full bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 font-extrabold text-sm sm:text-base transition-all active:scale-95 cursor-pointer shrink-0"
             title="Annuler et retourner"
           >

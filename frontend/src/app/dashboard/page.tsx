@@ -49,6 +49,7 @@ import Header from '@/components/Header';
 import DashboardPropertyCard, {
   DashboardProperty,
 } from '@/components/dashboard/DashboardPropertyCard';
+import CreateListingForm from '@/components/listing/CreateListingForm';
 import EditPropertyModal from '@/components/dashboard/EditPropertyModal';
 import DeleteConfirmModal from '@/components/dashboard/DeleteConfirmModal';
 import PropertyStatsModal from '@/components/dashboard/PropertyStatsModal';
@@ -105,6 +106,7 @@ function DashboardContent() {
       const url = new URL(window.location.href);
       url.searchParams.set('tab', tab);
       window.history.replaceState({}, '', url.toString());
+      window.dispatchEvent(new Event('dashboard-tab-change'));
     }
   };
 
@@ -155,31 +157,6 @@ function DashboardContent() {
   const [statsProperty, setStatsProperty] =
     useState<DashboardProperty | null>(null);
   const [isStatsModalOpen, setIsStatsModalOpen] = useState(false);
-
-  // Form State for "Create Listing"
-  const [formData, setFormData] = useState({
-    title: '',
-    description: '',
-    type: 'sale' as 'sale' | 'rent',
-    houseType: 'Villa',
-    price: '',
-    city: 'Antananarivo',
-    neighborhood: '',
-    area: '',
-    rooms: '4',
-    bathrooms: '2',
-    phone: currentUser?.phone || '+261 34 00 000 00',
-    features: {
-      pool: false,
-      parking: true,
-      security: true,
-      garden: false,
-      furnished: false,
-      generator: true,
-      waterTank: true,
-    },
-    images: ['/hero-bg.jpg'],
-  });
 
   // Load from API (if logged in) or lightweight localStorage preview
   useEffect(() => {
@@ -513,121 +490,48 @@ function DashboardContent() {
     setTimeout(() => setSuccessToast(null), 3000);
   }, [deletingProperty, currentUser?._id, saveProperties]);
 
-  // Create new listing
-  const handleCreateListingSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.title || !formData.price) {
-      alert('Veuillez remplir le titre et le prix.');
-      return;
-    }
-
-    const numPrice = Number(formData.price) || 0;
-    const isRent = formData.type === 'rent';
-
-    const newProp: DashboardProperty = {
-      id: `prop-${Date.now()}`,
-      _id: `prop-${Date.now()}`,
-      title: formData.title,
-      description:
-        formData.description || 'Belle propriété disponible immédiatement.',
-      type: formData.type,
-      houseType: formData.houseType,
-      price: !isRent ? numPrice : 0,
-      rent: isRent ? numPrice : 0,
-      city: formData.city,
-      neighborhood: formData.neighborhood || 'Centre',
-      area: Number(formData.area) || 120,
-      rooms: Number(formData.rooms) || 3,
-      bathrooms: Number(formData.bathrooms) || 2,
-      images: formData.images.length > 0 ? formData.images : ['/hero-bg.jpg'],
-      status: 'active',
-      views: 1,
-      favorites: 0,
-      leads: 0,
-      created_at: new Date().toISOString(),
-    };
-
-    // If logged in, optionally register property with backend API
-    if (currentUser?._id) {
-      try {
-        const created = await propertyService.createProperty({
+  // Handle new listing created via CreateListingForm
+  const handleListingCreated = useCallback(
+    (newProp: any) => {
+      if (newProp) {
+        const formatted: DashboardProperty = {
+          ...newProp,
+          id: newProp._id || `prop-${Date.now()}`,
+          _id: newProp._id || `prop-${Date.now()}`,
           title: newProp.title,
-          description: newProp.description,
-          type: newProp.type,
-          houseType: newProp.houseType?.toLowerCase(),
-          price: newProp.price,
-          rent: newProp.rent,
-          city: '64f75284ef8f606073e98288', // Default sample city
-          area: newProp.area,
-          rooms: newProp.rooms,
-          bathrooms: newProp.bathrooms,
-          toilet: 1,
-          livingRoom: 1,
-          phone1: formData.phone,
-          images: newProp.images,
-          owner: currentUser._id,
-        });
-        if (created && created._id) {
-          newProp.id = created._id;
-          newProp._id = created._id;
-        }
-      } catch (err) {
-        console.warn('API createProperty error, fallback to local storage:', err);
+          description: newProp.description || '',
+          type: newProp.type || (newProp.rent ? 'rent' : 'sale'),
+          houseType: newProp.houseType
+            ? newProp.houseType.charAt(0).toUpperCase() + newProp.houseType.slice(1)
+            : 'Villa',
+          price: newProp.price || 0,
+          rent: newProp.rent || 0,
+          city:
+            newProp.city?.name ||
+            (typeof newProp.city === 'string'
+              ? newProp.city
+              : 'Antananarivo'),
+          neighborhood: newProp.city?.fokontany || '',
+          area: newProp.area || 0,
+          rooms: newProp.rooms || 1,
+          bathrooms: newProp.bathrooms || 1,
+          images: newProp.images?.length > 0 ? newProp.images : ['/hero-bg.jpg'],
+          status: 'active',
+          views: 1,
+          favorites: 0,
+          leads: 0,
+          created_at: newProp.created_at || new Date().toISOString(),
+        };
+        setProperties((prev) => [formatted, ...prev]);
+        saveProperties([formatted, ...properties]);
+        setSuccessToast(
+          'Votre annonce a été publiée avec succès ! Elle est désormais visible en ligne.'
+        );
+        setTimeout(() => setSuccessToast(null), 4000);
       }
-    }
-
-    const updated = [newProp, ...properties];
-    saveProperties(updated);
-
-    // Reset form
-    setFormData({
-      title: '',
-      description: '',
-      type: 'sale',
-      houseType: 'Villa',
-      price: '',
-      city: 'Antananarivo',
-      neighborhood: '',
-      area: '',
-      rooms: '4',
-      bathrooms: '2',
-      phone: currentUser?.phone || '+261 34 00 000 00',
-      features: {
-        pool: false,
-        parking: true,
-        security: true,
-        garden: false,
-        furnished: false,
-        generator: true,
-        waterTank: true,
-      },
-      images: ['/hero-bg.jpg'],
-    });
-
-    setSuccessToast(
-      'Votre annonce a été publiée avec succès ! Elle est désormais visible en ligne.'
-    );
-    setTimeout(() => setSuccessToast(null), 4000);
-
-    // Switch to listings tab
-    setActiveTab('listings');
-  };
-
-  const handleImageUpload = (e: ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files && files[0]) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          setFormData((prev) => ({
-            ...prev,
-            images: [event.target?.result as string, ...prev.images],
-          }));
-        }
-      };
-      reader.readAsDataURL(files[0]);
-    }
-  };
+    },
+    [properties, saveProperties]
+  );
 
   // Metrics calculations (memoized to prevent recalculating on scroll / chunk loads)
   const totalViews = useMemo(
@@ -754,15 +658,27 @@ function DashboardContent() {
           </div>
 
           {/* Quick Create Action */}
-          <button
-            type="button"
-            onClick={() => handleTabChange('create')}
-            className="flex items-center gap-2 px-4 py-2 rounded-full bg-brand-green hover:bg-emerald-600 text-white font-bold text-xs sm:text-sm shadow-md shadow-brand-green/20 hover:scale-105 active:scale-95 transition-all cursor-pointer"
-          >
-            <Plus className="w-4 h-4" strokeWidth={2.5} />
-            <span className="hidden sm:inline">Créer une annonce</span>
-            <span className="sm:hidden">Publier</span>
-          </button>
+          {activeTab === 'create' ? (
+            <button
+              type="button"
+              onClick={() => handleTabChange('listings')}
+              className="flex items-center gap-2 px-4 py-2 rounded-full bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 font-bold text-xs sm:text-sm transition-all cursor-pointer"
+            >
+              <Building2 className="w-4 h-4" />
+              <span className="hidden sm:inline">Mes annonces</span>
+              <span className="sm:hidden">Annonces</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => handleTabChange('create')}
+              className="flex items-center gap-2 px-4 py-2 rounded-full bg-brand-green hover:bg-emerald-600 text-white font-bold text-xs sm:text-sm shadow-md shadow-brand-green/20 hover:scale-105 active:scale-95 transition-all cursor-pointer"
+            >
+              <Plus className="w-4 h-4" strokeWidth={2.5} />
+              <span className="hidden sm:inline">Créer une annonce</span>
+              <span className="sm:hidden">Publier</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -1492,295 +1408,13 @@ function DashboardContent() {
             id="dashboard-panel-create"
             role="tabpanel"
             aria-labelledby="dashboard-tab-create"
-            className="max-w-3xl mx-auto bg-white dark:bg-zinc-900 rounded-3xl p-5 sm:p-8 border border-zinc-100 dark:border-zinc-800 shadow-sm animate-tab-content"
+            className="w-full animate-tab-content"
           >
-            <div className="mb-6 pb-4 border-b border-zinc-100 dark:border-zinc-800">
-              <span className="text-xs font-bold text-brand-green uppercase tracking-wider">
-                Publication directe
-              </span>
-              <h2 className="text-xl sm:text-2xl font-bold text-zinc-900 dark:text-white tracking-tight mt-1">
-                Déposer une nouvelle annonce
-              </h2>
-              <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 mt-1">
-                Remplissez les informations de votre bien pour le rendre visible
-                auprès de milliers de clients à Madagascar.
-              </p>
-            </div>
-
-            <form onSubmit={handleCreateListingSubmit} className="space-y-6">
-              {/* Type d'opération (Vente vs Location) */}
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 mb-2">
-                  Type d'offre *
-                </label>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setFormData((prev) => ({ ...prev, type: 'sale' }))
-                    }
-                    className={`py-3 px-4 rounded-2xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 border transition-all cursor-pointer ${
-                      formData.type === 'sale'
-                        ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 border-zinc-900 dark:border-white shadow-sm'
-                        : 'bg-zinc-50 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
-                    }`}
-                  >
-                    <Tag className="w-4 h-4" />
-                    À Vendre
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setFormData((prev) => ({ ...prev, type: 'rent' }))
-                    }
-                    className={`py-3 px-4 rounded-2xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 border transition-all cursor-pointer ${
-                      formData.type === 'rent'
-                        ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 border-zinc-900 dark:border-white shadow-sm'
-                        : 'bg-zinc-50 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
-                    }`}
-                  >
-                    <Home className="w-4 h-4" />
-                    À Louer
-                  </button>
-                </div>
-              </div>
-
-              {/* Type de bien */}
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 mb-2">
-                  Catégorie du bien *
-                </label>
-                <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-                  {['Villa', 'Appartement', 'Maison', 'Bureau', 'Terrain'].map(
-                    (ht) => (
-                      <button
-                        key={ht}
-                        type="button"
-                        onClick={() =>
-                          setFormData((prev) => ({ ...prev, houseType: ht }))
-                        }
-                        className={`py-2 px-3 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
-                          formData.houseType === ht
-                            ? 'bg-brand-green text-white border-brand-green shadow-sm'
-                            : 'bg-zinc-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
-                        }`}
-                      >
-                        {ht}
-                      </button>
-                    )
-                  )}
-                </div>
-              </div>
-
-              {/* Titre & Description */}
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 mb-1.5">
-                    Titre de l'annonce *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Ex: Belle villa avec piscine à Ivandry"
-                    value={formData.title}
-                    onChange={(e) =>
-                      setFormData({ ...formData, title: e.target.value })
-                    }
-                    className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-green"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 mb-1.5">
-                    Description détaillée
-                  </label>
-                  <textarea
-                    rows={3}
-                    placeholder="Détaillez les atouts, l'environnement, l'accès, le calme..."
-                    value={formData.description}
-                    onChange={(e) =>
-                      setFormData({ ...formData, description: e.target.value })
-                    }
-                    className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-green resize-none"
-                  />
-                </div>
-              </div>
-
-              {/* Localisation */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 mb-1.5">
-                    Ville *
-                  </label>
-                  <select
-                    value={formData.city}
-                    onChange={(e) =>
-                      setFormData({ ...formData, city: e.target.value })
-                    }
-                    className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-green"
-                  >
-                    <option value="Antananarivo">Antananarivo</option>
-                    <option value="Toamasina">Toamasina</option>
-                    <option value="Antsirabe">Antsirabe</option>
-                    <option value="Mahajanga">Mahajanga</option>
-                    <option value="Fianarantsoa">Fianarantsoa</option>
-                    <option value="Nosy Be">Nosy Be</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 mb-1.5">
-                    Quartier / Fokontany
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Ex: Ivandry, Ambatobe, Analakely..."
-                    value={formData.neighborhood}
-                    onChange={(e) =>
-                      setFormData({ ...formData, neighborhood: e.target.value })
-                    }
-                    className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-green"
-                  />
-                </div>
-              </div>
-
-              {/* Prix & Caractéristiques */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <div className="col-span-2">
-                  <label className="block text-xs font-bold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 mb-1.5">
-                    Prix (en Ariary) *
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      required
-                      placeholder="Ex: 350000000"
-                      value={formData.price}
-                      onChange={(e) =>
-                        setFormData({ ...formData, price: e.target.value })
-                      }
-                      className="w-full pl-4 pr-12 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-green"
-                    />
-                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold text-zinc-400">
-                      Ar
-                    </span>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 mb-1.5">
-                    Surface (m²)
-                  </label>
-                  <input
-                    type="number"
-                    placeholder="Ex: 180"
-                    value={formData.area}
-                    onChange={(e) =>
-                      setFormData({ ...formData, area: e.target.value })
-                    }
-                    className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-green"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 mb-1.5">
-                    Pièces
-                  </label>
-                  <input
-                    type="number"
-                    value={formData.rooms}
-                    onChange={(e) =>
-                      setFormData({ ...formData, rooms: e.target.value })
-                    }
-                    className="w-full px-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-green"
-                  />
-                </div>
-              </div>
-
-              {/* Photos Upload & Preview */}
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 mb-2">
-                  Photos du bien
-                </label>
-
-                <div className="flex flex-wrap items-center gap-3">
-                  {/* Upload Drop Zone */}
-                  <label className="flex flex-col items-center justify-center w-28 h-28 rounded-2xl border-2 border-dashed border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer text-center p-2">
-                    <UploadCloud className="w-6 h-6 text-brand-green mb-1" />
-                    <span className="text-[10px] font-semibold text-zinc-600 dark:text-zinc-400">
-                      Ajouter photo
-                    </span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleImageUpload}
-                      className="hidden"
-                    />
-                  </label>
-
-                  {/* Thumbnail Previews */}
-                  {formData.images.map((img, idx) => (
-                    <div
-                      key={idx}
-                      className="relative w-28 h-28 rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-700 shadow-sm"
-                    >
-                      <Image
-                        src={img}
-                        alt="Aperçu"
-                        fill
-                        unoptimized
-                        className="object-cover"
-                      />
-                      {formData.images.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setFormData((prev) => ({
-                              ...prev,
-                              images: prev.images.filter((_, i) => i !== idx),
-                            }))
-                          }
-                          className="absolute top-1 right-1 p-1 rounded-full bg-black/60 text-white hover:bg-black transition-colors cursor-pointer"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Téléphone de contact */}
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 mb-1.5">
-                  Téléphone / WhatsApp pour les contacts *
-                </label>
-                <div className="relative">
-                  <Phone className="w-4 h-4 text-zinc-400 absolute left-4 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="tel"
-                    required
-                    placeholder="+261 34 00 000 00"
-                    value={formData.phone}
-                    onChange={(e) =>
-                      setFormData({ ...formData, phone: e.target.value })
-                    }
-                    className="w-full pl-11 pr-4 py-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-green"
-                  />
-                </div>
-              </div>
-
-              {/* Submit Button */}
-              <div className="pt-4">
-                <button
-                  type="submit"
-                  className="w-full py-4 rounded-full bg-gradient-to-tr from-brand-green via-[#7cbd1e] to-emerald-500 text-white font-bold text-sm sm:text-base shadow-lg shadow-brand-green/30 hover:shadow-xl hover:scale-[1.01] active:scale-[0.99] transition-all flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <Plus className="w-5 h-5" strokeWidth={2.5} />
-                  <span>Publier mon annonce maintenant</span>
-                </button>
-              </div>
-            </form>
+            <CreateListingForm
+              embedded
+              onSuccess={handleListingCreated}
+              onCancel={() => handleTabChange('listings')}
+            />
           </div>
         )}
       </main>

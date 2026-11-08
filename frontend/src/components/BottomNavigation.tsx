@@ -99,7 +99,26 @@ export default function BottomNavigation() {
   const isCreateListing = pathname.startsWith('/create-listing');
   const isSearchEngine = pathname.startsWith('/search');
 
-  if (isPropertyDetails || isCreateListing || isSearchEngine) {
+  const [isDashboardCreate, setIsDashboardCreate] = useState(false);
+
+  useEffect(() => {
+    const checkDashboardCreate = () => {
+      if (typeof window !== 'undefined') {
+        const isDash = window.location.pathname.startsWith('/dashboard');
+        const tab = new URLSearchParams(window.location.search).get('tab');
+        setIsDashboardCreate(Boolean(isDash && tab === 'create'));
+      }
+    };
+    checkDashboardCreate();
+    window.addEventListener('popstate', checkDashboardCreate);
+    window.addEventListener('dashboard-tab-change', checkDashboardCreate);
+    return () => {
+      window.removeEventListener('popstate', checkDashboardCreate);
+      window.removeEventListener('dashboard-tab-change', checkDashboardCreate);
+    };
+  }, [pathname]);
+
+  if (isPropertyDetails || isCreateListing || isSearchEngine || isDashboardCreate) {
     return null;
   }
 
