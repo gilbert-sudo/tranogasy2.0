@@ -1,15 +1,15 @@
 import { create } from 'zustand';
 
-type ModalType = 'login' | 'signup' | 'forgot_password' | null;
+type ModalType = 'login' | 'signup' | null;
 
 interface ModalStore {
-  activeModal: ModalType;
+  activeModal: 'login' | null;
   openModal: (type: ModalType) => void;
   closeModal: () => void;
 }
 
 export const useModalStore = create<ModalStore>((set) => ({
   activeModal: null,
-  openModal: (type) => set({ activeModal: type }),
+  openModal: (type) => set({ activeModal: type ? 'login' : null }),
   closeModal: () => set({ activeModal: null }),
 }));

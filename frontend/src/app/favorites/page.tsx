@@ -474,17 +474,6 @@ export default function FavoritesPage() {
               >
                 Se connecter
               </button>
-
-              {/* DISCREET SIGNUP TEXT */}
-              <p className="text-xs sm:text-sm text-zinc-400 dark:text-zinc-500 mt-2.5 sm:mt-4">
-                Pas encore de compte ?{' '}
-                <button 
-                  onClick={() => openModal('signup')} 
-                  className="font-bold text-brand-green hover:underline cursor-pointer"
-                >
-                  Créer un compte
-                </button>
-              </p>
             </div>
           </div>
         ) : loading ? (
