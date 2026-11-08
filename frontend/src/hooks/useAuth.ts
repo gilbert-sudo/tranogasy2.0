@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { authService } from '../services/auth.service';
 import { userService } from '../services/user.service';
@@ -6,10 +6,10 @@ import { useUserStore } from '../store/userStore';
 
 const KNOWN_ACCOUNTS_STORAGE_KEY = 'tranogasy_phone_accounts';
 
-interface StoredPhoneAccount {
+export interface StoredPhoneAccount {
   _id: string;
   username: string;
-  phone: string;
+  phone?: string | null;
   email?: string | null;
   bio?: string | null;
   avatar?: string | null;
@@ -18,6 +18,7 @@ interface StoredPhoneAccount {
   role: string;
   created_at: string;
   lastConnectedAt: string;
+  [key: string]: any;
 }
 
 function getLocalAccountsRegistry(): Record<string, StoredPhoneAccount> {
@@ -44,10 +45,6 @@ function saveLocalAccountToRegistry(phone: string, account: StoredPhoneAccount):
 
 function generateFiveDigitCode(): string {
   return Math.floor(10000 + Math.random() * 90000).toString();
-}
-
-function getDeterministicToken(phone: string): string {
-  return `TG_SMS_AUTH_${phone}`;
 }
 
 export function useAuth() {
@@ -90,6 +87,50 @@ export function useAuth() {
   const clearError = useCallback(() => {
     setError(null);
   }, []);
+
+  /**
+   * Refreshes the user session with real MongoDB database data if available.
+   * Useful when a previous session had a synthetic ID or outdated profile info.
+   */
+  const refreshUserSession = useCallback(async () => {
+    const activeUser = currentUserSession?.user || currentUserSession;
+    const phone = activeUser?.phone;
+    if (!phone) return;
+
+    try {
+      const checkRes = await authService.checkUserExists(phone);
+      if (checkRes.exists && checkRes.user) {
+        const isDummy = activeUser?._id && String(activeUser._id).startsWith('tg_');
+        const isOutdated = checkRes.user.username !== activeUser.username || isDummy;
+
+        if (isOutdated) {
+          const syncedSession = {
+            message: 'Session synchronisée',
+            user: checkRes.user,
+          };
+          setUser(syncedSession);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('user', JSON.stringify(syncedSession));
+            saveLocalAccountToRegistry(phone, checkRes.user);
+          }
+          console.log(
+            `%c[TranoGasy Auth] Profil synchronisé depuis la base de données : ${checkRes.user.username} (${checkRes.user.phone}) [Rôle: ${checkRes.user.role}]`,
+            'color: #7cbd1e; font-weight: bold;'
+          );
+        }
+      }
+    } catch {
+      // Ignore if offline
+    }
+  }, [currentUserSession, setUser]);
+
+  // Auto-sync real database account on load if session has a synthetic ID
+  useEffect(() => {
+    const activeUser = currentUserSession?.user || currentUserSession;
+    if (activeUser?.phone && activeUser?._id && String(activeUser._id).startsWith('tg_')) {
+      refreshUserSession();
+    }
+  }, [currentUserSession, refreshUserSession]);
 
   /**
    * Step 1: Validate phone number, generate 5-digit SMS verification code, and console.log it for development.
@@ -159,7 +200,7 @@ export function useAuth() {
 
   /**
    * Step 2: Verify the 5-digit SMS code.
-   * - If the user already has an account -> logs them in automatically (`isNewAccount: false`).
+   * - If the user already has an account in the database -> logs them in with their real DB info (`isNewAccount: false`).
    * - If the user does not have an account -> creates their account, logs them in, and returns `isNewAccount: true` so Step 3 ("Account created") is shown.
    */
   const verifySmsCodeAndAuthenticate = useCallback(
@@ -188,114 +229,86 @@ export function useAuth() {
 
       setIsLoading(true);
       try {
-        const localRegistry = getLocalAccountsRegistry();
-        const existingLocalAccount = localRegistry[targetPhone];
+        let authenticatedData: any = null;
+        let isNewAccount = false;
 
-        let existsOnBackend = false;
+        // 1. Primary: Use backend passwordless phone login API to get real DB document
         try {
-          existsOnBackend = await authService.checkUserExists(targetPhone);
+          const res = await authService.phoneLogin(targetPhone);
+          if (res?.user) {
+            authenticatedData = {
+              message: res.message || 'Connexion réussie',
+              user: res.user,
+            };
+            isNewAccount = Boolean(res.isNew);
+          }
         } catch {
-          existsOnBackend = false;
+          // Fallback to checkUserExists if phoneLogin route had network error
         }
 
-        const isExistingUser = Boolean(existingLocalAccount || existsOnBackend);
-        const nowIso = new Date().toISOString();
-        const deterministicPassword = getDeterministicToken(targetPhone);
-
-        if (isExistingUser) {
-          let authenticatedData: any = null;
-
-          if (existsOnBackend) {
-            try {
-              authenticatedData = await authService.login(targetPhone, deterministicPassword);
-            } catch {
-              // Fallback to local registry if password differed on legacy backend
+        // 2. Secondary backend check: GET /users/exist/:phone
+        if (!authenticatedData) {
+          try {
+            const checkRes = await authService.checkUserExists(targetPhone);
+            if (checkRes.exists && checkRes.user) {
+              authenticatedData = {
+                message: 'Connexion réussie',
+                user: checkRes.user,
+              };
+              isNewAccount = false;
             }
+          } catch {
+            // Ignore
           }
+        }
 
-          if (!authenticatedData) {
-            const baseUser: StoredPhoneAccount = existingLocalAccount || {
-              _id: `tg_${targetPhone}`,
-              username: `Utilisateur ${targetPhone.slice(-4)}`,
+        // 3. Fallback: Only if completely offline or backend unavailable
+        if (!authenticatedData) {
+          const localRegistry = getLocalAccountsRegistry();
+          const existingLocal = localRegistry[targetPhone];
+          const nowIso = new Date().toISOString();
+
+          if (existingLocal) {
+            authenticatedData = {
+              message: 'Connexion réussie',
+              user: existingLocal,
+            };
+            isNewAccount = false;
+          } else {
+            const defaultUsername = `Membre ${targetPhone.slice(-4)}`;
+            const newLocalUser: StoredPhoneAccount = {
+              _id: `tg_${targetPhone}_${Date.now().toString(36)}`,
+              username: defaultUsername,
               phone: targetPhone,
               role: 'user',
               created_at: nowIso,
               lastConnectedAt: nowIso,
             };
-            const updatedUser = {
-              ...baseUser,
-              lastConnectedAt: nowIso,
-            };
-            saveLocalAccountToRegistry(targetPhone, updatedUser);
             authenticatedData = {
-              message: 'Connexion réussie',
-              user: updatedUser,
+              message: 'Compte créé avec succès',
+              user: newLocalUser,
             };
-          } else if (authenticatedData?.user) {
-            saveLocalAccountToRegistry(targetPhone, authenticatedData.user);
+            isNewAccount = true;
           }
-
-          setUser(authenticatedData);
-          if (typeof window !== 'undefined') {
-            localStorage.setItem('user', JSON.stringify(authenticatedData));
-          }
-
-          console.log(
-            `%c[TranoGasy Auth] Compte existant détecté pour ${targetPhone}. Connexion automatique réussie !`,
-            'color: #7cbd1e; font-weight: bold;'
-          );
-
-          return {
-            success: true,
-            isNewAccount: false,
-            user: authenticatedData,
-          };
-        } else {
-          const defaultUsername = `Membre ${targetPhone.slice(-4)}`;
-          let createdData: any = null;
-
-          try {
-            createdData = await authService.signup({
-              username: defaultUsername,
-              phone: targetPhone,
-              password: deterministicPassword,
-            });
-          } catch {
-            // Frontend-only fallback when backend is offline or unreachable
-          }
-
-          const newAccountUser: StoredPhoneAccount = createdData?.user || {
-            _id: `tg_${targetPhone}_${Date.now().toString(36)}`,
-            username: defaultUsername,
-            phone: targetPhone,
-            role: 'user',
-            created_at: nowIso,
-            lastConnectedAt: nowIso,
-          };
-
-          saveLocalAccountToRegistry(targetPhone, newAccountUser);
-
-          const sessionData = createdData || {
-            message: 'Compte créé avec succès',
-            user: newAccountUser,
-          };
-
-          setUser(sessionData);
-          if (typeof window !== 'undefined') {
-            localStorage.setItem('user', JSON.stringify(sessionData));
-          }
-
-          console.log(
-            `%c[TranoGasy Auth] Première connexion pour ${targetPhone}. Nouveau compte créé automatiquement !`,
-            'color: #7cbd1e; font-weight: bold;'
-          );
-
-          return {
-            success: true,
-            isNewAccount: true,
-            user: sessionData,
-          };
         }
+
+        const realUser = authenticatedData.user;
+        saveLocalAccountToRegistry(targetPhone, realUser);
+        setUser(authenticatedData);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('user', JSON.stringify(authenticatedData));
+        }
+
+        console.log(
+          `%c[TranoGasy Auth] ${isNewAccount ? 'Nouveau compte créé' : 'Connexion réussie'} : ${realUser.username || targetPhone} (${targetPhone}) [Rôle: ${realUser.role || 'user'}]`,
+          'color: #7cbd1e; font-weight: bold;'
+        );
+
+        return {
+          success: true,
+          isNewAccount,
+          user: authenticatedData,
+        };
       } catch (err: any) {
         setError(err.message || "Une erreur s'est produite lors de la vérification.");
         return { success: false, isNewAccount: false };
@@ -323,7 +336,7 @@ export function useAuth() {
         const activeUser = currentUserSession?.user || currentUserSession;
         const phoneKey = activeUser?.phone || verifiedPhone;
 
-        const updatedUserObj: StoredPhoneAccount = {
+        let updatedUserObj: StoredPhoneAccount = {
           ...(activeUser || {
             _id: `tg_${phoneKey || Date.now()}`,
             phone: phoneKey,
@@ -334,17 +347,17 @@ export function useAuth() {
           username: trimmed,
         };
 
-        // Try syncing username to backend if backend user exists
-        if (updatedUserObj._id && !updatedUserObj._id.startsWith('tg_')) {
+        // Sync username to MongoDB backend
+        if (updatedUserObj._id && !String(updatedUserObj._id).startsWith('tg_')) {
           try {
             const res = await userService.updateProfile(updatedUserObj._id, {
               username: trimmed,
             });
             if (res?.user) {
-              Object.assign(updatedUserObj, res.user);
+              updatedUserObj = { ...updatedUserObj, ...res.user };
             }
           } catch {
-            // Ignore when backend is offline in frontend-only mode
+            // Ignore when backend is offline
           }
         }
 
@@ -388,6 +401,7 @@ export function useAuth() {
     resendSmsVerification,
     verifySmsCodeAndAuthenticate,
     saveNewAccountUsername,
+    refreshUserSession,
     formatPhoneNumber,
     clearError,
     logout,

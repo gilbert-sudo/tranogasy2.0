@@ -19,13 +19,20 @@ export class UsersController {
 
   @Get('exist/:phone')
   async checkExistence(@Param('phone') phone: string, @Res() res: Response) {
-    const exists = await this.usersService.checkExistence(phone);
-    if (exists) {
-      // Return 200 OK if exists, which triggers the frontend error 'Déjà utilisé'
-      return res.status(HttpStatus.OK).json({ exists: true });
+    const user = await this.usersService.getUserByPhone(phone);
+    if (user) {
+      return res.status(HttpStatus.OK).json({ exists: true, user });
     }
-    // Return 404 Not Found if it does not exist, so frontend proceeds with signup
     return res.status(HttpStatus.NOT_FOUND).json({ exists: false });
+  }
+
+  @Post('phone-login')
+  async phoneLogin(@Body() body: any) {
+    const { phone, username } = body;
+    if (!phone) {
+      throw new BadRequestException('Phone is required');
+    }
+    return this.usersService.loginOrRegisterByPhone(phone, username);
   }
 
   @Get('profile/:identifier')

@@ -22,8 +22,59 @@ export class UsersService {
   ) {}
 
   async checkExistence(phone: string): Promise<boolean> {
-    const user = await this.userModel.findOne({ phone }).exec();
+    const cleanPhone = phone.replace(/\D/g, '');
+    const altPhone = cleanPhone.startsWith('0') ? cleanPhone.slice(1) : `0${cleanPhone}`;
+    const user = await this.userModel
+      .findOne({ $or: [{ phone: cleanPhone }, { phone: altPhone }, { phone }] })
+      .exec();
     return !!user;
+  }
+
+  async getUserByPhone(phone: string): Promise<any> {
+    const cleanPhone = phone.replace(/\D/g, '');
+    const altPhone = cleanPhone.startsWith('0') ? cleanPhone.slice(1) : `0${cleanPhone}`;
+    const user = await this.userModel
+      .findOne({ $or: [{ phone: cleanPhone }, { phone: altPhone }, { phone }] })
+      .select('-password -backUpCode')
+      .lean()
+      .exec();
+    return user;
+  }
+
+  async loginOrRegisterByPhone(
+    rawPhone: string,
+    defaultUsername?: string,
+  ): Promise<{ isNew: boolean; user: any }> {
+    const cleanPhone = rawPhone.replace(/\D/g, '');
+    const altPhone = cleanPhone.startsWith('0') ? cleanPhone.slice(1) : `0${cleanPhone}`;
+    const standardPhone = cleanPhone.startsWith('0') ? cleanPhone : `0${cleanPhone}`;
+
+    let user = await this.userModel
+      .findOne({ $or: [{ phone: cleanPhone }, { phone: altPhone }, { phone: rawPhone }] })
+      .exec();
+
+    if (user) {
+      user.lastConnectedAt = new Date();
+      await user.save();
+      const userObj = user.toObject();
+      delete userObj.password;
+      delete userObj.backUpCode;
+      return { isNew: false, user: userObj };
+    }
+
+    const cleanUsername = defaultUsername?.trim() || `Membre ${standardPhone.slice(-4)}`;
+    const createdUser = new this.userModel({
+      username: cleanUsername,
+      phone: standardPhone,
+      role: 'user',
+      created_at: new Date(),
+      lastConnectedAt: new Date(),
+    });
+    const saved = await createdUser.save();
+    const userObj = saved.toObject();
+    delete userObj.password;
+    delete userObj.backUpCode;
+    return { isNew: true, user: userObj };
   }
 
   async login(phone: string, passwordToTest: string): Promise<any> {
@@ -138,6 +189,32 @@ export class UsersService {
           )
           .sort({ created_at: -1 })
           .lean();
+      }
+    }
+
+    // 2.5. Look up by phone in User collection
+    if (!userDoc && cleanId) {
+      const cleanPhone = cleanId.replace(/\D/g, '');
+      if (cleanPhone.length >= 8) {
+        const altPhone = cleanPhone.startsWith('0') ? cleanPhone.slice(1) : `0${cleanPhone}`;
+        const foundByPhone = await this.userModel
+          .findOne({ $or: [{ phone: cleanPhone }, { phone: altPhone }, { phone: cleanId }] })
+          .select('-password -backUpCode')
+          .lean();
+
+        if (foundByPhone) {
+          userDoc = foundByPhone;
+          properties = await this.propertyModel
+            .find({ owner: new Types.ObjectId(String(foundByPhone._id)) })
+            .populate('city')
+            .populate('features')
+            .populate(
+              'owner',
+              '_id username avatar coverImage location role phone email bio lastConnectedAt created_at',
+            )
+            .sort({ created_at: -1 })
+            .lean();
+        }
       }
     }
 

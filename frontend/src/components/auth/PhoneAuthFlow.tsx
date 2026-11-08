@@ -278,7 +278,7 @@ export default function PhoneAuthFlow({
             {/* Step 1 Vector Illustration */}
             <div className="relative w-full flex-1 md:flex-none min-h-[220px] max-h-[390px] md:min-h-0 md:h-[225px] mx-auto flex items-center justify-center">
               <Image
-                src="/images/login-step1-phone.png"
+                src="/images/login-step1-phone-moving-animate.svg"
                 alt="Connexion avec numéro de téléphone TranoGasy"
                 fill
                 className="object-contain p-1 md:p-0 drop-shadow-[0_10px_24px_rgba(0,0,0,0.04)]"
@@ -329,7 +329,8 @@ export default function PhoneAuthFlow({
               {/* Passwordless & Automatic Account Creation Info */}
               <div className="pt-2 md:pt-1 text-center">
                 <p className="text-[13px] md:text-[11.5px] leading-relaxed font-medium text-zinc-500 dark:text-zinc-400 max-w-[315px] md:max-w-[275px] mx-auto">
-                  Aucun mot de passe requis. Un code SMS vérifiera votre numéro et créera votre compte automatiquement lors de votre première connexion.
+                  Aucun mot de passe requis. Un code SMS vérifiera votre numéro. 
+                  <a href="https://storyset.com/people">People illustrations by Storyset</a>
                 </p>
               </div>
             </form>

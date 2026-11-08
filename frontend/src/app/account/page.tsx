@@ -19,6 +19,7 @@ import {
   Sun,
 } from 'lucide-react';
 import { useUserStore } from '@/store/userStore';
+import { useAuth } from '@/hooks/useAuth';
 import Header from '@/components/Header';
 import DarkModeToggle from '@/components/DarkModeToggle';
 
@@ -64,11 +65,13 @@ const MenuItem = ({
 
 export default function AccountPage() {
   const { user, logout, initialize } = useUserStore();
+  const { refreshUserSession } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
     initialize();
-  }, [initialize]);
+    refreshUserSession();
+  }, [initialize, refreshUserSession]);
 
   const handleLogout = () => {
     logout();

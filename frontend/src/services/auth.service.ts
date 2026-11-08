@@ -15,15 +15,25 @@ export const authService = {
     });
   },
 
-  checkUserExists: async (phone: string): Promise<boolean> => {
+  phoneLogin: (phone: string, defaultUsername?: string) => {
+    return apiFetch<{ message: string; isNew: boolean; user: any }>('/users/phone-login', {
+      method: 'POST',
+      body: JSON.stringify({ phone, username: defaultUsername }),
+    });
+  },
+
+  checkUserExists: async (phone: string): Promise<{ exists: boolean; user?: any }> => {
     try {
-      await apiFetch<{ exists: boolean }>(`/users/exist/${encodeURIComponent(phone)}`, {
+      const data = await apiFetch<any>(`/users/exist/${encodeURIComponent(phone)}`, {
         method: 'GET',
       });
-      return true;
+      return {
+        exists: true,
+        user: data?.user || (data?._id ? data : null),
+      };
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) {
-        return false;
+        return { exists: false };
       }
       throw err;
     }
