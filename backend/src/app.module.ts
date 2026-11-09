@@ -11,6 +11,7 @@ import { UsersModule } from './users/users.module';
 import { FavoritesModule } from './favorites/favorites.module';
 import { CommentsModule } from './comments/comments.module';
 import { SmsModule } from './sms/sms.module';
+import { PaymentsModule } from './payments/payments.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { SmsModule } from './sms/sms.module';
     FavoritesModule,
     CommentsModule,
     SmsModule,
+    PaymentsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

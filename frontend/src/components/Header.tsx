@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { Search, User, Bell } from 'lucide-react';
 import { useUserStore } from '@/store/userStore';
 import { useModalStore } from '@/store/modalStore';
+import JpTokenIcon from '@/components/ui/JpTokenIcon';
 
 interface HeaderProps {
   onSearchClick?: () => void;
@@ -110,6 +111,22 @@ export default function Header({ onSearchClick }: HeaderProps) {
 
         {/* ── RIGHT: Actions & Mobile Search Button ── */}
         <div className="flex items-center gap-1.5 sm:gap-2.5 flex-shrink-0 ml-auto">
+          {/* JP Token Balance / Pricing Pill */}
+          <Link
+            href="/pricing"
+            aria-label="Solde de jetons JP et tarifs"
+            className="hidden sm:flex h-11 pl-2.5 pr-3.5 items-center gap-2 rounded-full
+              bg-white/85 dark:bg-zinc-800/80 backdrop-blur-xl
+              shadow-[0_4px_16px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_16px_rgba(0,0,0,0.3)]
+              text-zinc-900 dark:text-zinc-100
+              hover:scale-105 active:scale-95 transition-all"
+          >
+            <JpTokenIcon size={22} />
+            <span className="text-xs font-extrabold tracking-tight">
+              {isLoggedIn ? `${Number(currentUser?.balance || 0).toLocaleString('fr-FR')} JP` : 'Jetons JP'}
+            </span>
+          </Link>
+
           {/* Liquid Glass Circular Notification Button matching Image 2 */}
           <button
             id="header-notif-btn"

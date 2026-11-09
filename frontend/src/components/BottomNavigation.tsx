@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useModalStore } from '@/store/modalStore';
 import { useUserStore } from '@/store/userStore';
+import JpTokenIcon from '@/components/ui/JpTokenIcon';
 
 export default function BottomNavigation() {
   const pathname = usePathname();
@@ -98,6 +99,7 @@ export default function BottomNavigation() {
   const isPropertyDetails = pathname.startsWith('/properties/');
   const isCreateListing = pathname.startsWith('/create-listing');
   const isSearchEngine = pathname.startsWith('/search');
+  const isPricingPage = pathname.startsWith('/pricing');
 
   const [isDashboardCreate, setIsDashboardCreate] = useState(false);
 
@@ -118,7 +120,7 @@ export default function BottomNavigation() {
     };
   }, [pathname]);
 
-  if (isPropertyDetails || isCreateListing || isSearchEngine || isDashboardCreate) {
+  if (isPropertyDetails || isCreateListing || isSearchEngine || isPricingPage || isDashboardCreate) {
     return null;
   }
 
@@ -231,6 +233,28 @@ export default function BottomNavigation() {
               </div>
               <ChevronRight className="w-4 h-4 text-zinc-400 group-hover:text-brand-green group-hover:translate-x-0.5 transition-all shrink-0" />
             </button>
+
+            {/* 4. Buy JP Tokens / Pricing */}
+            <Link
+              href="/pricing"
+              onClick={() => setIsMenuOpen(false)}
+              className="flex items-center justify-between p-2.5 rounded-2xl hover:bg-amber-50/80 dark:hover:bg-amber-950/25 transition-all text-left group cursor-pointer"
+            >
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-zinc-100 dark:bg-zinc-800 group-hover:scale-105 transition-all">
+                  <JpTokenIcon size={24} />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-zinc-900 dark:text-white group-hover:text-amber-500 transition-colors">
+                    Jetons JP & Tarifs
+                  </div>
+                  <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                    Recharger par Mobile Money (100 JP = 1 000 Ar)
+                  </div>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-zinc-400 group-hover:text-amber-500 group-hover:translate-x-0.5 transition-all shrink-0" />
+            </Link>
           </div>
         </div>
       )}

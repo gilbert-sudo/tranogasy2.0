@@ -102,7 +102,10 @@ export function useAuth() {
       const checkRes = await authService.checkUserExists(phone);
       if (checkRes.exists && checkRes.user) {
         const isDummy = activeUser?._id && String(activeUser._id).startsWith('tg_');
-        const isOutdated = checkRes.user.username !== activeUser.username || isDummy;
+        const isOutdated =
+          checkRes.user.username !== activeUser.username ||
+          checkRes.user.balance !== activeUser.balance ||
+          isDummy;
 
         if (isOutdated) {
           const syncedSession = {
