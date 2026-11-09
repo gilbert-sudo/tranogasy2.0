@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { authService } from '../services/auth.service';
 import { userService } from '../services/user.service';
+import { smsService } from '../services/sms.service';
 import { useUserStore } from '../store/userStore';
 
 const KNOWN_ACCOUNTS_STORAGE_KEY = 'tranogasy_phone_accounts';
@@ -133,10 +134,10 @@ export function useAuth() {
   }, [currentUserSession, refreshUserSession]);
 
   /**
-   * Step 1: Validate phone number, generate 5-digit SMS verification code, and console.log it for development.
+   * Step 1: Validate phone number, generate 5-digit SMS verification code, and send real SMS to the user.
    */
   const requestSmsVerification = useCallback(
-    async (rawPhone: string): Promise<{ success: boolean; formattedPhone: string; code?: string }> => {
+    async (rawPhone: string): Promise<{ success: boolean; formattedPhone: string }> => {
       setError(null);
       const validationError = validatePhoneNumber(rawPhone);
       if (validationError) {
@@ -147,22 +148,18 @@ export function useAuth() {
       setIsLoading(true);
       try {
         const formattedPhone = formatPhoneNumber(rawPhone);
-        await new Promise((resolve) => setTimeout(resolve, 350));
-
         const code = generateFiveDigitCode();
         expectedCodeRef.current = code;
         setVerifiedPhone(formattedPhone);
 
-        console.log(
-          `%c[TranoGasy SMS] Code de vérification envoyé au ${formattedPhone} : %c${code}`,
-          'color: #7cbd1e; font-weight: bold; font-size: 13px;',
-          'color: #ffffff; background: #7cbd1e; padding: 3px 10px; border-radius: 6px; font-weight: 900; font-size: 15px; letter-spacing: 3px;'
-        );
-        console.log(`Verification code for ${formattedPhone}: ${code}`);
+        // Send real SMS to user's phone
+        const message = `Votre code de confirmation TranoGasy est le : ${code}`;
+        await smsService.sendSMS(formattedPhone, message);
 
-        return { success: true, formattedPhone, code };
+        return { success: true, formattedPhone };
       } catch (err: any) {
-        setError(err.message || "Impossible d'envoyer le code de vérification.");
+        console.error('❌ Erreur lors de l\'envoi du SMS de vérification:', err.message || err);
+        setError(err.message || "Impossible d'envoyer le code de vérification par SMS.");
         return { success: false, formattedPhone: '' };
       } finally {
         setIsLoading(false);
@@ -172,10 +169,10 @@ export function useAuth() {
   );
 
   /**
-   * Resend a fresh 5-digit SMS verification code to the current phone number and console.log it.
+   * Resend a fresh 5-digit SMS verification code to the current phone number by SMS.
    */
   const resendSmsVerification = useCallback(
-    async (phoneOverride?: string): Promise<{ success: boolean; code?: string }> => {
+    async (phoneOverride?: string): Promise<{ success: boolean }> => {
       setError(null);
       const targetPhone = phoneOverride ? formatPhoneNumber(phoneOverride) : verifiedPhone;
       if (!targetPhone) {
@@ -183,17 +180,23 @@ export function useAuth() {
         return { success: false };
       }
 
-      const code = generateFiveDigitCode();
-      expectedCodeRef.current = code;
+      setIsLoading(true);
+      try {
+        const code = generateFiveDigitCode();
+        expectedCodeRef.current = code;
 
-      console.log(
-        `%c[TranoGasy SMS - Renvoi] Nouveau code envoyé au ${targetPhone} : %c${code}`,
-        'color: #7cbd1e; font-weight: bold; font-size: 13px;',
-        'color: #ffffff; background: #7cbd1e; padding: 3px 10px; border-radius: 6px; font-weight: 900; font-size: 15px; letter-spacing: 3px;'
-      );
-      console.log(`Resent verification code for ${targetPhone}: ${code}`);
+        // Send real SMS to user's phone
+        const message = `Votre code de confirmation TranoGasy est le : ${code}`;
+        await smsService.sendSMS(targetPhone, message);
 
-      return { success: true, code };
+        return { success: true };
+      } catch (err: any) {
+        console.error('❌ Erreur lors du renvoi du SMS de vérification:', err.message || err);
+        setError(err.message || "Impossible de renvoyer le code par SMS.");
+        return { success: false };
+      } finally {
+        setIsLoading(false);
+      }
     },
     [verifiedPhone, formatPhoneNumber]
   );
@@ -217,7 +220,7 @@ export function useAuth() {
       }
 
       if (!expectedCodeRef.current || cleanCode !== expectedCodeRef.current) {
-        setError('Code de vérification incorrect. Vérifiez la console développeur.');
+        setError('Code de vérification incorrect. Veuillez vérifier le code reçu par SMS.');
         return { success: false, isNewAccount: false };
       }
 

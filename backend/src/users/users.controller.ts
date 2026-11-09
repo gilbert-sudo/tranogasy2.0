@@ -50,11 +50,11 @@ export class UsersController {
 
   @Post('login')
   async login(@Body() body: any) {
-    const { phone, password } = body;
-    if (!phone || !password) {
-      throw new BadRequestException('Phone and password are required');
+    const { phone, password, username } = body;
+    if (!phone) {
+      throw new BadRequestException('Phone is required');
     }
-    return this.usersService.login(phone, password);
+    return this.usersService.login(phone, password, username);
   }
 
   @Post()

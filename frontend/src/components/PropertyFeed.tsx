@@ -12,7 +12,14 @@ interface PropertyFeedProps {
   sortBy?: string;
 }
 
-const PAGE_LIMIT = 8;
+const PAGE_LIMIT = 10;
+
+interface PrefetchedBatch {
+  page: number;
+  properties: any[];
+  hasMore: boolean;
+  cacheKey: string;
+}
 
 function buildApiUrl(
   pageNum: number,
@@ -101,6 +108,112 @@ export default function PropertyFeed({
   const isFirstMountRef = useRef<boolean>(true);
   const activeReqIdRef = useRef<number>(0);
 
+  // Ahead-of-time prefetch buffer & in-flight tracker
+  const prefetchedBatchRef = useRef<PrefetchedBatch | null>(null);
+  const isPrefetchingRef = useRef<boolean>(false);
+  const prefetchPromiseRef = useRef<Promise<PrefetchedBatch | null> | null>(null);
+  const prefetchAbortControllerRef = useRef<AbortController | null>(null);
+
+  // Pre-load next 10 properties in background ahead of time so user never waits at bottom
+  const prefetchNextPage = useCallback(
+    async (
+      nextPageNum: number,
+      type: 'location' | 'vente',
+      sort: string
+    ): Promise<PrefetchedBatch | null> => {
+      const currentCacheKey = `${type}_${sort}`;
+
+      // If already prefetched this exact page for this filter, return existing
+      if (
+        prefetchedBatchRef.current &&
+        prefetchedBatchRef.current.cacheKey === currentCacheKey &&
+        prefetchedBatchRef.current.page === nextPageNum
+      ) {
+        return prefetchedBatchRef.current;
+      }
+
+      // If already prefetching, return in-flight promise
+      if (isPrefetchingRef.current && prefetchPromiseRef.current) {
+        return prefetchPromiseRef.current;
+      }
+
+      // Abort previous prefetch if still pending
+      if (prefetchAbortControllerRef.current) {
+        prefetchAbortControllerRef.current.abort();
+      }
+
+      const controller = new AbortController();
+      prefetchAbortControllerRef.current = controller;
+      isPrefetchingRef.current = true;
+
+      const promise = (async () => {
+        try {
+          const url = buildApiUrl(nextPageNum, PAGE_LIMIT, type, sort);
+          const timeoutId = setTimeout(() => controller.abort(), 12000);
+
+          const res = await fetch(url, {
+            cache: 'no-store',
+            signal: controller.signal,
+          }).finally(() => clearTimeout(timeoutId));
+
+          if (!res.ok) {
+            return null;
+          }
+
+          const data = await res.json();
+          const newProperties = data.properties || [];
+
+          if (newProperties.length === 0) {
+            const emptyBatch: PrefetchedBatch = {
+              page: nextPageNum,
+              properties: [],
+              hasMore: false,
+              cacheKey: currentCacheKey,
+            };
+            prefetchedBatchRef.current = emptyBatch;
+            return emptyBatch;
+          }
+
+          const reachedEnd = data.totalPages
+            ? nextPageNum >= data.totalPages
+            : newProperties.length < PAGE_LIMIT;
+          const newHasMore = !reachedEnd;
+
+          const batch: PrefetchedBatch = {
+            page: nextPageNum,
+            properties: newProperties,
+            hasMore: newHasMore,
+            cacheKey: currentCacheKey,
+          };
+          prefetchedBatchRef.current = batch;
+
+          // Pre-warm browser image cache for first photo of each preloaded property
+          if (typeof window !== 'undefined') {
+            newProperties.forEach((p: any) => {
+              const firstImg = p.images?.[0];
+              const src = typeof firstImg === 'string' ? firstImg : firstImg?.src;
+              if (src && typeof src === 'string') {
+                const img = new window.Image();
+                img.src = src;
+              }
+            });
+          }
+
+          return batch;
+        } catch {
+          return null;
+        } finally {
+          isPrefetchingRef.current = false;
+          prefetchPromiseRef.current = null;
+        }
+      })();
+
+      prefetchPromiseRef.current = promise;
+      return promise;
+    },
+    []
+  );
+
   // Fetch a page with current filters and save into Zustand store
   const fetchPage = useCallback(
     async (
@@ -163,6 +276,11 @@ export default function PropertyFeed({
         setIsWakingUp(false);
         setRetryCount(0);
         setHasFailed(false);
+
+        // Preload head of 10 properties right away even though user hasn't scrolled!
+        if (newHasMore) {
+          prefetchNextPage(2, type, sort);
+        }
       } catch (error) {
         if (reqId !== activeReqIdRef.current) return;
         console.warn('Backend request error:', error);
@@ -184,8 +302,16 @@ export default function PropertyFeed({
         });
       }
     },
-    [setTopPropertiesData, addPropertiesToGlobalStore]
+    [setTopPropertiesData, addPropertiesToGlobalStore, prefetchNextPage]
   );
+
+  // Invalidate prefetch buffer when filterType or sortBy changes
+  useEffect(() => {
+    prefetchedBatchRef.current = null;
+    if (prefetchAbortControllerRef.current) {
+      prefetchAbortControllerRef.current.abort();
+    }
+  }, [filterType, sortBy]);
 
   // Sync with Zustand store on mount and on filterType/sortBy change
   useEffect(() => {
@@ -201,6 +327,9 @@ export default function PropertyFeed({
         setHasMore(cachedEntry.hasMore);
         setIsLoadingInitial(false);
         setIsFilterLoading(false);
+        if (cachedEntry.hasMore) {
+          prefetchNextPage(cachedEntry.page + 1, filterType, sortBy);
+        }
         return;
       }
 
@@ -217,6 +346,9 @@ export default function PropertyFeed({
         setPage(1);
         setHasMore(initialHasMore);
         setIsLoadingInitial(false);
+        if (initialHasMore) {
+          prefetchNextPage(2, filterType, sortBy);
+        }
         return;
       }
 
@@ -233,6 +365,9 @@ export default function PropertyFeed({
       setHasMore(cachedEntry.hasMore);
       setIsFilterLoading(false);
       setIsLoadingInitial(false);
+      if (cachedEntry.hasMore) {
+        prefetchNextPage(cachedEntry.page + 1, filterType, sortBy);
+      }
       return;
     }
 
@@ -246,6 +381,7 @@ export default function PropertyFeed({
     setTopPropertiesData,
     addPropertiesToGlobalStore,
     initialProperties,
+    prefetchNextPage,
   ]);
 
   // Infinite scroll: fetch next page and append to Zustand store
@@ -260,6 +396,99 @@ export default function PropertyFeed({
       return;
     }
 
+    const targetPage = page + 1;
+    const currentCacheKey = `${filterType}_${sortBy}`;
+
+    // 1. FAST PATH: Already pre-loaded in memory ahead of time!
+    if (
+      prefetchedBatchRef.current &&
+      prefetchedBatchRef.current.cacheKey === currentCacheKey &&
+      prefetchedBatchRef.current.page === targetPage
+    ) {
+      const batch = prefetchedBatchRef.current;
+      prefetchedBatchRef.current = null; // consume buffer
+
+      if (batch.properties.length === 0) {
+        setHasMore(false);
+        const currentEntry = usePropertyStore.getState().getTopPropertiesData(cacheKey);
+        if (currentEntry) {
+          setTopPropertiesData(cacheKey, {
+            ...currentEntry,
+            hasMore: false,
+          });
+        }
+        return;
+      }
+
+      // Instantaneous append with 0ms wait for user
+      appendTopPropertiesData(cacheKey, batch.properties, batch.page, batch.hasMore);
+      addPropertiesToGlobalStore(batch.properties);
+
+      setProperties((prev) => {
+        const existingIds = new Set(prev.map((p) => p._id));
+        const filtered = batch.properties.filter((p: any) => !existingIds.has(p._id));
+        return [...prev, ...filtered];
+      });
+      setPage(batch.page);
+      setHasMore(batch.hasMore);
+
+      // Keep 10 pre-loaded properties ahead for the next scroll!
+      if (batch.hasMore) {
+        prefetchNextPage(batch.page + 1, filterType, sortBy);
+      }
+      return;
+    }
+
+    // 2. IN-FLIGHT PATH: Prefetch was initiated ahead of time and is currently in transit
+    if (isPrefetchingRef.current && prefetchPromiseRef.current) {
+      isFetchingRef.current = true;
+      setIsLoadingMore(true);
+
+      try {
+        const batch = await prefetchPromiseRef.current;
+        if (
+          batch &&
+          batch.cacheKey === currentCacheKey &&
+          batch.page === targetPage
+        ) {
+          prefetchedBatchRef.current = null;
+
+          if (batch.properties.length === 0) {
+            setHasMore(false);
+            const currentEntry = usePropertyStore.getState().getTopPropertiesData(cacheKey);
+            if (currentEntry) {
+              setTopPropertiesData(cacheKey, {
+                ...currentEntry,
+                hasMore: false,
+              });
+            }
+          } else {
+            appendTopPropertiesData(cacheKey, batch.properties, batch.page, batch.hasMore);
+            addPropertiesToGlobalStore(batch.properties);
+
+            setProperties((prev) => {
+              const existingIds = new Set(prev.map((p) => p._id));
+              const filtered = batch.properties.filter((p: any) => !existingIds.has(p._id));
+              return [...prev, ...filtered];
+            });
+            setPage(batch.page);
+            setHasMore(batch.hasMore);
+
+            if (batch.hasMore) {
+              prefetchNextPage(batch.page + 1, filterType, sortBy);
+            }
+          }
+          return;
+        }
+      } catch (err) {
+        console.error('In-flight prefetch error:', err);
+      } finally {
+        setIsLoadingMore(false);
+        isFetchingRef.current = false;
+      }
+    }
+
+    // 3. FALLBACK PATH: Standard network fetch if no prefetch in memory
     isFetchingRef.current = true;
     setIsLoadingMore(true);
 
@@ -297,7 +526,6 @@ export default function PropertyFeed({
           : newProperties.length < PAGE_LIMIT;
         const newHasMore = !reachedEnd;
 
-        // Append to Zustand store
         appendTopPropertiesData(cacheKey, newProperties, nextPage, newHasMore);
         addPropertiesToGlobalStore(newProperties);
 
@@ -308,6 +536,11 @@ export default function PropertyFeed({
         });
         setPage(nextPage);
         setHasMore(newHasMore);
+
+        // Keep 10 pre-loaded properties ahead!
+        if (newHasMore) {
+          prefetchNextPage(nextPage + 1, filterType, sortBy);
+        }
       }
     } catch (err) {
       console.error('Failed to load more properties:', err);
@@ -327,13 +560,17 @@ export default function PropertyFeed({
     appendTopPropertiesData,
     addPropertiesToGlobalStore,
     setTopPropertiesData,
+    prefetchNextPage,
   ]);
 
-  // Clean up timeouts
+  // Clean up timeouts and abort controllers
   useEffect(() => {
     return () => {
       if (retryTimeoutRef.current) {
         clearTimeout(retryTimeoutRef.current);
+      }
+      if (prefetchAbortControllerRef.current) {
+        prefetchAbortControllerRef.current.abort();
       }
     };
   }, []);
@@ -357,7 +594,7 @@ export default function PropertyFeed({
       },
       {
         root: null,
-        rootMargin: '350px', // Pre-fetch 350px before bottom
+        rootMargin: '600px', // Pre-fetch 600px before bottom so user never waits
         threshold: 0.05,
       }
     );
@@ -471,7 +708,7 @@ export default function PropertyFeed({
       {/* Loading more skeletons indicator */}
       {isLoadingMore && (
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 min-[2100px]:grid-cols-6 pt-2">
-          {Array.from({ length: 4 }).map((_, i) => (
+          {Array.from({ length: 5 }).map((_, i) => (
             <PropertyCardSkeleton key={`skeleton-more-${i}`} />
           ))}
         </div>

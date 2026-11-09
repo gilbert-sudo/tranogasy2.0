@@ -8,10 +8,10 @@ export interface AuthUserPayload {
 }
 
 export const authService = {
-  login: (phone: string, password: string) => {
+  login: (phone: string, password?: string) => {
     return apiFetch<any>('/users/login', {
       method: 'POST',
-      body: JSON.stringify({ phone, password }),
+      body: JSON.stringify(password ? { phone, password } : { phone }),
     });
   },
 

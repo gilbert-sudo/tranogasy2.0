@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { 
   ChevronLeft, 
@@ -148,7 +149,11 @@ export default function FavoritesPage() {
   }, [allFavorites, activeCategory, searchQuery, sortBy]);
 
   return (
-    <div className={`bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white font-sans flex flex-col ${isPopulated ? 'min-h-screen' : 'h-[calc(100dvh-4rem)] md:h-screen max-h-[calc(100dvh-4rem)] md:max-h-screen overflow-hidden'}`}>
+    <div className={`font-sans flex flex-col ${
+      isPopulated 
+        ? 'min-h-screen bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white' 
+        : 'min-h-[calc(100dvh-4rem)] md:min-h-[calc(100vh-6rem)] lg:min-h-[calc(100vh-2rem)] bg-[#F5F5F3] md:bg-[#ECEBE6] dark:bg-zinc-900 dark:md:bg-zinc-950 text-zinc-900 dark:text-white'
+    }`}>
       
       {/* INJECT RESPONSIVE CSS VARIABLES FOR ROLLING HEADER */}
       <style>{`
@@ -166,7 +171,7 @@ export default function FavoritesPage() {
 
       {/* ── TOP NAV BAR (WHEN NOT POPULATED / EMPTY / NOT LOGGED IN) ── */}
       {!isPopulated && (
-        <div className="shrink-0">
+        <div className="shrink-0 w-full">
           <Header />
         </div>
       )}
@@ -427,60 +432,12 @@ export default function FavoritesPage() {
       )}
 
       {/* MAIN CONTENT AREA */}
-      <div className={isPopulated ? 'flex-1 flex flex-col' : 'flex-1 min-h-0 flex flex-col overflow-hidden'}>
-
-        {/* ========================================================= */}
-        {/* CASE 1: NOT LOGGED IN — IMAGE AT TOP WITH ROUNDED BOTTOM  */}
-        {/* ========================================================= */}
-        {!currentUser && !loading ? (
-          <div className="flex-1 min-h-0 flex flex-col items-center justify-between text-center px-0 pb-3 sm:pb-6 animate-in fade-in zoom-in-95 duration-300">
-            {/* HERO IMAGE AT VERY TOP - OCCUPIES 60% OF DYNAMIC SCREEN SIZE (CONSIDERING TOP NAV BAR) */}
-            <div className="relative z-10 w-full h-[calc(60dvh-4rem)] min-h-[calc(60dvh-4rem)] sm:h-[calc(60dvh-4rem)] sm:min-h-[calc(60dvh-4rem)] max-h-[500px] overflow-hidden rounded-b-[2.5rem] sm:rounded-b-[3.5rem] shadow-[0_20px_40px_-10px_rgba(0,0,0,0.15)] dark:shadow-[0_20px_40px_-10px_rgba(0,0,0,0.7)] bg-zinc-50 dark:bg-zinc-800/40 flex items-center justify-center shrink-0">
-              {/* Floating Top Actions - Clean, no top shadow */}
-              <div className="absolute top-0 left-0 right-0 z-20 pt-4 px-4 sm:px-6 flex justify-between items-center pointer-events-none">
-                <button 
-                  onClick={() => router.back()} 
-                  className="pointer-events-auto h-10 w-10 cursor-pointer rounded-full bg-white/90 dark:bg-zinc-800/90 backdrop-blur-md flex items-center justify-center text-zinc-900 dark:text-zinc-100 shadow-md border border-black/5 dark:border-white/10 hover:scale-105 active:scale-75 transition-all"
-                  title="Retour"
-                >
-                  <ChevronLeft className="h-5 w-5" />
-                </button>
-                <div className="pointer-events-auto h-10 w-10 rounded-full bg-white/90 dark:bg-zinc-800/90 backdrop-blur-md flex items-center justify-center text-brand-red shadow-md border border-black/5 dark:border-white/10">
-                  <Heart className="h-5 w-5 fill-brand-red" />
-                </div>
-              </div>
-
-              <img 
-                src={NO_FAVORITE_IMG} 
-                alt="Vos favoris TranoGasy" 
-                decoding="async"
-                className="w-full h-full object-contain select-none pointer-events-none"
-              />
-            </div>
-
-            {/* MINIMAL CONCISE TEXT & PRIMARY CTA */}
-            <div className="w-full max-w-md mx-auto px-6 py-2 sm:py-6 flex-1 min-h-0 flex flex-col items-center justify-center text-center">
-              <h2 className="text-lg sm:text-2xl md:text-3xl font-extrabold text-zinc-900 dark:text-white tracking-tight mb-1 sm:mb-2 leading-tight">
-                Connectez-vous pour voir vos favoris
-              </h2>
-              <p className="text-zinc-500 dark:text-zinc-400 text-xs sm:text-sm md:text-base max-w-sm mx-auto mb-4 sm:mb-6 line-clamp-2">
-                Retrouvez et synchronisez toutes vos propriétés enregistrées en un seul endroit.
-              </p>
-
-              {/* SINGLE PRIMARY CTA BUTTON */}
-              <button
-                onClick={() => openModal('login')}
-                className="w-full max-w-xs sm:w-auto bg-brand-green hover:bg-green-700 text-white rounded-full py-3 sm:py-3.5 px-8 sm:px-10 font-bold text-xs sm:text-base shadow-lg shadow-brand-green/20 hover:shadow-brand-green/30 hover:-translate-y-0.5 active:scale-95 transition-all cursor-pointer"
-              >
-                Se connecter
-              </button>
-            </div>
-          </div>
-        ) : loading ? (
+      <div className={isPopulated ? 'flex-1 flex flex-col' : 'flex-1 min-h-0 flex flex-col items-center justify-center lg:pr-[85px]'}>
+        {loading ? (
           /* ========================================================= */
-          /* CASE 2: LOADING SKELETON                                  */
+          /* CASE 1: LOADING SKELETON                                  */
           /* ========================================================= */
-          <div className="flex-1 flex flex-col items-center justify-center gap-3">
+          <div className="flex-1 flex flex-col items-center justify-center gap-3 py-16">
             <div className="relative w-12 h-12">
               <div className="w-12 h-12 rounded-full border-2 border-zinc-200 dark:border-zinc-700 border-t-brand-green animate-spin"></div>
               <div className="absolute inset-0 flex items-center justify-center text-brand-red">
@@ -493,7 +450,7 @@ export default function FavoritesPage() {
           </div>
         ) : allFavorites.length > 0 ? (
           /* ========================================================= */
-          /* CASE 3: FAVORITES LIST (FULL SCREEN HIGH DENSITY)         */
+          /* CASE 2: FAVORITES LIST (FULL SCREEN HIGH DENSITY)         */
           /* ========================================================= */
           <div className="max-w-[2000px] w-full mx-auto px-4 sm:px-6 md:px-8 lg:px-28 xl:px-32 2xl:px-36 py-6 space-y-6">
             {/* PROPERTY CARDS GRID */}
@@ -526,48 +483,99 @@ export default function FavoritesPage() {
           </div>
         ) : (
           /* ========================================================= */
-          /* CASE 4: LOGGED IN EMPTY — IMAGE AT TOP WITH ROUNDED BOTTOM */
+          /* CASE 3: NO LIKED PROPERTY YET (EMPTY STATE)               */
+          /* Fullscreen on mobile, centered modal-like box on desktop  */
           /* ========================================================= */
-          <div className="flex-1 min-h-0 flex flex-col items-center justify-between text-center px-0 pb-3 sm:pb-6 animate-in fade-in zoom-in-95 duration-300">
-            {/* HERO IMAGE AT VERY TOP - OCCUPIES 60% OF DYNAMIC SCREEN SIZE (CONSIDERING TOP NAV BAR) */}
-            <div className="relative z-10 w-full h-[calc(60dvh-4rem)] min-h-[calc(60dvh-4rem)] sm:h-[calc(60dvh-4rem)] sm:min-h-[calc(60dvh-4rem)] max-h-[500px] overflow-hidden rounded-b-[2.5rem] sm:rounded-b-[3.5rem] shadow-[0_20px_40px_-10px_rgba(0,0,0,0.15)] dark:shadow-[0_20px_40px_-10px_rgba(0,0,0,0.7)] bg-zinc-50 dark:bg-zinc-800/40 flex items-center justify-center shrink-0">
-              {/* Floating Top Actions - Clean, no top shadow */}
-              <div className="absolute top-0 left-0 right-0 z-20 pt-4 px-4 sm:px-6 flex justify-between items-center pointer-events-none">
-                <button 
-                  onClick={() => router.back()} 
-                  className="pointer-events-auto h-10 w-10 cursor-pointer rounded-full bg-white/90 dark:bg-zinc-800/90 backdrop-blur-md flex items-center justify-center text-zinc-900 dark:text-zinc-100 shadow-md border border-black/5 dark:border-white/10 hover:scale-105 active:scale-75 transition-all"
+          <div className="w-full flex-1 flex flex-col md:items-center md:justify-center p-0 md:p-6 lg:p-8 animate-in fade-in zoom-in-95 duration-300">
+            <div className="w-full flex-1 md:flex-initial md:max-w-[540px] lg:max-w-[580px] rounded-none md:rounded-[2.8rem] shadow-none md:shadow-[0_24px_60px_rgba(0,0,0,0.12)] dark:md:shadow-[0_24px_60px_rgba(0,0,0,0.5)] border-0 md:border md:border-black/5 dark:md:border-white/10 overflow-hidden relative bg-[#F5F5F3] dark:bg-zinc-900 select-none transition-all duration-300 flex flex-col">
+              
+              {/* Decorative Corner Blobs matching PhoneAuthFlow / Login Modal */}
+              <div
+                aria-hidden="true"
+                className="absolute -top-6 right-8 w-16 h-12 md:-top-5 md:right-8 md:w-14 md:h-11 rounded-full bg-brand-green/20 dark:bg-brand-green/15 pointer-events-none z-0"
+              />
+              <div
+                aria-hidden="true"
+                className="absolute -bottom-8 -left-8 w-32 h-32 md:-bottom-6 md:-left-6 md:w-24 md:h-24 rounded-full bg-brand-green/20 dark:bg-brand-green/15 pointer-events-none z-0"
+              />
+
+              {/* Card / Screen Header */}
+              <div className="relative z-10 flex items-center justify-between px-6 sm:px-8 pt-5 pb-2 md:px-7 md:pt-6 md:pb-2 min-h-[60px] md:min-h-[56px] shrink-0">
+                <button
+                  type="button"
+                  onClick={() => router.back()}
+                  aria-label="Retour"
+                  className="w-10 h-10 md:w-9 md:h-9 -ml-2 md:-ml-1.5 rounded-full flex items-center justify-center text-zinc-800 dark:text-zinc-100 hover:bg-black/5 dark:hover:bg-white/10 active:scale-95 transition-all cursor-pointer"
                   title="Retour"
                 >
-                  <ChevronLeft className="h-5 w-5" />
+                  <ChevronLeft className="w-6 h-6 md:w-5 md:h-5" strokeWidth={2.3} />
                 </button>
-                <div className="pointer-events-auto h-10 w-10 rounded-full bg-white/90 dark:bg-zinc-800/90 backdrop-blur-md flex items-center justify-center text-brand-red shadow-md border border-black/5 dark:border-white/10">
-                  <Heart className="h-5 w-5 fill-brand-red" />
+
+                <h1 className="text-[19px] sm:text-[21px] md:text-[18px] font-bold text-zinc-900 dark:text-white tracking-tight text-center flex-1">
+                  Favoris
+                </h1>
+
+                <div className="w-10 h-10 md:w-9 md:h-9 -mr-2 md:-mr-1.5 rounded-full flex items-center justify-center text-brand-red">
+                  <Heart className="w-6 h-6 md:w-5 md:h-5 fill-brand-red" />
                 </div>
               </div>
 
-              <img 
-                src={NO_FAVORITE_IMG} 
-                alt="Aucun coup de cœur" 
-                decoding="async"
-                className="w-full h-full object-contain select-none pointer-events-none"
-              />
-            </div>
+              {/* Card Main Body — Compact, unified grouping with generous illustration */}
+              <div className="relative z-10 flex-1 flex flex-col items-center justify-center gap-3 sm:gap-3.5 md:gap-5 px-5 sm:px-8 md:px-8 pt-1 pb-5 md:pb-8 overflow-y-auto no-scrollbar">
+                
+                {/* Vector Illustration — Substantially larger on mobile and desktop for clear visibility */}
+                <div className="relative w-full max-w-[350px] min-[390px]:max-w-[380px] min-[420px]:max-w-[400px] sm:max-w-[440px] md:max-w-[480px] lg:max-w-[520px] h-[260px] min-[390px]:h-[290px] min-[420px]:h-[310px] sm:h-[330px] md:h-[320px] lg:h-[350px] mx-auto flex items-center justify-center rounded-2xl sm:rounded-3xl overflow-hidden bg-white/70 dark:bg-zinc-800/50 p-1 sm:p-2 shadow-2xs shrink-0">
+                  <Image
+                    src={NO_FAVORITE_IMG}
+                    alt={currentUser ? "Aucun coup de cœur" : "Vos favoris TranoGasy"}
+                    fill
+                    className="object-contain select-none pointer-events-none drop-shadow-[0_8px_20px_rgba(0,0,0,0.04)]"
+                    unoptimized
+                    priority
+                  />
+                </div>
 
-            <div className="w-full max-w-md mx-auto px-6 py-2 sm:py-6 flex-1 min-h-0 flex flex-col items-center justify-center text-center">
-              <h2 className="text-lg sm:text-2xl md:text-3xl font-extrabold text-zinc-900 dark:text-white tracking-tight mb-1 sm:mb-2 leading-tight">
-                Aucun coup de cœur pour le moment
-              </h2>
-              <p className="text-zinc-500 dark:text-zinc-400 text-xs sm:text-sm md:text-base max-w-sm mx-auto mb-4 sm:mb-6 line-clamp-2">
-                Cliquez sur l'icône cœur des annonces pour sauvegarder vos propriétés préférées.
-              </p>
+                {/* Typography / Copywriting */}
+                <div className="text-center space-y-1 sm:space-y-1.5 shrink-0 px-1 max-w-[340px] md:max-w-[440px]">
+                  <h2 className="text-[18px] sm:text-[20px] md:text-[22px] font-extrabold text-zinc-900 dark:text-white tracking-tight leading-snug">
+                    {currentUser ? "Aucun coup de cœur pour le moment" : "Connectez-vous pour voir vos favoris"}
+                  </h2>
+                  <p className="text-[13px] sm:text-[13.5px] md:text-[13.5px] text-zinc-500 dark:text-zinc-400 max-w-[310px] md:max-w-[390px] mx-auto leading-relaxed">
+                    {currentUser
+                      ? "Cliquez sur l'icône cœur des annonces pour sauvegarder vos propriétés préférées."
+                      : "Retrouvez et synchronisez toutes vos propriétés enregistrées en un seul endroit."}
+                  </p>
+                </div>
 
-              <Link 
-                href="/explore" 
-                className="w-full max-w-xs sm:w-auto bg-brand-green hover:bg-green-700 text-white rounded-full py-3 sm:py-3.5 px-8 font-bold text-xs sm:text-base shadow-lg shadow-brand-green/20 hover:shadow-brand-green/30 hover:-translate-y-0.5 active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <Compass className="h-4 w-4" />
-                <span>Explorer les annonces</span>
-              </Link>
+                {/* Primary CTA Button */}
+                <div className="w-full max-w-[320px] sm:max-w-[340px] md:max-w-[380px] space-y-1.5 shrink-0 pt-1">
+                  {!currentUser ? (
+                    <button
+                      type="button"
+                      onClick={() => openModal('login')}
+                      className="w-full h-[50px] md:h-12 bg-brand-green hover:bg-[#6da819] text-white font-bold text-[15px] md:text-sm rounded-full shadow-[0_8px_22px_rgba(124,189,30,0.34)] hover:shadow-[0_10px_26px_rgba(124,189,30,0.44)] active:scale-[0.98] transition-all flex items-center justify-center cursor-pointer"
+                    >
+                      Se connecter
+                    </button>
+                  ) : (
+                    <Link
+                      href="/explore"
+                      className="w-full h-[50px] md:h-12 bg-brand-green hover:bg-[#6da819] text-white font-bold text-[15px] md:text-sm rounded-full shadow-[0_8px_22px_rgba(124,189,30,0.34)] hover:shadow-[0_10px_26px_rgba(124,189,30,0.44)] active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <Compass className="h-4.5 w-4.5" />
+                      <span>Explorer les annonces</span>
+                    </Link>
+                  )}
+
+                  <p className="text-[11.5px] md:text-[11px] font-medium text-zinc-400 dark:text-zinc-500 text-center">
+                    {!currentUser 
+                      ? "Connexion rapide par SMS sans mot de passe" 
+                      : "Découvrez des milliers de propriétés à Madagascar"}
+                  </p>
+                </div>
+
+              </div>
+
             </div>
           </div>
         )}

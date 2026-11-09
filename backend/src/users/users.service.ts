@@ -77,56 +77,101 @@ export class UsersService {
     return { isNew: true, user: userObj };
   }
 
-  async login(phone: string, passwordToTest: string): Promise<any> {
-    const user = await this.userModel.findOne({ phone }).exec();
-    if (!user || !user.password) {
-      throw new UnauthorizedException('Ce numéro ne possède pas de compte.');
+  async login(
+    phone: string,
+    passwordToTest?: string,
+    defaultUsername?: string,
+  ): Promise<any> {
+    const cleanPhone = phone.replace(/\D/g, '');
+    const altPhone = cleanPhone.startsWith('0') ? cleanPhone.slice(1) : `0${cleanPhone}`;
+
+    // If password is provided, verify it if the existing account has a password set
+    if (passwordToTest) {
+      const user = await this.userModel
+        .findOne({ $or: [{ phone: cleanPhone }, { phone: altPhone }, { phone }] })
+        .exec();
+      if (user && user.password) {
+        const match = await bcrypt.compare(passwordToTest, user.password);
+        if (!match) {
+          throw new UnauthorizedException('Mot de passe incorrect');
+        }
+        user.lastConnectedAt = new Date();
+        await user.save();
+        const userObj = user.toObject();
+        delete userObj.password;
+        delete userObj.backUpCode;
+        return {
+          message: 'Connexion réussie',
+          user: userObj,
+        };
+      }
     }
 
-    const match = await bcrypt.compare(passwordToTest, user.password);
-    if (!match) {
-      throw new UnauthorizedException('Mot de passe incorrect');
-    }
-
-    // Remove password from response
-    const userObj = user.toObject();
-    delete userObj.password;
-    delete userObj.backUpCode;
-
+    // Passwordless authentication (new system default)
+    const result = await this.loginOrRegisterByPhone(phone, defaultUsername);
     return {
-      message: 'Connexion réussie',
-      user: userObj,
+      message: result.isNew ? 'Compte créé avec succès' : 'Connexion réussie',
+      user: result.user,
+      isNew: result.isNew,
     };
   }
 
   async signup(createUserDto: any): Promise<any> {
-    const { phone } = createUserDto;
-
-    // Validate if exists
-    const exists = await this.checkExistence(phone);
-    if (exists) {
-      throw new BadRequestException('Ce numéro de téléphone est déjà utilisé');
+    const { phone, username, password } = createUserDto;
+    if (!phone) {
+      throw new BadRequestException('Le numéro de téléphone est requis');
     }
 
-    // Hash the password with bcrypt (salt rounds = 5 based on old app)
-    const salt = await bcrypt.genSalt(5);
-    const hashedPassword = await bcrypt.hash(createUserDto.password, salt);
+    const cleanPhone = phone.replace(/\D/g, '');
+    const altPhone = cleanPhone.startsWith('0') ? cleanPhone.slice(1) : `0${cleanPhone}`;
+    const standardPhone = cleanPhone.startsWith('0') ? cleanPhone : `0${cleanPhone}`;
 
+    let user = await this.userModel
+      .findOne({ $or: [{ phone: cleanPhone }, { phone: altPhone }, { phone }] })
+      .exec();
+
+    if (user) {
+      if (username && (!user.username || user.username.startsWith('Membre '))) {
+        user.username = username.trim();
+      }
+      user.lastConnectedAt = new Date();
+      await user.save();
+      const userObj = user.toObject();
+      delete userObj.password;
+      delete userObj.backUpCode;
+      return {
+        message: 'Connexion réussie',
+        user: userObj,
+        isNew: false,
+      };
+    }
+
+    let hashedPassword: string | undefined = undefined;
+    if (password) {
+      const salt = await bcrypt.genSalt(5);
+      hashedPassword = await bcrypt.hash(password, salt);
+    }
+
+    const cleanUsername = username?.trim() || `Membre ${standardPhone.slice(-4)}`;
     const createdUser = new this.userModel({
       ...createUserDto,
+      username: cleanUsername,
+      phone: standardPhone,
       password: hashedPassword,
+      role: createUserDto.role || 'user',
+      created_at: new Date(),
       lastConnectedAt: new Date(),
     });
 
-    const user = await createdUser.save();
-
-    const userObj = user.toObject();
+    const saved = await createdUser.save();
+    const userObj = saved.toObject();
     delete userObj.password;
     delete userObj.backUpCode;
 
     return {
       message: 'Compte créé avec succès',
       user: userObj,
+      isNew: true,
     };
   }
 

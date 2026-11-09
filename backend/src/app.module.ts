@@ -10,6 +10,7 @@ import { PropertiesModule } from './properties/properties.module';
 import { UsersModule } from './users/users.module';
 import { FavoritesModule } from './favorites/favorites.module';
 import { CommentsModule } from './comments/comments.module';
+import { SmsModule } from './sms/sms.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { CommentsModule } from './comments/comments.module';
     UsersModule,
     FavoritesModule,
     CommentsModule,
+    SmsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

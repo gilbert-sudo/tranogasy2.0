@@ -391,14 +391,15 @@ export default function PhoneAuthFlow({
                 <button
                   type="button"
                   onClick={handleResendCode}
-                  className="text-[14px] md:text-xs font-semibold text-zinc-700 dark:text-zinc-300 underline underline-offset-4 hover:text-brand-green dark:hover:text-brand-green transition-colors cursor-pointer py-1"
+                  disabled={isLoading}
+                  className="text-[14px] md:text-xs font-semibold text-zinc-700 dark:text-zinc-300 underline underline-offset-4 hover:text-brand-green dark:hover:text-brand-green transition-colors cursor-pointer py-1 disabled:opacity-50"
                 >
-                  Renvoyer le code ?
+                  {isLoading ? 'Envoi en cours...' : 'Renvoyer le code ?'}
                 </button>
                 {resendFeedback && (
                   <span className="inline-flex items-center gap-1 text-xs md:text-[11px] font-semibold text-brand-green animate-in fade-in duration-200">
                     <CheckCircle2 className="w-3.5 h-3.5" />
-                    Nouveau code envoyé (voir console)
+                    Nouveau code envoyé par SMS
                   </span>
                 )}
               </div>
