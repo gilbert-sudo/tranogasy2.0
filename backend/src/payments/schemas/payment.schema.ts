@@ -15,32 +15,54 @@ export class Payment {
   @Prop({ required: true })
   type: string;
 
-  @Prop({ enum: ['mvola', 'airtel', 'orange'], required: true })
-  operator: 'mvola' | 'airtel' | 'orange';
+  @Prop({
+    enum: ['mvola', 'airtel', 'orange', 'card', 'papi', 'other'],
+    default: 'papi',
+  })
+  operator: string;
 
   @Prop({ required: true })
   reason: string;
 
-  @Prop({ required: true })
+  @Prop({ default: '' })
   payload: string;
 
-  @Prop({ required: true, min: 1000 })
+  @Prop({ required: true, min: 300 })
   amount: number;
 
-  @Prop({ required: true, min: 100 })
+  @Prop({ required: true, min: 1 })
   tokens: number;
 
-  @Prop({ required: true })
+  @Prop({ default: '' })
   phoneNumber: string;
 
   @Prop({
-    enum: ['pending', 'confirmed', 'refused', 'redone'],
-    default: 'confirmed',
+    enum: ['pending', 'confirmed', 'refused', 'redone', 'failed'],
+    default: 'pending',
   })
   status: string;
 
-  @Prop({ default: () => `JP-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}` })
+  @Prop({
+    required: true,
+    index: true,
+    default: () => `JP-${Date.now().toString(36).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`,
+  })
   ref: string;
+
+  @Prop({ default: null })
+  papiPaymentLink?: string;
+
+  @Prop({ default: null })
+  papiNotificationToken?: string;
+
+  @Prop({ default: null })
+  papiPaymentMethod?: string;
+
+  @Prop({ default: null })
+  papiRawStatus?: string;
+
+  @Prop({ default: null })
+  failureReason?: string;
 
   @Prop({ default: Date.now })
   created_at: Date;

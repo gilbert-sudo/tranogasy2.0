@@ -310,6 +310,98 @@ export function usePayment() {
     [updateBalance]
   );
 
+  const createPapiPaymentLink = useCallback(
+    async (
+      tokens: number,
+      options?: {
+        payerEmail?: string;
+        payerPhone?: string;
+        successUrl?: string;
+        failureUrl?: string;
+      }
+    ): Promise<{
+      success: boolean;
+      paymentLink?: string;
+      ref?: string;
+      amount?: number;
+      tokens?: number;
+      error?: string;
+    }> => {
+      setError(null);
+      if (!Number.isFinite(tokens) || !Number.isInteger(tokens) || tokens < MIN_JP_TOKENS) {
+        const msg = `Le minimum d'achat est de ${MIN_JP_TOKENS} JP (${(MIN_JP_TOKENS * ARIARY_PER_JP).toLocaleString('fr-FR')} Ar).`;
+        setError(msg);
+        return { success: false, error: msg };
+      }
+
+      const activeUser = useUserStore.getState().user?.user || useUserStore.getState().user;
+      if (!activeUser) {
+        const msg = 'Veuillez vous connecter pour acheter des jetons JP.';
+        setError(msg);
+        return { success: false, error: msg };
+      }
+
+      setIsLoading(true);
+      try {
+        const isSyntheticId = String(activeUser._id || '').startsWith('tg_');
+        const res = await paymentService.createPaymentLink({
+          userId: !isSyntheticId ? activeUser._id : undefined,
+          userPhone: activeUser.phone,
+          tokens,
+          clientName: activeUser.username || undefined,
+          payerEmail: options?.payerEmail || activeUser.email || undefined,
+          payerPhone: options?.payerPhone || activeUser.phone || undefined,
+          successUrl: options?.successUrl,
+          failureUrl: options?.failureUrl,
+        });
+
+        return {
+          success: true,
+          paymentLink: res.paymentLink,
+          ref: res.ref,
+          amount: res.amount,
+          tokens: res.tokens,
+        };
+      } catch (err: any) {
+        const msg =
+          err?.message || 'Erreur lors de la création du lien de paiement Papi.';
+        setError(msg);
+        return { success: false, error: msg };
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    []
+  );
+
+  const checkPaymentStatus = useCallback(
+    async (
+      ref: string
+    ): Promise<{
+      status: 'pending' | 'confirmed' | 'failed' | 'refused';
+      tokens?: number;
+      amount?: number;
+      balance?: number;
+      operator?: string;
+      failureReason?: string;
+    }> => {
+      try {
+        const res = await paymentService.getPaymentStatus(ref);
+        if (res.status === 'confirmed' && typeof res.balance === 'number') {
+          updateBalance(res.balance);
+          const activeUser =
+            useUserStore.getState().user?.user || useUserStore.getState().user;
+          syncBalanceInLocalRegistry(activeUser?.phone, res.balance);
+          fetchWallet();
+        }
+        return res;
+      } catch {
+        return { status: 'pending' };
+      }
+    },
+    [updateBalance, fetchWallet]
+  );
+
   return {
     balance,
     transactions,
@@ -318,6 +410,8 @@ export function usePayment() {
     clearError,
     fetchWallet,
     purchaseTokens,
+    createPapiPaymentLink,
+    checkPaymentStatus,
     spendTokens,
     validatePurchaseInput,
     normalizePhone,

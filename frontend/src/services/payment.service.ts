@@ -4,7 +4,7 @@ export const MIN_JP_TOKENS = 100;
 export const MAX_JP_TOKENS = 1_000_000;
 export const ARIARY_PER_JP = 10; // 100 JP = 1,000 Ar
 
-export type MobileMoneyOperatorId = 'mvola' | 'airtel' | 'orange';
+export type MobileMoneyOperatorId = 'mvola' | 'airtel' | 'orange' | 'card' | 'papi';
 
 export interface MobileMoneyOperatorConfig {
   id: MobileMoneyOperatorId;
@@ -37,6 +37,20 @@ export const MOBILE_MONEY_OPERATORS: MobileMoneyOperatorConfig[] = [
     ussdHint: '#111*1*2#',
   },
   {
+    id: 'orange',
+    name: 'Orange Money',
+    carrier: 'Orange',
+    tagline: 'Envoi rapide via Orange Money',
+    logo: '/images/payments/orange.png',
+    merchantName: 'tranogasy_orange',
+    merchantNumber: '0321902559',
+    merchantNumberFormatted: '032 19 025 59',
+    prefixes: ['032'],
+    accentColor: '#ff6600',
+    badgeBgClass: 'bg-[#222222]',
+    ussdHint: '#144*1*1#',
+  },
+  {
     id: 'airtel',
     name: 'Airtel Money',
     carrier: 'Airtel',
@@ -51,18 +65,18 @@ export const MOBILE_MONEY_OPERATORS: MobileMoneyOperatorConfig[] = [
     ussdHint: '*436*2*1#',
   },
   {
-    id: 'orange',
-    name: 'Orange Money',
-    carrier: 'Orange',
-    tagline: 'Envoi rapide via Orange Money',
-    logo: '/images/payments/orange.png',
-    merchantName: 'tranogasy_orange',
-    merchantNumber: '0321902559',
-    merchantNumberFormatted: '032 19 025 59',
-    prefixes: ['032'],
-    accentColor: '#ff6600',
-    badgeBgClass: 'bg-[#222222]',
-    ussdHint: '#144*1*1#',
+    id: 'card',
+    name: 'Carte Bancaire',
+    carrier: 'BRED / Visa / Mastercard',
+    tagline: 'Paiement en ligne par carte bancaire sécurisée',
+    logo: '/images/payments/visa.png',
+    merchantName: 'tranogasy_card',
+    merchantNumber: '',
+    merchantNumberFormatted: 'Paiement en ligne Papi',
+    prefixes: [],
+    accentColor: '#1a1f71',
+    badgeBgClass: 'bg-[#1a1f71]',
+    ussdHint: '3D Secure',
   },
 ];
 
@@ -70,15 +84,65 @@ export interface PaymentTransaction {
   _id: string;
   user: string;
   type: string;
-  operator: MobileMoneyOperatorId;
+  operator: MobileMoneyOperatorId | string;
   reason: string;
   payload: string;
   amount: number;
   tokens: number;
   phoneNumber: string;
-  status: 'pending' | 'confirmed' | 'refused' | 'redone';
+  status: 'pending' | 'confirmed' | 'refused' | 'redone' | 'failed';
   ref: string;
+  papiPaymentLink?: string;
   created_at: string;
+}
+
+export interface CreatePaymentLinkPayload {
+  userId?: string;
+  userPhone?: string;
+  tokens: number;
+  clientName?: string;
+  payerEmail?: string;
+  payerPhone?: string;
+  successUrl?: string;
+  failureUrl?: string;
+}
+
+export interface CreatePaymentLinkResponse {
+  success: boolean;
+  paymentLink: string;
+  ref: string;
+  amount: number;
+  tokens: number;
+  notificationToken?: string;
+}
+
+export interface InitiateDirectPayload {
+  userId?: string;
+  userPhone?: string;
+  tokens: number;
+  operator: 'mvola' | 'airtel' | 'orange';
+  phoneNumber: string;
+  temporaryCode?: string;
+  clientName?: string;
+  payerEmail?: string;
+}
+
+export interface InitiateDirectResponse {
+  success: boolean;
+  ref: string;
+  paymentStatus: string;
+  payment?: any;
+}
+
+export interface PaymentStatusResponse {
+  status: 'pending' | 'confirmed' | 'failed' | 'refused';
+  ref: string;
+  tokens: number;
+  amount: number;
+  balance?: number;
+  operator?: string;
+  paymentLink?: string;
+  failureReason?: string;
 }
 
 export interface PurchaseTokensPayload {
@@ -119,7 +183,33 @@ export function tokensToAriary(tokens: number): number {
 }
 
 export const paymentService = {
-  purchaseTokens: (payload: PurchaseTokensPayload): Promise<PurchaseTokensResponse> => {
+  createPaymentLink: (
+    payload: CreatePaymentLinkPayload,
+  ): Promise<CreatePaymentLinkResponse> => {
+    return apiFetch<CreatePaymentLinkResponse>('/payments/create-payment-link', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  initiateDirectPayment: (
+    payload: InitiateDirectPayload,
+  ): Promise<InitiateDirectResponse> => {
+    return apiFetch<InitiateDirectResponse>('/payments/initiate-direct', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  getPaymentStatus: (ref: string): Promise<PaymentStatusResponse> => {
+    return apiFetch<PaymentStatusResponse>(
+      `/payments/status/${encodeURIComponent(ref)}`,
+    );
+  },
+
+  purchaseTokens: (
+    payload: PurchaseTokensPayload,
+  ): Promise<PurchaseTokensResponse> => {
     return apiFetch<PurchaseTokensResponse>('/payments/purchase-tokens', {
       method: 'POST',
       body: JSON.stringify(payload),
@@ -134,6 +224,8 @@ export const paymentService = {
   },
 
   getUserWallet: (identifier: string): Promise<WalletResponse> => {
-    return apiFetch<WalletResponse>(`/payments/wallet/${encodeURIComponent(identifier)}`);
+    return apiFetch<WalletResponse>(
+      `/payments/wallet/${encodeURIComponent(identifier)}`,
+    );
   },
 };
