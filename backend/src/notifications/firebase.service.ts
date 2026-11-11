@@ -59,7 +59,21 @@ export class FirebaseService implements OnModuleInit {
         }
       }
 
-      // 2. Try environment variables
+      // 2. Try raw JSON string in environment variable
+      const jsonEnv = this.configService.get<string>('FIREBASE_SERVICE_ACCOUNT_JSON');
+      if (jsonEnv) {
+        const serviceAccount = JSON.parse(jsonEnv);
+        this.firebaseApp = initializeApp({
+          credential: cert(serviceAccount),
+          projectId: serviceAccount.project_id,
+        });
+        this.logger.log(
+          `Firebase Admin initialized successfully using FIREBASE_SERVICE_ACCOUNT_JSON for project: ${serviceAccount.project_id}`,
+        );
+        return;
+      }
+
+      // 3. Try individual environment variables
       const projectId = this.configService.get<string>('FIREBASE_PROJECT_ID');
       const clientEmail = this.configService.get<string>(
         'FIREBASE_CLIENT_EMAIL',
