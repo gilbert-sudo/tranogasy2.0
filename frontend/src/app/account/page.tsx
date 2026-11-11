@@ -31,6 +31,7 @@ import { tokensToAriary } from '@/services/payment.service';
 import Header from '@/components/Header';
 import DarkModeToggle from '@/components/DarkModeToggle';
 import JpTokenIcon from '@/components/ui/JpTokenIcon';
+import { usePushNotifications } from '@/hooks/usePushNotifications';
 
 const MenuCard = ({ children }: { children: React.ReactNode }) => (
   <div className="bg-white dark:bg-zinc-900 rounded-[2.25rem] p-2.5 shadow-[0_12px_40px_rgba(0,0,0,0.04)] dark:shadow-[0_12px_40px_rgba(0,0,0,0.35)] overflow-hidden">
@@ -94,6 +95,14 @@ export default function AccountPage() {
   const { balance, transactions, fetchWallet } = usePayment();
   const router = useRouter();
   const [showHistory, setShowHistory] = useState(false);
+  const [testSent, setTestSent] = useState(false);
+
+  const {
+    isSubscribed,
+    isLoading: isPushLoading,
+    enableNotifications,
+    sendTest,
+  } = usePushNotifications();
 
   useEffect(() => {
     initialize();
@@ -398,11 +407,61 @@ export default function AccountPage() {
                   title="Paramètres du compte"
                   href="/profile"
                 />
-                <MenuItem
-                  icon={Bell}
-                  title="Paramètres de notification"
-                  href="#"
-                />
+                {/* Push Notification Setting */}
+                <div className="flex items-center justify-between p-4 hover:bg-[#F5F5F7] dark:hover:bg-zinc-800/60 transition-colors rounded-full">
+                  <div className="flex items-center gap-4 min-w-0">
+                    <div className="w-10 h-10 rounded-full bg-[#F5F5F7] dark:bg-zinc-800 flex items-center justify-center text-zinc-600 dark:text-zinc-300 shrink-0">
+                      <Bell className="w-5 h-5" strokeWidth={1.75} />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-zinc-800 dark:text-zinc-100 block">
+                          Notifications Push
+                        </span>
+                        <span
+                          className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                            isSubscribed
+                              ? 'bg-brand-green/10 text-brand-green'
+                              : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                          }`}
+                        >
+                          {isSubscribed ? 'Activées' : 'Désactivées'}
+                        </span>
+                      </div>
+                      <span className="text-xs text-zinc-400 dark:text-zinc-500 block truncate">
+                        {isSubscribed
+                          ? 'Alertes en temps réel pour paiements et annonces'
+                          : 'Recevoir les alertes de recharge et messages'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="shrink-0 flex items-center gap-2">
+                    {isSubscribed ? (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setTestSent(true);
+                          await sendTest();
+                          setTimeout(() => setTestSent(false), 3000);
+                        }}
+                        disabled={testSent}
+                        className="text-xs font-bold px-3.5 py-1.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-700 active:scale-95 transition-all cursor-pointer shadow-sm disabled:opacity-50"
+                      >
+                        {testSent ? '✓ Envoyé !' : 'Tester la notification'}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={enableNotifications}
+                        disabled={isPushLoading}
+                        className="text-xs font-bold px-4 py-1.5 rounded-full bg-brand-green text-white hover:bg-brand-green/90 active:scale-95 transition-all cursor-pointer shadow-sm disabled:opacity-50"
+                      >
+                        {isPushLoading ? 'Activation…' : 'Activer'}
+                      </button>
+                    )}
+                  </div>
+                </div>
                 <MenuItem icon={MessageSquare} title="Retours" href="#" />
               </MenuCard>
             </section>

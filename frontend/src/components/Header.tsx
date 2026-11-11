@@ -4,10 +4,11 @@ import { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { Search, User, Bell } from 'lucide-react';
+import { Search, User } from 'lucide-react';
 import { useUserStore } from '@/store/userStore';
 import { useModalStore } from '@/store/modalStore';
 import JpTokenIcon from '@/components/ui/JpTokenIcon';
+import NotificationMenu from '@/components/notifications/NotificationMenu';
 
 interface HeaderProps {
   onSearchClick?: () => void;
@@ -127,20 +128,8 @@ export default function Header({ onSearchClick }: HeaderProps) {
             </span>
           </Link>
 
-          {/* Liquid Glass Circular Notification Button matching Image 2 */}
-          <button
-            id="header-notif-btn"
-            aria-label="Notifications"
-            className="relative flex h-11 w-11 items-center justify-center rounded-full
-              bg-white/75 dark:bg-zinc-800/70 backdrop-blur-xl
-              border border-white/80 dark:border-white/10
-              shadow-[0_4px_16px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_16px_rgba(0,0,0,0.3)]
-              text-zinc-800 dark:text-zinc-200
-              hover:scale-105 active:scale-95 transition-all cursor-pointer"
-          >
-            <Bell className="h-5 w-5" />
-            <span className="absolute top-2.5 right-2.5 h-2 w-2 rounded-full bg-brand-red ring-2 ring-white dark:ring-zinc-800" />
-          </button>
+          {/* Liquid Glass Circular Notification Button & Push Dropdown */}
+          <NotificationMenu />
 
           {/* Mobile-only Shiny Dark Search Button positioned between notification and avatar */}
           <div className="flex md:hidden items-center">

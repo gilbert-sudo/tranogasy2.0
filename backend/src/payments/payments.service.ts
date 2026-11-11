@@ -10,6 +10,7 @@ import { Model, Types } from 'mongoose';
 import * as crypto from 'crypto';
 import { Payment, PaymentDocument } from './schemas/payment.schema';
 import { User, UserDocument } from '../users/schemas/user.schema';
+import { NotificationsService } from '../notifications/notifications.service';
 
 export const MIN_JP_TOKENS = 100;
 export const MAX_JP_TOKENS = 1_000_000;
@@ -23,6 +24,7 @@ export class PaymentsService {
     @InjectModel(Payment.name) private paymentModel: Model<PaymentDocument>,
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     private readonly configService: ConfigService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   private get papiKey(): string {
@@ -312,6 +314,22 @@ export class PaymentsService {
       this.logger.log(
         `Webhook: Successfully credited ${payment.tokens} JP to user ${payment.user}. New balance: ${updatedUser?.balance}`,
       );
+
+      // Trigger FCM Push & in-app notification
+      try {
+        await this.notificationsService.createAndSend({
+          userId: payment.user.toString(),
+          title: '🎉 Paiement confirmé !',
+          body: `Votre recharge de ${payment.tokens} JP a été validée avec succès (${payment.amount.toLocaleString('fr-FR')} Ar).`,
+          data: {
+            url: '/pricing',
+            type: 'payment_success',
+            ref: payment.ref,
+          },
+        });
+      } catch (notifErr: any) {
+        this.logger.warn(`Could not dispatch payment push notification: ${notifErr.message}`);
+      }
     } else if (status === 'FAILED') {
       payment.status = 'failed';
       payment.failureReason =
@@ -412,6 +430,22 @@ export class PaymentsService {
           this.logger.log(
             `Sync: Payment ${ref} confirmed via Papi query! Credited ${payment.tokens} JP.`,
           );
+
+          // Trigger FCM Push & in-app notification
+          try {
+            await this.notificationsService.createAndSend({
+              userId: payment.user.toString(),
+              title: '🎉 Paiement confirmé !',
+              body: `Votre recharge de ${payment.tokens} JP a été validée avec succès (${payment.amount.toLocaleString('fr-FR')} Ar).`,
+              data: {
+                url: '/pricing',
+                type: 'payment_success',
+                ref: payment.ref,
+              },
+            });
+          } catch (notifErr: any) {
+            this.logger.warn(`Could not dispatch payment push notification: ${notifErr.message}`);
+          }
 
           return {
             status: 'confirmed',

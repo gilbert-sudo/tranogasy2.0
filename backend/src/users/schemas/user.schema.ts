@@ -42,6 +42,9 @@ export class User {
   @Prop({ default: 0 })
   balance: number;
 
+  @Prop({ type: [String], default: [] })
+  fcmTokens: string[];
+
   @Prop({ default: null })
   startTime: Date;
 

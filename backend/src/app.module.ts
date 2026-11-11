@@ -12,6 +12,7 @@ import { FavoritesModule } from './favorites/favorites.module';
 import { CommentsModule } from './comments/comments.module';
 import { SmsModule } from './sms/sms.module';
 import { PaymentsModule } from './payments/payments.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { PaymentsModule } from './payments/payments.module';
     CommentsModule,
     SmsModule,
     PaymentsModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
