@@ -10,14 +10,14 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import { PaymentsService, OperatorId } from './payments.service';
+import { PaymentsService } from './payments.service';
 
 @Controller('api/payments')
 export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
 
   /**
-   * Generates a Papi hosted payment link (all 4 payment methods)
+   * Generates a Papi hosted payment link (all 4 payment methods: MVola, Orange, Airtel, Carte CB)
    */
   @Post('create-payment-link')
   async createPaymentLink(
@@ -37,26 +37,6 @@ export class PaymentsController {
   }
 
   /**
-   * Direct Mobile Money USSD prompt initiation
-   */
-  @Post('initiate-direct')
-  async initiateDirect(
-    @Body()
-    body: {
-      userId?: string;
-      userPhone?: string;
-      tokens: number;
-      operator: OperatorId;
-      phoneNumber: string;
-      temporaryCode?: string;
-      clientName?: string;
-      payerEmail?: string;
-    },
-  ) {
-    return this.paymentsService.initiateDirectPayment(body);
-  }
-
-  /**
    * Webhook callback from Papi servers
    */
   @Post('papi/webhook')
@@ -71,25 +51,11 @@ export class PaymentsController {
   }
 
   /**
-   * Real-time payment verification and sync endpoint
+   * Real-time payment verification and sync endpoint with Papi
    */
   @Get('status/:ref')
   async getPaymentStatus(@Param('ref') ref: string) {
     return this.paymentsService.verifyAndSyncPaymentStatus(ref);
-  }
-
-  @Post('purchase-tokens')
-  async purchaseTokens(
-    @Body()
-    body: {
-      userId?: string;
-      userPhone?: string;
-      tokens: number;
-      operator: OperatorId;
-      senderPhone: string;
-    },
-  ) {
-    return this.paymentsService.purchaseTokens(body);
   }
 
   @Post('spend-tokens')

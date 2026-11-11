@@ -7,7 +7,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowLeft,
   Check,
-  Copy,
   CheckCircle2,
   Phone,
   Plus,
@@ -17,7 +16,6 @@ import {
   ShieldCheck,
   Sparkles,
   X,
-  ChevronDown,
   ExternalLink,
   RefreshCw,
   CreditCard,
@@ -32,8 +30,6 @@ import {
   MIN_JP_TOKENS,
   MAX_JP_TOKENS,
   ARIARY_PER_JP,
-  MOBILE_MONEY_OPERATORS,
-  MobileMoneyOperatorId,
   tokensToAriary,
   PaymentTransaction,
 } from '@/services/payment.service';
@@ -107,7 +103,6 @@ export default function PricingExperience() {
     error,
     clearError,
     fetchWallet,
-    purchaseTokens,
     createPapiPaymentLink,
     checkPaymentStatus,
   } = usePayment();
@@ -138,15 +133,9 @@ export default function PricingExperience() {
     type: 'success' | 'error';
     text: string;
   } | null>(null);
-  const [showManualTransfer, setShowManualTransfer] = useState<boolean>(false);
 
   const [selectedTokens, setSelectedTokens] = useState<number>(500);
-  const [selectedOperator, setSelectedOperator] =
-    useState<MobileMoneyOperatorId>('mvola');
   const [senderPhone, setSenderPhone] = useState<string>('');
-  const [copiedMerchant, setCopiedMerchant] = useState<boolean>(false);
-  const [operatorDropdownOpen, setOperatorDropdownOpen] =
-    useState<boolean>(false);
 
   // Success receipt view
   const [completedTx, setCompletedTx] = useState<{
@@ -195,7 +184,7 @@ export default function PricingExperience() {
             tokensAdded: res.tokens || selectedTokens,
             amountPaid: res.amount || checkoutAmountAriary,
             newBalance: res.balance ?? balance + (res.tokens || selectedTokens),
-            operatorName: res.operator?.toUpperCase() || 'PAPI',
+            operatorName: res.operator ? res.operator.toUpperCase() : 'Paiement en ligne',
           });
         }
       } finally {
@@ -233,7 +222,7 @@ export default function PricingExperience() {
               amountPaid: res.amount || checkoutAmountAriary,
               newBalance:
                 res.balance ?? balance + (res.tokens || selectedTokens),
-              operatorName: res.operator?.toUpperCase() || 'PAPI',
+              operatorName: res.operator ? res.operator.toUpperCase() : 'Paiement en ligne',
             });
             router.replace('/pricing');
           }
@@ -270,13 +259,6 @@ export default function PricingExperience() {
     return Math.min(MAX_JP_TOKENS, parseInt(cleaned, 10));
   }, [customTokenInput]);
 
-  const activeOperator = useMemo(
-    () =>
-      MOBILE_MONEY_OPERATORS.find((op) => op.id === selectedOperator) ||
-      MOBILE_MONEY_OPERATORS[0],
-    [selectedOperator]
-  );
-
   const openCheckoutForTokens = (tokens: number) => {
     if (error) clearError();
     if (!isLoggedIn) {
@@ -288,18 +270,7 @@ export default function PricingExperience() {
     setCheckoutStep('options');
     setPapiPaymentLink(null);
     setPapiRef(null);
-    setShowManualTransfer(false);
     setCheckoutModalOpen(true);
-  };
-
-  const handleCopyMerchantNumber = async () => {
-    try {
-      await navigator.clipboard.writeText(activeOperator.merchantNumber);
-      setCopiedMerchant(true);
-      setTimeout(() => setCopiedMerchant(false), 2000);
-    } catch {
-      // Fallback
-    }
   };
 
   const handlePapiCheckout = async () => {
@@ -340,39 +311,11 @@ export default function PricingExperience() {
           tokensAdded: res.tokens || selectedTokens,
           amountPaid: res.amount || checkoutAmountAriary,
           newBalance: res.balance ?? balance + (res.tokens || selectedTokens),
-          operatorName: res.operator?.toUpperCase() || 'PAPI',
+          operatorName: res.operator ? res.operator.toUpperCase() : 'Paiement en ligne',
         });
       }
     } finally {
       setIsPollingStatus(false);
-    }
-  };
-
-  const handleConfirmManualPayment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (error) clearError();
-
-    const cleanSender = senderPhone.replace(/\D/g, '');
-    if (cleanSender.length < 9) {
-      await purchaseTokens(selectedTokens, selectedOperator, senderPhone);
-      return;
-    }
-
-    const res = await purchaseTokens(
-      selectedTokens,
-      selectedOperator,
-      senderPhone
-    );
-
-    if (res.success) {
-      setCheckoutModalOpen(false);
-      setCompletedTx({
-        transaction: res.transaction,
-        tokensAdded: selectedTokens,
-        amountPaid: checkoutAmountAriary,
-        newBalance: res.newBalance ?? balance + selectedTokens,
-        operatorName: activeOperator.name,
-      });
     }
   };
 
@@ -422,7 +365,7 @@ export default function PricingExperience() {
 
           <div className="bg-[#F5F5F7] dark:bg-zinc-800/80 rounded-[1.75rem] p-4 space-y-2.5 text-xs text-left">
             <div className="flex justify-between">
-              <span className="text-zinc-500 dark:text-zinc-400">Opérateur</span>
+              <span className="text-zinc-500 dark:text-zinc-400">Mode de paiement</span>
               <span className="font-bold text-zinc-900 dark:text-white">
                 {completedTx.operatorName}
               </span>
@@ -853,15 +796,15 @@ export default function PricingExperience() {
       <footer className="max-w-5xl w-full mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-center sm:text-left text-[11px] text-zinc-500 dark:text-zinc-400 shrink-0 pt-1">
         <div className="flex items-center gap-2">
           <ShieldCheck className="w-4 h-4 text-brand-green shrink-0" />
-          <span>Passerelle Papi : MVola • Orange Money • Airtel Money • Carte Bancaire</span>
+          <span>Paiement sécurisé : MVola • Orange Money • Airtel Money • Carte Bancaire</span>
         </div>
         <div>Échelle officielle : 100 JP = 1 000 Ariary (1 JP = 10 Ar)</div>
       </footer>
 
       {/* ====================================================================
-          VIEW: PAPI CHECKOUT SHEET
-          - Step 1 ('options'): Overview, Papi badges, phone input, primary CTA
-          - Step 2 ('waiting_papi'): Real-time polling & external link to Papi
+          VIEW: CHECKOUT SHEET
+          - Step 1 ('options'): Overview, payment badges, phone input, primary CTA
+          - Step 2 ('waiting_papi'): Real-time polling & external payment link
       ==================================================================== */}
       {checkoutModalOpen && (
         <div
@@ -887,7 +830,7 @@ export default function PricingExperience() {
 
             {checkoutStep === 'waiting_papi' ? (
               /* ==========================================================
-                 WAITING FOR PAPI PAYMENT CONFIRMATION
+                 WAITING FOR PAYMENT CONFIRMATION
               ========================================================== */
               <div className="text-center space-y-4 py-1">
                 <div className="relative mx-auto w-18 h-18 flex items-center justify-center">
@@ -903,10 +846,10 @@ export default function PricingExperience() {
                     En attente de paiement
                   </span>
                   <h3 className="text-xl sm:text-2xl font-black text-zinc-950 dark:text-white tracking-tight">
-                    Page Papi sécurisée
+                    Paiement sécurisé
                   </h3>
                   <p className="text-xs text-zinc-500 dark:text-zinc-400 max-w-xs mx-auto">
-                    Validez votre paiement sur Papi via MVola, Orange Money, Airtel Money ou Carte bancaire.
+                    Validez votre paiement via MVola, Orange Money, Airtel Money ou Carte bancaire.
                   </p>
                 </div>
 
@@ -942,7 +885,7 @@ export default function PricingExperience() {
                       className="w-full h-12 rounded-full bg-brand-green hover:bg-[#6da819] text-white font-extrabold text-xs sm:text-sm shadow-md active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer"
                     >
                       <ExternalLink className="w-4 h-4" />
-                      <span>Accéder à la page de paiement Papi</span>
+                      <span>Accéder à la page de paiement</span>
                     </a>
                   )}
 
@@ -966,16 +909,19 @@ export default function PricingExperience() {
 
                   <button
                     type="button"
-                    onClick={() => setCheckoutStep('options')}
+                    onClick={() => {
+                      setCheckoutStep('options');
+                      setCheckoutModalOpen(false);
+                    }}
                     className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 font-medium transition-colors pt-1 cursor-pointer block mx-auto"
                   >
-                    Changer de méthode ou annuler
+                    Annuler
                   </button>
                 </div>
               </div>
             ) : (
               /* ==========================================================
-                 STEP 1: OPTIONS & PAPI CHECKOUT
+                 STEP 1: OPTIONS & CHECKOUT
               ========================================================== */
               <>
                 {/* Icon + Big Price Display */}
@@ -992,12 +938,12 @@ export default function PricingExperience() {
                   </p>
                 </div>
 
-                {/* Papi Gateway Trust Box with 4 Methods */}
+                {/* Gateway Trust Box with 4 Methods */}
                 <div className="bg-[#F5F5F7] dark:bg-zinc-800/80 rounded-2xl p-3.5 space-y-2.5">
                   <div className="flex items-center justify-between text-[11px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
                     <span className="flex items-center gap-1.5 text-zinc-700 dark:text-zinc-300">
                       <ShieldCheck className="w-3.5 h-3.5 text-brand-green" />
-                      Papi.mg • Passerelle Sécurisée
+                      Paiement sécurisé
                     </span>
                     <span className="text-brand-green font-extrabold">Instant</span>
                   </div>
@@ -1032,7 +978,7 @@ export default function PricingExperience() {
 
                 {/* Structured Line Items */}
                 <div className="space-y-2.5 pt-1 text-xs sm:text-sm">
-                  {/* Sender Phone (optional for Papi) */}
+                  {/* Sender Phone */}
                   <div className="flex items-center justify-between gap-3">
                     <label
                       htmlFor="sender-phone-checkout"
@@ -1084,7 +1030,7 @@ export default function PricingExperience() {
                   </div>
                 )}
 
-                {/* Primary CTA: PAPI Online Checkout */}
+                {/* Primary CTA: Online Checkout */}
                 <button
                   type="button"
                   disabled={isLoading}
@@ -1094,84 +1040,15 @@ export default function PricingExperience() {
                   {isLoading ? (
                     <>
                       <Loader2 className="w-5 h-5 animate-spin" />
-                      <span>Connexion à Papi...</span>
+                      <span>Connexion en cours...</span>
                     </>
                   ) : (
                     <>
                       <ShieldCheck className="w-5 h-5 text-brand-green" />
-                      <span>Payer avec Papi</span>
+                      <span>Payer</span>
                     </>
                   )}
                 </button>
-
-                {/* Collapsible Direct Manual Transfer Option */}
-                <div className="pt-1 text-center">
-                  <button
-                    type="button"
-                    onClick={() => setShowManualTransfer(!showManualTransfer)}
-                    className="text-[11px] text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 font-medium inline-flex items-center gap-1 cursor-pointer transition-colors"
-                  >
-                    <span>
-                      {showManualTransfer
-                        ? 'Masquer le transfert manuel'
-                        : 'Ou payer par transfert direct / USSD'}
-                    </span>
-                    <ChevronDown
-                      className={`w-3 h-3 transition-transform ${
-                        showManualTransfer ? 'rotate-180' : ''
-                      }`}
-                    />
-                  </button>
-
-                  {showManualTransfer && (
-                    <div className="mt-3 p-3.5 rounded-2xl bg-[#F5F5F7] dark:bg-zinc-800 text-left text-xs space-y-3 animate-in fade-in duration-150">
-                      <div className="flex items-center justify-between">
-                        <span className="text-zinc-500">Opérateur :</span>
-                        <div className="flex gap-1">
-                          {MOBILE_MONEY_OPERATORS.slice(0, 3).map((op) => (
-                            <button
-                              key={op.id}
-                              type="button"
-                              onClick={() => setSelectedOperator(op.id)}
-                              className={`px-2.5 py-1 rounded-full text-[11px] font-bold cursor-pointer ${
-                                selectedOperator === op.id
-                                  ? 'bg-zinc-950 dark:bg-white text-white dark:text-zinc-950'
-                                  : 'bg-white dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300'
-                              }`}
-                            >
-                              {op.name}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between">
-                        <span className="text-zinc-500">Numéro marchand :</span>
-                        <button
-                          type="button"
-                          onClick={handleCopyMerchantNumber}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white dark:bg-zinc-700 font-mono font-bold text-zinc-900 dark:text-white"
-                        >
-                          <span>{activeOperator.merchantNumberFormatted}</span>
-                          {copiedMerchant ? (
-                            <Check className="w-3 h-3 text-brand-green" />
-                          ) : (
-                            <Copy className="w-3 h-3 text-zinc-400" />
-                          )}
-                        </button>
-                      </div>
-
-                      <button
-                        type="button"
-                        disabled={isLoading}
-                        onClick={handleConfirmManualPayment}
-                        className="w-full py-2.5 rounded-full bg-zinc-800 dark:bg-zinc-700 hover:bg-zinc-700 text-white font-bold text-xs active:scale-95 transition-all"
-                      >
-                        Confirmer le transfert direct
-                      </button>
-                    </div>
-                  )}
-                </div>
               </>
             )}
           </div>

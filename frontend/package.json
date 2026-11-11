@@ -13,6 +13,7 @@
     "@react-google-maps/api": "^2.20.8",
     "@vis.gl/react-google-maps": "^1.10.1",
     "browser-image-compression": "^2.0.2",
+    "firebase": "^13.2.0",
     "geolib": "^3.3.14",
     "lucide-react": "^1.47.0",
     "next": "16.3.5",

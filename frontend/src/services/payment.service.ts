@@ -72,7 +72,7 @@ export const MOBILE_MONEY_OPERATORS: MobileMoneyOperatorConfig[] = [
     logo: '/images/payments/visa.png',
     merchantName: 'tranogasy_card',
     merchantNumber: '',
-    merchantNumberFormatted: 'Paiement en ligne Papi',
+    merchantNumberFormatted: 'Paiement en ligne',
     prefixes: [],
     accentColor: '#1a1f71',
     badgeBgClass: 'bg-[#1a1f71]',
@@ -116,24 +116,6 @@ export interface CreatePaymentLinkResponse {
   notificationToken?: string;
 }
 
-export interface InitiateDirectPayload {
-  userId?: string;
-  userPhone?: string;
-  tokens: number;
-  operator: 'mvola' | 'airtel' | 'orange';
-  phoneNumber: string;
-  temporaryCode?: string;
-  clientName?: string;
-  payerEmail?: string;
-}
-
-export interface InitiateDirectResponse {
-  success: boolean;
-  ref: string;
-  paymentStatus: string;
-  payment?: any;
-}
-
 export interface PaymentStatusResponse {
   status: 'pending' | 'confirmed' | 'failed' | 'refused';
   ref: string;
@@ -143,21 +125,6 @@ export interface PaymentStatusResponse {
   operator?: string;
   paymentLink?: string;
   failureReason?: string;
-}
-
-export interface PurchaseTokensPayload {
-  userId?: string;
-  userPhone?: string;
-  tokens: number;
-  operator: MobileMoneyOperatorId;
-  senderPhone: string;
-}
-
-export interface PurchaseTokensResponse {
-  message: string;
-  payment: PaymentTransaction;
-  user?: any;
-  balance: number;
 }
 
 export interface SpendTokensPayload {
@@ -192,28 +159,10 @@ export const paymentService = {
     });
   },
 
-  initiateDirectPayment: (
-    payload: InitiateDirectPayload,
-  ): Promise<InitiateDirectResponse> => {
-    return apiFetch<InitiateDirectResponse>('/payments/initiate-direct', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
-  },
-
   getPaymentStatus: (ref: string): Promise<PaymentStatusResponse> => {
     return apiFetch<PaymentStatusResponse>(
       `/payments/status/${encodeURIComponent(ref)}`,
     );
-  },
-
-  purchaseTokens: (
-    payload: PurchaseTokensPayload,
-  ): Promise<PurchaseTokensResponse> => {
-    return apiFetch<PurchaseTokensResponse>('/payments/purchase-tokens', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
   },
 
   spendTokens: (payload: SpendTokensPayload): Promise<SpendTokensResponse> => {

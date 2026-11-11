@@ -12,6 +12,9 @@ coverage/
 # Secrets & Service Account keys
 *-credentials.json
 *gcs-credentials*.json
+*service-account*.json
+*firebase*.json
+*-adminsdk-*.json
 *.pem
 *.key
 

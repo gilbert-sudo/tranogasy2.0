@@ -150,116 +150,6 @@ export function usePayment() {
     }
   }, [setTransactions, updateBalance]);
 
-  const purchaseTokens = useCallback(
-    async (
-      tokens: number,
-      operatorId: MobileMoneyOperatorId,
-      senderPhone: string
-    ): Promise<{
-      success: boolean;
-      transaction?: PaymentTransaction;
-      newBalance?: number;
-    }> => {
-      setError(null);
-      const validationMsg = validatePurchaseInput(tokens, operatorId, senderPhone);
-      if (validationMsg) {
-        setError(validationMsg);
-        return { success: false };
-      }
-
-      const activeUser = useUserStore.getState().user?.user || useUserStore.getState().user;
-      if (!activeUser) {
-        setError('Veuillez vous connecter pour acheter des jetons JP.');
-        return { success: false };
-      }
-
-      const cleanSenderPhone = normalizePhone(senderPhone);
-      const operatorConfig = MOBILE_MONEY_OPERATORS.find((op) => op.id === operatorId)!;
-      const amountAriary = tokensToAriary(tokens);
-
-      setIsLoading(true);
-      try {
-        let transactionRecord: PaymentTransaction | null = null;
-        let updatedBalance = (Number(activeUser.balance) || 0) + tokens;
-
-        const isSyntheticId = String(activeUser._id || '').startsWith('tg_');
-
-        try {
-          const response = await paymentService.purchaseTokens({
-            userId: !isSyntheticId ? activeUser._id : undefined,
-            userPhone: activeUser.phone,
-            tokens,
-            operator: operatorId,
-            senderPhone: cleanSenderPhone,
-          });
-
-          if (response?.payment) {
-            transactionRecord = response.payment;
-          }
-          if (typeof response?.balance === 'number') {
-            updatedBalance = response.balance;
-          }
-          if (response?.user) {
-            const currentSession = useUserStore.getState().user;
-            const nextSession = currentSession?.user
-              ? { ...currentSession, user: response.user }
-              : { message: response.message, user: response.user };
-            setUser(nextSession);
-            if (typeof window !== 'undefined') {
-              localStorage.setItem('user', JSON.stringify(nextSession));
-            }
-          }
-        } catch (apiErr: any) {
-          // If backend returned a validation error (400), surface it directly
-          if (apiErr?.status === 400) {
-            throw apiErr;
-          }
-          // Otherwise, if backend is offline or user is a local fallback account, record locally
-          const ref = `JP-${Date.now().toString(36).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
-          transactionRecord = {
-            _id: `tx_${Date.now()}`,
-            user: activeUser._id || activeUser.phone || 'local_user',
-            type: operatorConfig.name,
-            operator: operatorId,
-            reason: `Recharge de ${tokens} JP`,
-            payload: ref,
-            amount: amountAriary,
-            tokens,
-            phoneNumber: cleanSenderPhone,
-            status: 'confirmed',
-            ref,
-            created_at: new Date().toISOString(),
-          };
-        }
-
-        updateBalance(updatedBalance);
-        syncBalanceInLocalRegistry(activeUser.phone, updatedBalance);
-
-        if (transactionRecord) {
-          addTransaction(transactionRecord);
-          const localKey = activeUser.phone || activeUser._id;
-          if (localKey) {
-            const existing = getLocalTransactions(localKey);
-            saveLocalTransactions(localKey, [transactionRecord, ...existing]);
-          }
-        }
-
-        return {
-          success: true,
-          transaction: transactionRecord || undefined,
-          newBalance: updatedBalance,
-        };
-      } catch (err: any) {
-        const msg = err?.message || "Une erreur s'est produite lors de l'achat de vos jetons JP.";
-        setError(msg);
-        return { success: false };
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    [validatePurchaseInput, normalizePhone, setUser, updateBalance, addTransaction]
-  );
-
   const spendTokens = useCallback(
     async (tokens: number, reason: string): Promise<{ success: boolean; newBalance?: number }> => {
       setError(null);
@@ -364,7 +254,7 @@ export function usePayment() {
         };
       } catch (err: any) {
         const msg =
-          err?.message || 'Erreur lors de la création du lien de paiement Papi.';
+          err?.message || 'Erreur lors de la création du lien de paiement.';
         setError(msg);
         return { success: false, error: msg };
       } finally {
@@ -409,7 +299,6 @@ export function usePayment() {
     error,
     clearError,
     fetchWallet,
-    purchaseTokens,
     createPapiPaymentLink,
     checkPaymentStatus,
     spendTokens,
