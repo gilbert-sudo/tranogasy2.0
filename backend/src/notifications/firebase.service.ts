@@ -2,8 +2,6 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { initializeApp, getApps, cert, App } from 'firebase-admin/app';
 import { getMessaging, SendResponse } from 'firebase-admin/messaging';
-import * as path from 'path';
-import * as fs from 'fs';
 
 export interface PushNotificationPayload {
   title: string;
@@ -32,35 +30,10 @@ export class FirebaseService implements OnModuleInit {
     }
 
     try {
-      // 1. Try file-based credentials
-      const configuredPath = this.configService.get<string>(
-        'FIREBASE_SERVICE_ACCOUNT_PATH',
+      // 1. Try full JSON string from environment variable (FIREBASE_SERVICE_ACCOUNT_JSON)
+      const jsonEnv = this.configService.get<string>(
+        'FIREBASE_SERVICE_ACCOUNT_JSON',
       );
-      const possiblePaths = [
-        configuredPath,
-        path.resolve(process.cwd(), 'firebase-service-account.json'),
-        path.resolve(
-          process.cwd(),
-          '../tranogasy-3400-firebase-adminsdk-fbsvc-da42a1cf3d.json',
-        ),
-      ].filter(Boolean) as string[];
-
-      for (const filePath of possiblePaths) {
-        if (fs.existsSync(filePath)) {
-          const serviceAccount = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-          this.firebaseApp = initializeApp({
-            credential: cert(serviceAccount),
-            projectId: serviceAccount.project_id,
-          });
-          this.logger.log(
-            `Firebase Admin initialized successfully using service account file: ${filePath}`,
-          );
-          return;
-        }
-      }
-
-      // 2. Try raw JSON string in environment variable
-      const jsonEnv = this.configService.get<string>('FIREBASE_SERVICE_ACCOUNT_JSON');
       if (jsonEnv) {
         const serviceAccount = JSON.parse(jsonEnv);
         this.firebaseApp = initializeApp({
@@ -68,12 +41,12 @@ export class FirebaseService implements OnModuleInit {
           projectId: serviceAccount.project_id,
         });
         this.logger.log(
-          `Firebase Admin initialized successfully using FIREBASE_SERVICE_ACCOUNT_JSON for project: ${serviceAccount.project_id}`,
+          `Firebase Admin initialized successfully from environment variable for project: ${serviceAccount.project_id}`,
         );
         return;
       }
 
-      // 3. Try individual environment variables
+      // 2. Try individual environment variables
       const projectId = this.configService.get<string>('FIREBASE_PROJECT_ID');
       const clientEmail = this.configService.get<string>(
         'FIREBASE_CLIENT_EMAIL',
@@ -97,7 +70,7 @@ export class FirebaseService implements OnModuleInit {
       }
 
       this.logger.warn(
-        'Firebase service account credentials not found. Push notifications will be disabled until credentials are configured.',
+        'Firebase service account credentials not found in environment variables (FIREBASE_SERVICE_ACCOUNT_JSON). Push notifications will be disabled until configured.',
       );
     } catch (error: any) {
       this.logger.error(

@@ -15,6 +15,7 @@ coverage/
 *service-account*.json
 *firebase*.json
 *-adminsdk-*.json
+tranogasy-*-firebase-adminsdk-*.json
 *.pem
 *.key
 
