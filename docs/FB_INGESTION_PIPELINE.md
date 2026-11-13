@@ -173,3 +173,4 @@ Never commit real secrets. Configure these keys in `.env` / cloud secret manager
    - `this.isRunInProgress` is currently in-memory (designed for a single backend instance). Before running multiple horizontally scaled backend containers, replace it with an atomic MongoDB lock document (`lockExpiresAt`) and upgrade `FbAdminGuard` from `x-user-id` lookup to signed JWT / Firebase token verification.
 7. **Gilbert IA Conversational Property Discovery:**
    - Reuse the 36 `PROPERTY_FEATURE_KEYS`, `FbCityMatcherService` Fokontany matcher, and Gemini structured JSON Schema approach to translate natural-language Malagasy/French buyer chats directly into MongoDB property queries.
+
