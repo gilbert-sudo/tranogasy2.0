@@ -1,16 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Storage } from '@google-cloud/storage';
-import path from 'path';
+import { getGcsBucket, getGcsErrorMessage } from '@/lib/gcs';
 
 export const runtime = 'nodejs';
-
-const storage = new Storage({
-  keyFilename: path.join(process.cwd(), 'tranogasy-gcs-credentials.json'),
-  projectId: 'tranogasy-gilbert-414910',
-});
-
-const BUCKET_NAME = 'tranogasy-images';
-const bucket = storage.bucket(BUCKET_NAME);
 
 export async function POST(req: NextRequest) {
   try {
@@ -33,7 +24,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.log(`[GCS Delete] Attempting to delete object: ${fileName} from bucket: ${BUCKET_NAME}`);
+    const { bucket, bucketName } = getGcsBucket();
+
+    console.log(`[GCS Delete] Attempting to delete object: ${fileName} from bucket: ${bucketName}`);
     const gcsFile = bucket.file(fileName);
     const [exists] = await gcsFile.exists();
 
@@ -49,11 +42,12 @@ export async function POST(req: NextRequest) {
       message: 'Image supprimée avec succès du cloud Google Cloud Storage',
       deletedFile: fileName,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error deleting image from GCS:', error);
-    return NextResponse.json(
-      { error: error.message || 'Erreur lors de la suppression sur Google Cloud Storage' },
-      { status: 500 }
+    const message = getGcsErrorMessage(
+      error,
+      'Erreur lors de la suppression sur Google Cloud Storage'
     );
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

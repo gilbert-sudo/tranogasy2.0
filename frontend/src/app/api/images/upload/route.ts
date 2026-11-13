@@ -1,17 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Storage } from '@google-cloud/storage';
-import path from 'path';
+import { getGcsBucket, getGcsErrorMessage } from '@/lib/gcs';
 
 export const runtime = 'nodejs';
-
-// Initialize Google Cloud Storage with service account credentials
-const storage = new Storage({
-  keyFilename: path.join(process.cwd(), 'tranogasy-gcs-credentials.json'),
-  projectId: 'tranogasy-gilbert-414910',
-});
-
-const BUCKET_NAME = 'tranogasy-images';
-const bucket = storage.bucket(BUCKET_NAME);
 
 export async function POST(req: NextRequest) {
   try {
@@ -24,6 +14,8 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+
+    const { bucket, bucketName } = getGcsBucket();
 
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
@@ -41,7 +33,7 @@ export async function POST(req: NextRequest) {
       resumable: false,
     });
 
-    const imageUrl = `https://storage.googleapis.com/${BUCKET_NAME}/${gcsFileName}`;
+    const imageUrl = `https://storage.googleapis.com/${bucketName}/${gcsFileName}`;
 
     return NextResponse.json({
       success: true,
@@ -50,12 +42,13 @@ export async function POST(req: NextRequest) {
       size: file.size,
       mimeType: file.type,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error uploading image to GCS:', error);
-    return NextResponse.json(
-      { error: error.message || 'Erreur lors du téléversement sur Google Cloud Storage' },
-      { status: 500 }
+    const message = getGcsErrorMessage(
+      error,
+      'Erreur lors du téléversement sur Google Cloud Storage'
     );
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
