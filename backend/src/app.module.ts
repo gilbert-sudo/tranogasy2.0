@@ -13,6 +13,7 @@ import { CommentsModule } from './comments/comments.module';
 import { SmsModule } from './sms/sms.module';
 import { PaymentsModule } from './payments/payments.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { FbIngestionModule } from './fb-ingestion/fb-ingestion.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     SmsModule,
     PaymentsModule,
     NotificationsModule,
+    FbIngestionModule,
   ],
   controllers: [AppController],
   providers: [AppService],

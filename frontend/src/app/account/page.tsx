@@ -402,6 +402,14 @@ export default function AccountPage() {
                   subtitle="Acheter des crédits JP par Mobile Money (100 JP = 1 000 Ar)"
                   href="/pricing"
                 />
+                {(currentUser?.role === 'admin' || currentUser?.role === 'superadmin') && (
+                  <MenuItem
+                    icon={Sparkles}
+                    title="Ingestion Facebook (Admin)"
+                    subtitle="Scraper, fréquence des groupes & file de validation"
+                    href="/admin/scraper"
+                  />
+                )}
                 <MenuItem
                   icon={UserCircle}
                   title="Paramètres du compte"
