@@ -285,12 +285,16 @@ export default function TranogasyFeed({
   const activeProperty = selectedProperty || currentProperty;
 
   if (isLoading) {
-    return <TikTokSkeleton />;
+    return <TikTokSkeleton embeddedInSearch={embeddedInSearch} />;
   }
 
   if (properties.length === 0) {
     return (
-      <div className="w-full h-[calc(100dvh-4rem)] md:h-[100dvh] bg-black text-white flex flex-col items-center justify-center p-6 text-center">
+      <div
+        className={`w-full ${
+          embeddedInSearch ? 'h-[100dvh]' : 'h-full'
+        } bg-black text-white flex flex-col items-center justify-center p-6 text-center`}
+      >
         <Sparkles className="w-16 h-16 text-brand-green mb-4 animate-pulse" />
         <h2 className="text-2xl font-black mb-2">Aucune annonce trouvée</h2>
         <p className="text-sm text-zinc-400 max-w-sm mb-6">
@@ -309,12 +313,16 @@ export default function TranogasyFeed({
   return (
     <div
       className={`w-full ${
-        embeddedInSearch ? 'h-[100dvh]' : 'h-[calc(100dvh-4rem)] md:h-[100dvh]'
+        embeddedInSearch ? 'h-[100dvh]' : 'h-full'
       } bg-black text-white relative overflow-hidden select-none`}
     >
       {/* Toast Alert */}
       {toastMessage && (
-        <div className="fixed top-8 left-1/2 -translate-x-1/2 z-[200] flex items-center gap-2 px-5 py-2.5 rounded-full bg-zinc-900/90 text-white backdrop-blur-md border border-white/20 shadow-2xl text-xs font-bold animate-in fade-in slide-in-from-top-4 duration-300">
+        <div
+          className={`fixed ${
+            embeddedInSearch ? 'top-8' : 'top-20'
+          } left-1/2 -translate-x-1/2 z-[200] flex items-center gap-2 px-5 py-2.5 rounded-full bg-zinc-900/90 text-white backdrop-blur-md border border-white/20 shadow-2xl text-xs font-bold animate-in fade-in slide-in-from-top-4 duration-300`}
+        >
           <Check className="w-4 h-4 text-brand-green" />
           <span>{toastMessage}</span>
         </div>
@@ -323,15 +331,13 @@ export default function TranogasyFeed({
       {/* Main Container: 2-column on Desktop, full phone viewport on Mobile */}
       <div
         className={`w-full h-full max-w-[1440px] mx-auto flex items-center justify-center lg:gap-6 xl:gap-8 lg:pl-6 lg:pr-[120px] xl:pl-8 xl:pr-[130px] ${
-          embeddedInSearch ? 'lg:pt-20 lg:pb-8' : ''
+          embeddedInSearch ? 'lg:pt-20 lg:pb-8' : 'lg:py-3 xl:py-4'
         }`}
       >
         {/* Left Column (or single column on mobile): Reel Viewport */}
         <div
           className={`w-full lg:w-[480px] xl:w-[500px] h-full ${
-            embeddedInSearch
-              ? 'lg:h-[calc(100dvh-105px)]'
-              : 'lg:h-[calc(100dvh-40px)]'
+            embeddedInSearch ? 'lg:h-[calc(100dvh-105px)]' : ''
           } relative overflow-hidden lg:rounded-[2.5rem] lg:border lg:border-white/10 lg:shadow-2xl bg-black shrink-0`}
         >
           {/* Scroll Snap Feed Container */}
@@ -354,7 +360,7 @@ export default function TranogasyFeed({
                   className={`w-full ${
                     embeddedInSearch
                       ? 'h-[100dvh] lg:h-[calc(100dvh-105px)]'
-                      : 'h-[calc(100dvh-4rem)] md:h-[100dvh] lg:h-[calc(100dvh-40px)]'
+                      : 'h-full'
                   } snap-start snap-always relative shrink-0 bg-black`}
                 >
                   {isWithinWindow ? (
@@ -400,9 +406,7 @@ export default function TranogasyFeed({
         {isDesktop && (
           <div
             className={`hidden lg:flex items-center gap-3 xl:gap-4 ${
-              embeddedInSearch
-                ? 'h-[calc(100dvh-105px)]'
-                : 'h-[calc(100dvh-40px)]'
+              embeddedInSearch ? 'h-[calc(100dvh-105px)]' : 'h-full'
             } flex-1 min-w-0`}
           >
             {/* Details Panel */}

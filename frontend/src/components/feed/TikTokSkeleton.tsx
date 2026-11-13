@@ -1,12 +1,28 @@
 'use client';
 
-export default function TikTokSkeleton() {
+export default function TikTokSkeleton({
+  embeddedInSearch = false,
+}: {
+  embeddedInSearch?: boolean;
+}) {
   return (
-    <div className="w-full h-full min-h-[100dvh] bg-black text-white relative overflow-hidden flex items-center justify-center">
+    <div
+      className={`w-full ${
+        embeddedInSearch ? 'h-[100dvh]' : 'h-full'
+      } bg-black text-white relative overflow-hidden flex items-center justify-center`}
+    >
       {/* Desktop Wrapper */}
-      <div className="w-full h-full max-w-[1400px] mx-auto flex gap-8 items-center px-0 md:px-6">
+      <div
+        className={`w-full h-full max-w-[1440px] mx-auto flex items-center justify-center lg:gap-6 xl:gap-8 lg:pl-6 lg:pr-[120px] xl:pl-8 xl:pr-[130px] ${
+          embeddedInSearch ? 'lg:pt-20 lg:pb-8' : 'lg:py-3 xl:py-4'
+        }`}
+      >
         {/* Left Column: Phone Frame Reel */}
-        <div className="w-full lg:w-[480px] xl:w-[500px] h-[100dvh] mx-auto relative bg-zinc-950 overflow-hidden md:rounded-3xl border border-white/5 shrink-0 animate-pulse">
+        <div
+          className={`w-full lg:w-[480px] xl:w-[500px] h-full ${
+            embeddedInSearch ? 'lg:h-[calc(100dvh-105px)]' : ''
+          } relative bg-zinc-950 overflow-hidden lg:rounded-[2.5rem] lg:border lg:border-white/10 shrink-0 animate-pulse`}
+        >
           {/* Top thumbnail bar skeleton */}
           <div className="absolute top-12 left-1/2 -translate-x-1/2 z-20 flex gap-2 p-2 bg-black/40 backdrop-blur-md rounded-xl">
             {Array.from({ length: 5 }).map((_, i) => (
@@ -41,7 +57,11 @@ export default function TikTokSkeleton() {
         </div>
 
         {/* Right Column: Desktop Details Panel Skeleton */}
-        <div className="hidden lg:flex flex-1 h-[calc(100dvh-120px)] my-auto bg-zinc-900/60 backdrop-blur-xl border border-zinc-800 rounded-3xl p-8 flex-col justify-between animate-pulse">
+        <div
+          className={`hidden lg:flex flex-1 ${
+            embeddedInSearch ? 'h-[calc(100dvh-105px)]' : 'h-full'
+          } bg-zinc-900/60 backdrop-blur-xl border border-zinc-800 rounded-3xl p-8 flex-col justify-between animate-pulse`}
+        >
           <div className="space-y-6">
             <div className="flex justify-between items-center">
               <div className="w-32 h-6 rounded-full bg-zinc-800" />

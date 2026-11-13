@@ -228,6 +228,10 @@ export default function TikTokCard({
     await toggleFavorite(property._id, currentUser._id);
   };
 
+  const actionIconSizeClass = embeddedInSearch
+    ? 'w-7 h-7 md:w-8 md:h-8'
+    : 'w-6.5 h-6.5 md:w-7 md:h-7';
+
   return (
     <div
       className="relative w-full h-full bg-black overflow-hidden select-none"
@@ -347,17 +351,23 @@ export default function TikTokCard({
         className={`absolute right-2.5 md:right-3.5 z-30 flex flex-col items-center ${
           embeddedInSearch
             ? 'bottom-[62px] sm:bottom-[68px] lg:bottom-14 gap-2.5 sm:gap-3.5'
-            : 'bottom-6 md:bottom-8 gap-3.5 sm:gap-4'
+            : 'bottom-4 sm:bottom-5 md:bottom-6 gap-2 sm:gap-2.5'
         }`}
       >
         {/* Advertiser Avatar with Plus Badge */}
         <Link
           href={profileHref}
           onClick={(e) => e.stopPropagation()}
-          className="relative group cursor-pointer mb-1 block"
+          className="relative group cursor-pointer mb-0.5 block"
           title={`Voir le profil de ${ownerName}`}
         >
-          <div className="w-11 h-11 md:w-12 md:h-12 rounded-full overflow-hidden border-2 border-white drop-shadow-[0_2px_6px_rgba(0,0,0,0.85)] bg-zinc-900 transition-transform group-hover:scale-105">
+          <div
+            className={`${
+              embeddedInSearch
+                ? 'w-11 h-11 md:w-12 md:h-12'
+                : 'w-10 h-10 md:w-11 md:h-11'
+            } rounded-full overflow-hidden border-2 border-white drop-shadow-[0_2px_6px_rgba(0,0,0,0.85)] bg-zinc-900 transition-transform group-hover:scale-105`}
+          >
             <img src={avatar} alt={ownerName} className="w-full h-full object-cover" />
           </div>
           <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-4.5 h-4.5 rounded-full bg-brand-green text-white flex items-center justify-center shadow-md border border-white">
@@ -368,11 +378,11 @@ export default function TikTokCard({
         {/* Favorite (Like) Button */}
         <button
           onClick={handleLikeClick}
-          className="flex flex-col items-center gap-1 group cursor-pointer bg-transparent border-none p-0 focus:outline-none transition-transform hover:scale-110 active:scale-90"
+          className="flex flex-col items-center gap-0.5 group cursor-pointer bg-transparent border-none p-0 focus:outline-none transition-transform hover:scale-110 active:scale-90"
           title="Ajouter aux favoris"
         >
           <Heart
-            className={`w-7 h-7 md:w-8 md:h-8 drop-shadow-[0_2px_5px_rgba(0,0,0,0.9)] transition-colors duration-300 ${
+            className={`${actionIconSizeClass} drop-shadow-[0_2px_5px_rgba(0,0,0,0.9)] transition-colors duration-300 ${
               isLikedAnimation ? 'animate-heart-pop' : ''
             } ${
               isFavorite
@@ -392,10 +402,10 @@ export default function TikTokCard({
               e.stopPropagation();
               onOpenComments();
             }}
-            className="flex flex-col items-center gap-1 group cursor-pointer bg-transparent border-none p-0 focus:outline-none transition-transform hover:scale-110 active:scale-90"
+            className="flex flex-col items-center gap-0.5 group cursor-pointer bg-transparent border-none p-0 focus:outline-none transition-transform hover:scale-110 active:scale-90"
             title="Commentaires et questions"
           >
-            <MessageCircle className="w-7 h-7 md:w-8 md:h-8 text-white drop-shadow-[0_2px_5px_rgba(0,0,0,0.9)] stroke-[2.2]" />
+            <MessageCircle className={`${actionIconSizeClass} text-white drop-shadow-[0_2px_5px_rgba(0,0,0,0.9)] stroke-[2.2]`} />
             <span className="text-[11px] font-semibold text-white tracking-wide drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]">
               Avis
             </span>
@@ -408,10 +418,10 @@ export default function TikTokCard({
             e.stopPropagation();
             onOpenMap();
           }}
-          className="flex flex-col items-center gap-1 group cursor-pointer bg-transparent border-none p-0 focus:outline-none transition-transform hover:scale-110 active:scale-90"
+          className="flex flex-col items-center gap-0.5 group cursor-pointer bg-transparent border-none p-0 focus:outline-none transition-transform hover:scale-110 active:scale-90"
           title="Voir la carte"
         >
-          <MapPin className="w-7 h-7 md:w-8 md:h-8 text-white drop-shadow-[0_2px_5px_rgba(0,0,0,0.9)] stroke-[2.2]" />
+          <MapPin className={`${actionIconSizeClass} text-white drop-shadow-[0_2px_5px_rgba(0,0,0,0.9)] stroke-[2.2]`} />
           <span className="text-[11px] font-semibold text-white tracking-wide drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]">
             Plan
           </span>
@@ -423,10 +433,10 @@ export default function TikTokCard({
             e.stopPropagation();
             onOpenContact();
           }}
-          className="flex flex-col items-center gap-1 group cursor-pointer bg-transparent border-none p-0 focus:outline-none transition-transform hover:scale-110 active:scale-90"
+          className="flex flex-col items-center gap-0.5 group cursor-pointer bg-transparent border-none p-0 focus:outline-none transition-transform hover:scale-110 active:scale-90"
           title="Contacter l'annonceur"
         >
-          <Phone className="w-7 h-7 md:w-8 md:h-8 text-white drop-shadow-[0_2px_5px_rgba(0,0,0,0.9)] stroke-[2.2]" />
+          <Phone className={`${actionIconSizeClass} text-white drop-shadow-[0_2px_5px_rgba(0,0,0,0.9)] stroke-[2.2]`} />
           <span className="text-[11px] font-semibold text-white tracking-wide drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]">
             Contact
           </span>
@@ -438,10 +448,10 @@ export default function TikTokCard({
             e.stopPropagation();
             onShare();
           }}
-          className="flex flex-col items-center gap-1 group cursor-pointer bg-transparent border-none p-0 focus:outline-none transition-transform hover:scale-110 active:scale-90"
+          className="flex flex-col items-center gap-0.5 group cursor-pointer bg-transparent border-none p-0 focus:outline-none transition-transform hover:scale-110 active:scale-90"
           title="Partager"
         >
-          <Share2 className="w-7 h-7 md:w-8 md:h-8 text-white drop-shadow-[0_2px_5px_rgba(0,0,0,0.9)] stroke-[2.2]" />
+          <Share2 className={`${actionIconSizeClass} text-white drop-shadow-[0_2px_5px_rgba(0,0,0,0.9)] stroke-[2.2]`} />
           <span className="text-[11px] font-semibold text-white tracking-wide drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]">
             Partager
           </span>
@@ -453,10 +463,10 @@ export default function TikTokCard({
             e.stopPropagation();
             onOpenDetails();
           }}
-          className="flex flex-col items-center gap-1 group cursor-pointer bg-transparent border-none p-0 focus:outline-none transition-transform hover:scale-110 active:scale-90"
+          className="flex flex-col items-center gap-0.5 group cursor-pointer bg-transparent border-none p-0 focus:outline-none transition-transform hover:scale-110 active:scale-90"
           title="Détails du bien"
         >
-          <Info className="w-7 h-7 md:w-8 md:h-8 text-white drop-shadow-[0_2px_5px_rgba(0,0,0,0.9)] stroke-[2.2]" />
+          <Info className={`${actionIconSizeClass} text-white drop-shadow-[0_2px_5px_rgba(0,0,0,0.9)] stroke-[2.2]`} />
           <span className="text-[11px] font-semibold text-white tracking-wide drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]">
             Détails
           </span>
@@ -468,7 +478,7 @@ export default function TikTokCard({
         className={`absolute left-0 right-0 z-20 pointer-events-none flex flex-col items-center ${
           embeddedInSearch
             ? 'bottom-[62px] sm:bottom-[68px] lg:bottom-14'
-            : 'bottom-6 md:bottom-8'
+            : 'bottom-4 sm:bottom-5 md:bottom-6'
         }`}
       >
         {/* TikTok Carousel Controls: directly on the image, right above property info */}
