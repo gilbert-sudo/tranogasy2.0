@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   Search,
@@ -28,7 +28,7 @@ import OperationProgressCard, { type ProgressStatItem } from './OperationProgres
 interface PublishedOriginsTabProps {
   userId: string;
   backfillJob: BackfillJobState | null;
-  backfillElapsedSec: number;
+  backfillElapsedSec?: number;
   backfillPollWarning?: string | null;
   isStartingBackfill: boolean;
   isCancellingBackfill: boolean;
@@ -96,43 +96,64 @@ export default function PublishedOriginsTab({
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
 
+  const onErrorRef = useRef(onError);
+  useEffect(() => {
+    onErrorRef.current = onError;
+  }, [onError]);
+
+  const abortRef = useRef<AbortController | null>(null);
   const isBackfilling = isStartingBackfill || backfillJob?.status === 'running';
 
   useEffect(() => {
     const timer = setTimeout(() => {
       setSearchQuery(searchInput.trim());
       setPage(1);
-    }, 300);
+    }, 260);
     return () => clearTimeout(timer);
   }, [searchInput]);
 
   const loadProperties = useCallback(async () => {
     if (!userId) return;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setLoading(true);
     setListError(null);
     try {
-      const res = await fbIngestionService.listAdminProperties(userId, {
-        origin: originFilter,
-        claimStatus: claimFilter,
-        q: searchQuery,
-        page,
-        limit: 20,
-      });
+      const res = await fbIngestionService.listAdminProperties(
+        userId,
+        {
+          origin: originFilter,
+          claimStatus: claimFilter,
+          q: searchQuery,
+          page,
+          limit: 20,
+        },
+        { signal: controller.signal },
+      );
+      if (controller.signal.aborted) return;
       setData(res);
     } catch (err) {
+      if (controller.signal.aborted || (err as Error)?.name === 'AbortError') return;
       const msg = (err as Error).message || 'Impossible de charger la liste des origines.';
       setListError(msg);
-      onError(msg);
+      onErrorRef.current(msg);
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) {
+        setLoading(false);
+      }
     }
-  }, [userId, originFilter, claimFilter, searchQuery, page, onError]);
+  }, [userId, originFilter, claimFilter, searchQuery, page]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
       void loadProperties();
     }, 0);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      abortRef.current?.abort();
+    };
   }, [loadProperties, refreshNonce]);
 
   const backfillStats: ProgressStatItem[] = backfillJob
@@ -237,6 +258,7 @@ export default function PublishedOriginsTab({
                 ? `${backfillJob.current} / ${backfillJob.total} annonces`
                 : null
             }
+            startedAt={backfillJob?.startedAt ?? null}
             elapsedSec={
               backfillJob?.status === 'running'
                 ? backfillElapsedSec
@@ -338,16 +360,31 @@ export default function PublishedOriginsTab({
 
       {/* Results List */}
       {loading && !data ? (
-        <div className="py-16 flex items-center justify-center gap-2 text-sm text-zinc-500">
-          <Loader2 className="w-5 h-5 animate-spin text-brand-green" />
-          Chargement des propriétés...
+        <div className="space-y-3">
+          {[0, 1, 2].map((idx) => (
+            <div
+              key={idx}
+              className="rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 flex items-center gap-3.5 animate-pulse"
+            >
+              <div className="w-16 h-16 rounded-xl bg-zinc-200 dark:bg-zinc-800 shrink-0" />
+              <div className="flex-1 space-y-2">
+                <div className="h-3 w-36 rounded bg-zinc-200 dark:bg-zinc-800" />
+                <div className="h-4 w-2/3 rounded bg-zinc-200 dark:bg-zinc-800" />
+                <div className="h-3 w-1/2 rounded bg-zinc-200 dark:bg-zinc-800" />
+              </div>
+            </div>
+          ))}
         </div>
       ) : !data || data.items.length === 0 ? (
         <div className="rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-12 text-center text-sm text-zinc-500">
           Aucune annonce trouvée pour ce filtre.
         </div>
       ) : (
-        <div className="space-y-3">
+        <div
+          className={`space-y-3 transition-opacity duration-150 ${
+            loading ? 'opacity-65' : 'opacity-100'
+          }`}
+        >
           {data.items.map((item: AdminOriginProperty) => {
             const originBadge = ORIGIN_LABELS[item.origin] || {
               label: item.origin,
@@ -460,6 +497,15 @@ export default function PublishedOriginsTab({
                       {fbUserId && (
                         <span className="font-mono text-[11px] bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded-md">
                           FB ID: {fbUserId}
+                        </span>
+                      )}
+
+                      {item.created_at && (
+                        <span
+                          className="text-[11px] text-zinc-500 dark:text-zinc-400"
+                          title="Date de création enregistrée sur TranoGasy (synchronisée sur la date du post Facebook)"
+                        >
+                          Créée le {new Date(item.created_at).toLocaleString('fr-FR')}
                         </span>
                       )}
 

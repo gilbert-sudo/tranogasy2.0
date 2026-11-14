@@ -426,4 +426,265 @@ describe('FbIngestionService background job tracking & recovery', () => {
     });
     expect(staleCandidate.missingFields).toEqual(['furnishedProperty']);
   });
+
+  it('sets Property.created_at strictly to candidate.datePosted and uses resolvedCoords on approveCandidate', async () => {
+    const validCityId = '507f1f77bcf86cd799439011';
+    const validAdminId = '507f1f77bcf86cd799439099';
+    const originalPostDate = new Date('2026-11-12T08:14:22.000Z');
+    const candidateDoc: any = {
+      _id: 'cand_100',
+      status: 'pending',
+      groupId: 'grp_1',
+      groupName: 'Location Tana',
+      canonicalPostId: 'post_100',
+      postUrl: 'https://www.facebook.com/groups/grp_1/posts/post_100/',
+      authorName: 'Rabe Jean',
+      authorFbId: '1000999888777',
+      authorUrl: 'https://www.facebook.com/profile.php?id=1000999888777',
+      authorAvatarUrl: null,
+      datePosted: originalPostDate,
+      created_at: new Date('2026-11-12T08:20:00.000Z'),
+      rawContent: 'Appartement F3 proche Lycée Français',
+      gcsImages: ['https://storage.googleapis.com/tranogasy-img/a.jpg'],
+      matchedCityId: validCityId,
+      matchedCityLabel: 'Ambatobe — Antananarivo Renivohitra',
+      cityCandidates: [
+        { _id: validCityId, label: 'Ambatobe — Antananarivo Renivohitra', score: 99, distanceMeters: 95 },
+      ],
+      resolvedCoords: { lat: -18.86791, lng: 47.54723 },
+      resolvedPlaceName: 'Lycée Français Ambatobe',
+      resolvedAddress: 'Ambatobe, Antananarivo',
+      resolutionSource: 'google_places_api',
+      manualCityOverride: false,
+      extracted: {
+        title: 'Appartement F3 Ambatobe',
+        description: 'Appartement F3 moderne proche Lycée Français',
+        type: 'rent',
+        houseType: 'apartment',
+        price: null,
+        rent: 1500000,
+        rooms: 3,
+        livingRoom: 1,
+        kitchen: 1,
+        toilet: 1,
+        bathrooms: 1,
+        area: 80,
+        floor: '1er étage',
+        phone1: '034 11 222 33',
+        phone2: null,
+        phone3: null,
+        features: { carAccess: true },
+        locationHints: ['Lycée Français Ambatobe'],
+      },
+      save: jest.fn().mockResolvedValue(true),
+    };
+
+    const propertiesService = {
+      create: jest.fn().mockResolvedValue({ _id: 'prop_new_1' }),
+    } as any;
+
+    const cityModel = {
+      findById: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue({
+          _id: validCityId,
+          fokontany: 'Ambatobe',
+          commune: 'Antananarivo Renivohitra',
+          district: 'Antananarivo II',
+          region: 'Analamanga',
+          coords: { lat: -18.8672, lng: 47.5469 },
+        }),
+      }),
+    } as any;
+
+    const candidateModel = {
+      findById: jest.fn().mockResolvedValue(candidateDoc),
+    } as any;
+
+    const userModel = {
+      findOne: jest.fn().mockResolvedValue({
+        _id: 'shadow_user_1',
+        username: 'Rabe Jean',
+        avatar: null,
+        save: jest.fn().mockResolvedValue(true),
+      }),
+    } as any;
+
+    const groupModel = {
+      updateOne: jest.fn().mockResolvedValue({ acknowledged: true }),
+    } as any;
+
+    const service = new FbIngestionService(
+      { findOne: jest.fn() } as any,
+      groupModel,
+      { findOne: jest.fn().mockResolvedValue(null), create: jest.fn() } as any,
+      candidateModel,
+      { findById: jest.fn().mockResolvedValue(null) } as any,
+      cityModel,
+      userModel,
+      propertiesService,
+      {} as any,
+      {} as any,
+      {} as any,
+      {
+        isPermanentGcsUrl: jest.fn().mockReturnValue(true),
+        reuploadFbAvatar: jest.fn().mockResolvedValue(null),
+      } as any,
+      { get: jest.fn().mockReturnValue(undefined) } as any,
+    );
+
+    await service.approveCandidate('cand_100', validAdminId);
+
+    expect(propertiesService.create).toHaveBeenCalledTimes(1);
+    const createdPayload = propertiesService.create.mock.calls[0][0];
+    expect(createdPayload.created_at).toEqual(originalPostDate);
+    expect(createdPayload.coords).toEqual({ lat: -18.86791, lng: 47.54723 });
+  });
+
+  it('uses cityDoc.coords on approveCandidate when manualCityOverride is true while still preserving created_at', async () => {
+    const validCityId = '507f1f77bcf86cd799439011';
+    const validAdminId = '507f1f77bcf86cd799439099';
+    const originalPostDate = new Date('2026-11-11T16:40:00.000Z');
+    const cityCentroid = { lat: -18.8672, lng: 47.5469 };
+
+    const candidateDoc: any = {
+      _id: 'cand_101',
+      status: 'pending',
+      groupId: 'grp_1',
+      groupName: 'Location Tana',
+      canonicalPostId: 'post_101',
+      postUrl: 'https://www.facebook.com/groups/grp_1/posts/post_101/',
+      authorName: 'Rabe Jean',
+      authorFbId: '1000999888777',
+      authorUrl: 'https://www.facebook.com/profile.php?id=1000999888777',
+      authorAvatarUrl: null,
+      datePosted: originalPostDate,
+      rawContent: 'Villa T4 Ambatobe',
+      gcsImages: ['https://storage.googleapis.com/tranogasy-img/a.jpg'],
+      matchedCityId: validCityId,
+      matchedCityLabel: 'Ambatobe — Antananarivo Renivohitra',
+      cityCandidates: [],
+      resolvedCoords: { lat: -18.901, lng: 47.512 },
+      resolvedPlaceName: 'Old Hint',
+      resolvedAddress: 'Antananarivo',
+      resolutionSource: 'google_places_cache',
+      manualCityOverride: true,
+      extracted: {
+        title: 'Villa T4 Ambatobe',
+        description: 'Villa T4 Ambatobe calme',
+        type: 'rent',
+        houseType: 'villa',
+        price: null,
+        rent: 2500000,
+        rooms: 4,
+        livingRoom: 1,
+        kitchen: 1,
+        toilet: 2,
+        bathrooms: 2,
+        area: 150,
+        floor: null,
+        phone1: '034 11 222 33',
+        phone2: null,
+        phone3: null,
+        features: {},
+        locationHints: ['Ambatobe'],
+      },
+      save: jest.fn().mockResolvedValue(true),
+    };
+
+    const propertiesService = {
+      create: jest.fn().mockResolvedValue({ _id: 'prop_new_2' }),
+    } as any;
+
+    const service = new FbIngestionService(
+      { findOne: jest.fn() } as any,
+      { updateOne: jest.fn().mockResolvedValue({ acknowledged: true }) } as any,
+      { findOne: jest.fn().mockResolvedValue(null), create: jest.fn() } as any,
+      { findById: jest.fn().mockResolvedValue(candidateDoc) } as any,
+      { findById: jest.fn().mockResolvedValue(null) } as any,
+      {
+        findById: jest.fn().mockReturnValue({
+          lean: jest.fn().mockResolvedValue({
+            _id: validCityId,
+            fokontany: 'Ambatobe',
+            commune: 'Antananarivo Renivohitra',
+            district: 'Antananarivo II',
+            region: 'Analamanga',
+            coords: cityCentroid,
+          }),
+        }),
+      } as any,
+      {
+        findOne: jest.fn().mockResolvedValue({
+          _id: 'shadow_user_1',
+          username: 'Rabe Jean',
+          avatar: null,
+          save: jest.fn().mockResolvedValue(true),
+        }),
+      } as any,
+      propertiesService,
+      {} as any,
+      {} as any,
+      {} as any,
+      {
+        isPermanentGcsUrl: jest.fn().mockReturnValue(true),
+        reuploadFbAvatar: jest.fn().mockResolvedValue(null),
+      } as any,
+      { get: jest.fn().mockReturnValue(undefined) } as any,
+    );
+
+    await service.approveCandidate('cand_101', validAdminId);
+
+    const createdPayload = propertiesService.create.mock.calls[0][0];
+    expect(createdPayload.created_at).toEqual(originalPostDate);
+    expect(createdPayload.coords).toEqual(cityCentroid);
+  });
+
+  it('repairs legacy approved FB Property.created_at during backfill with overwriteImmutable', async () => {
+    const fbPostedAt = new Date('2026-10-20T14:05:00.000Z');
+    const approvedMuchLater = new Date('2026-10-21T09:00:00.000Z');
+
+    const { service, configModel, candidateModel, propertyModel } = createHarness();
+    void configModel;
+
+    candidateModel.find = jest.fn().mockReturnValue(
+      createChainableQuery([
+        {
+          publishedPropertyId: 'prop_legacy_1',
+          datePosted: fbPostedAt,
+        },
+      ]),
+    );
+
+    propertyModel.find.mockReturnValue(
+      createChainableQuery([
+        {
+          _id: 'prop_legacy_1',
+          title: 'Villa Ivandry',
+          origin: 'facebook_scraper',
+          owner: {
+            _id: '507f1f77bcf86cd799439022',
+            role: 'user',
+            isShadowAccount: true,
+          },
+          sources: {
+            postId: 'fb_post_legacy_1',
+            postUrl: 'https://facebook.com/groups/1/posts/fb_post_legacy_1/',
+          },
+          created_at: approvedMuchLater,
+        },
+      ]),
+    );
+
+    const summary = await (service as any).executeBackfillJob();
+    expect(summary.errorCount).toBe(0);
+    expect(propertyModel.updateOne).toHaveBeenCalledWith(
+      { _id: 'prop_legacy_1' },
+      {
+        $set: expect.objectContaining({
+          created_at: fbPostedAt,
+        }),
+      },
+      { overwriteImmutable: true },
+    );
+  });
 });

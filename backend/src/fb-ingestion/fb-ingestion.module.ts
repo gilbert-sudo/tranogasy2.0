@@ -9,6 +9,7 @@ import { FbBrightDataService } from './fb-brightdata.service';
 import { FbCityMatcherService } from './fb-city-matcher.service';
 import { FbGcsService } from './fb-gcs.service';
 import { FbGeminiService } from './fb-gemini.service';
+import { FbPlacesService } from './fb-places.service';
 import {
   FbIngestionAuthController,
   FbIngestionController,
@@ -26,6 +27,10 @@ import {
   FbIngestionConfig,
   FbIngestionConfigSchema,
 } from './schemas/fb-ingestion-config.schema';
+import {
+  FbPlaceGeoCache,
+  FbPlaceGeoCacheSchema,
+} from './schemas/fb-place-geo-cache.schema';
 import { FbSeenPost, FbSeenPostSchema } from './schemas/fb-seen-post.schema';
 
 @Module({
@@ -36,6 +41,7 @@ import { FbSeenPost, FbSeenPostSchema } from './schemas/fb-seen-post.schema';
       { name: FbGroupTarget.name, schema: FbGroupTargetSchema },
       { name: FbSeenPost.name, schema: FbSeenPostSchema },
       { name: FbIngestedCandidate.name, schema: FbIngestedCandidateSchema },
+      { name: FbPlaceGeoCache.name, schema: FbPlaceGeoCacheSchema },
       { name: Property.name, schema: PropertySchema },
       { name: City.name, schema: CitySchema },
       { name: User.name, schema: UserSchema },
@@ -45,6 +51,7 @@ import { FbSeenPost, FbSeenPostSchema } from './schemas/fb-seen-post.schema';
   providers: [
     FbAdminGuard,
     FbBrightDataService,
+    FbPlacesService,
     FbCityMatcherService,
     FbGcsService,
     FbGeminiService,

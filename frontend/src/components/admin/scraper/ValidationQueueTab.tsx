@@ -1,11 +1,13 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   Check,
   ChevronDown,
   ChevronUp,
+  ChevronsDownUp,
+  ChevronsUpDown,
   Copy,
   ExternalLink,
   ImagePlus,
@@ -15,6 +17,7 @@ import {
   RefreshCw,
   RotateCcw,
   Save,
+  Search,
   Sparkles,
   Star,
   Trash2,
@@ -34,6 +37,7 @@ import {
   PROPERTY_FEATURE_GROUPS,
 } from './featureLabels';
 import { AdminPhotoGalleryModal } from './AdminPhotoGalleryModal';
+import type { HudToast } from './FloatingOperationHud';
 import {
   HouseCategoryFilter,
   HouseType,
@@ -65,6 +69,11 @@ interface CandidateDraft {
   phone3: string;
   matchedCityId: string;
   matchedCityLabel: string;
+  cityCandidates: FbIngestedCandidate['cityCandidates'];
+  resolvedCoords: { lat: number; lng: number } | null;
+  resolvedPlaceName: string | null;
+  resolvedAddress: string | null;
+  resolutionSource: 'google_places_cache' | 'google_places_api' | 'text_fallback' | null;
   gcsImages: string[];
   features: Record<string, boolean>;
   featureVerification: {
@@ -74,6 +83,11 @@ interface CandidateDraft {
     electricitySupply: AccessVerificationState;
     furnishedProperty: AccessVerificationState;
   };
+}
+
+interface UploadingPhotoPreview {
+  tempId: string;
+  previewUrl: string;
 }
 
 function normalizeDescriptionLayout(text: string): string {
@@ -146,6 +160,11 @@ function toDraft(c: FbIngestedCandidate): CandidateDraft {
     phone3: ex?.phone3 || '',
     matchedCityId: c.matchedCityId || '',
     matchedCityLabel: c.matchedCityLabel || '',
+    cityCandidates: Array.isArray(c.cityCandidates) ? [...c.cityCandidates] : [],
+    resolvedCoords: c.resolvedCoords || null,
+    resolvedPlaceName: c.resolvedPlaceName || null,
+    resolvedAddress: c.resolvedAddress || null,
+    resolutionSource: c.resolutionSource || null,
     gcsImages: Array.isArray(c.gcsImages) ? [...c.gcsImages] : [],
     features,
     featureVerification: {
@@ -156,6 +175,12 @@ function toDraft(c: FbIngestedCandidate): CandidateDraft {
       furnishedProperty,
     },
   };
+}
+
+function formatDistanceMeters(meters?: number): string | null {
+  if (typeof meters !== 'number' || !Number.isFinite(meters)) return null;
+  if (meters < 1000) return `${Math.round(meters)} m`;
+  return `${(meters / 1000).toFixed(1)} km`;
 }
 
 function toNumOrNull(val: string): number | null {
@@ -185,9 +210,53 @@ function buildPatchFromDraft(d: CandidateDraft): Record<string, unknown> {
     phone2: d.phone2.trim() || null,
     phone3: d.phone3.trim() || null,
     matchedCityId: d.matchedCityId || null,
+    cityCandidates: d.cityCandidates,
+    resolvedCoords: d.resolvedCoords,
+    resolvedPlaceName: d.resolvedPlaceName,
+    resolvedAddress: d.resolvedAddress,
+    resolutionSource: d.resolutionSource,
     gcsImages: d.gcsImages,
     features: d.features,
     featureVerification: d.featureVerification,
+  };
+}
+
+function mergeDraftIntoCandidate(
+  candidate: FbIngestedCandidate,
+  draft: CandidateDraft,
+): FbIngestedCandidate {
+  const commercial = isCommercialHouseType(draft.houseType);
+  return {
+    ...candidate,
+    matchedCityId: draft.matchedCityId || null,
+    matchedCityLabel: draft.matchedCityLabel || null,
+    cityCandidates: [...draft.cityCandidates],
+    resolvedCoords: draft.resolvedCoords,
+    resolvedPlaceName: draft.resolvedPlaceName,
+    resolvedAddress: draft.resolvedAddress,
+    resolutionSource: draft.resolutionSource,
+    gcsImages: [...draft.gcsImages],
+    featureVerification: { ...draft.featureVerification },
+    extracted: {
+      ...candidate.extracted,
+      title: draft.title.trim(),
+      description: normalizeDescriptionLayout(draft.description),
+      type: draft.type,
+      houseType: draft.houseType,
+      price: draft.type === 'sale' ? toNumOrNull(draft.price) : null,
+      rent: draft.type === 'rent' ? toNumOrNull(draft.rent) : null,
+      rooms: commercial ? null : toNumOrNull(draft.rooms),
+      livingRoom: commercial ? null : toNumOrNull(draft.livingRoom),
+      kitchen: commercial ? null : toNumOrNull(draft.kitchen),
+      toilet: toNumOrNull(draft.toilet),
+      bathrooms: commercial ? null : toNumOrNull(draft.bathrooms),
+      area: toNumOrNull(draft.area),
+      floor: draft.floor.trim() || null,
+      phone1: draft.phone1.trim() || null,
+      phone2: draft.phone2.trim() || null,
+      phone3: draft.phone3.trim() || null,
+      features: { ...draft.features },
+    },
   };
 }
 
@@ -273,50 +342,147 @@ function buildCallQuestionsText(title: string, missingKeys: string[]): string {
 interface CandidateCardProps {
   candidate: FbIngestedCandidate;
   userId: string;
-  onActionDone: (message: string) => void;
-  onError: (message: string) => void;
-  onCandidateUpdated: (updated: FbIngestedCandidate) => void;
+  initialDraftOverride?: CandidateDraft;
+  collapseSignal?: { collapsed: boolean; seq: number };
+  onDirtyChange: (id: string, dirty: boolean) => void;
+  onSaveDraft: (
+    candidate: FbIngestedCandidate,
+    draft: CandidateDraft,
+    patch: Record<string, unknown>,
+  ) => Promise<FbIngestedCandidate | null>;
+  onApproveOptimistic: (
+    candidate: FbIngestedCandidate,
+    draft: CandidateDraft,
+    patch: Record<string, unknown>,
+  ) => void;
+  onRejectOptimistic: (
+    candidate: FbIngestedCandidate,
+    draft: CandidateDraft,
+  ) => void;
+  onCandidateReanalyzed: (updated: FbIngestedCandidate) => void;
+  onToastError: (title: string, text: string) => void;
 }
 
-function CandidateReviewCard({
+const CandidateReviewCard = React.memo(function CandidateReviewCard({
   candidate,
   userId,
-  onActionDone,
-  onError,
-  onCandidateUpdated,
+  initialDraftOverride,
+  collapseSignal,
+  onDirtyChange,
+  onSaveDraft,
+  onApproveOptimistic,
+  onRejectOptimistic,
+  onCandidateReanalyzed,
+  onToastError,
 }: CandidateCardProps) {
-  const [draft, setDraft] = useState<CandidateDraft>(() => toDraft(candidate));
+  const [draft, setDraft] = useState<CandidateDraft>(
+    () => initialDraftOverride || toDraft(candidate),
+  );
+  const [savedBaseline, setSavedBaseline] = useState<string>(() =>
+    JSON.stringify(buildPatchFromDraft(toDraft(candidate))),
+  );
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [isReanalyzing, setIsReanalyzing] = useState(false);
+
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [prevCollapseSeq, setPrevCollapseSeq] = useState(collapseSignal?.seq ?? 0);
+  if (collapseSignal && collapseSignal.seq !== prevCollapseSeq) {
+    setPrevCollapseSeq(collapseSignal.seq);
+    setIsCollapsed(collapseSignal.collapsed);
+  }
+
   const [cityQuery, setCityQuery] = useState('');
   const [cityResults, setCityResults] = useState<CityLocation[]>([]);
   const [isSearchingCity, setIsSearchingCity] = useState(false);
+  const [isResolvingPlaces, setIsResolvingPlaces] = useState(false);
+  const [placesFeedback, setPlacesFeedback] = useState<string | null>(null);
   const [showAllFeatures, setShowAllFeatures] = useState(false);
-  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [uploadingPhotos, setUploadingPhotos] = useState<UploadingPhotoPreview[]>([]);
   const [galleryIndex, setGalleryIndex] = useState<number | null>(null);
   const [copiedKey, setCopiedKey] = useState<'questions' | 'phone1' | null>(null);
-  const [busyAction, setBusyAction] = useState<
-    'save' | 'approve' | 'reject' | 'reanalyze' | null
-  >(null);
+
+  const saveSeqRef = useRef(0);
+  const savedBadgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activePreviewUrlsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const urls = activePreviewUrlsRef.current;
+    return () => {
+      if (savedBadgeTimerRef.current) clearTimeout(savedBadgeTimerRef.current);
+      urls.forEach((u) => URL.revokeObjectURL(u));
+      urls.clear();
+    };
+  }, []);
+
+  const currentPatch = useMemo(() => buildPatchFromDraft(draft), [draft]);
+  const currentSerialized = useMemo(() => JSON.stringify(currentPatch), [currentPatch]);
+  const isDirty = currentSerialized !== savedBaseline;
+
+  useEffect(() => {
+    onDirtyChange(candidate._id, isDirty);
+  }, [candidate._id, isDirty, onDirtyChange]);
 
   useEffect(() => {
     const clean = cityQuery.trim();
     if (clean.length < 2) {
       return;
     }
+    let cancelled = false;
     const timer = setTimeout(async () => {
       setIsSearchingCity(true);
       try {
         const res = await cityService.searchCities(clean, 8);
-        setCityResults(res);
+        if (!cancelled) setCityResults(res);
       } catch {
-        setCityResults([]);
+        if (!cancelled) setCityResults([]);
       } finally {
-        setIsSearchingCity(false);
+        if (!cancelled) setIsSearchingCity(false);
       }
-    }, 220);
-    return () => clearTimeout(timer);
+    }, 200);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [cityQuery]);
 
-  const missing = computeLiveMissing(draft);
+  const handleResolvePlaces = async () => {
+    const clean = cityQuery.trim();
+    if (clean.length < 2 || isResolvingPlaces) return;
+    setIsResolvingPlaces(true);
+    setPlacesFeedback(null);
+    try {
+      const res = await fbIngestionService.resolveLocation(userId, clean, candidate.groupName);
+      if (!res.bestMatch) {
+        setPlacesFeedback('Aucun repère ou Fokontany correspondant trouvé pour cette requête.');
+        return;
+      }
+      setDraft((prev) => ({
+        ...prev,
+        matchedCityId: res.bestMatch!._id,
+        matchedCityLabel: res.bestMatch!.label,
+        cityCandidates: res.candidates && res.candidates.length > 0 ? res.candidates : prev.cityCandidates,
+        resolvedCoords: res.place?.coords ?? null,
+        resolvedPlaceName: res.place?.placeName ?? null,
+        resolvedAddress: res.place?.formattedAddress ?? null,
+        resolutionSource: res.place?.source ?? null,
+      }));
+      setCityQuery('');
+      setCityResults([]);
+      if (res.place?.source === 'google_places_cache') {
+        setPlacesFeedback(`Cache Places (0 API call) -> ${res.bestMatch.label}`);
+      } else if (res.place?.source === 'google_places_api') {
+        setPlacesFeedback(`Google Places API -> ${res.bestMatch.label}`);
+      } else {
+        setPlacesFeedback(`Fallback texte -> ${res.bestMatch.label}`);
+      }
+    } catch (err) {
+      setPlacesFeedback((err as Error).message || 'Erreur lors de la résolution Google Places.');
+    } finally {
+      setIsResolvingPlaces(false);
+    }
+  };
+
+  const missing = useMemo(() => computeLiveMissing(draft), [draft]);
   const canPublish =
     Boolean(draft.type) &&
     Boolean(draft.matchedCityId) &&
@@ -330,79 +496,91 @@ function CandidateReviewCard({
     .map(([key]) => key);
 
   const handleUploadExtraPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setIsUploadingPhoto(true);
-    try {
-      const uploaded = await imageService.uploadImageToGCS(file);
-      setDraft((prev) => ({
-        ...prev,
-        gcsImages: [...prev.gcsImages, uploaded.src],
-      }));
-    } catch (err) {
-      onError((err as Error).message || 'Erreur upload photo');
-    } finally {
-      setIsUploadingPhoto(false);
-      e.target.value = '';
-    }
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (files.length === 0) return;
+
+    const previews: UploadingPhotoPreview[] = files.map((file, idx) => {
+      const previewUrl = URL.createObjectURL(file);
+      activePreviewUrlsRef.current.add(previewUrl);
+      return {
+        tempId: `${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 7)}`,
+        previewUrl,
+      };
+    });
+
+    setUploadingPhotos((prev) => [...prev, ...previews]);
+
+    await Promise.all(
+      files.map(async (file, idx) => {
+        const preview = previews[idx];
+        try {
+          const uploaded = await imageService.uploadImageToGCS(file);
+          setDraft((prev) => ({
+            ...prev,
+            gcsImages: [...prev.gcsImages, uploaded.src],
+          }));
+        } catch (err) {
+          onToastError('Erreur upload photo', (err as Error).message || 'Upload échoué');
+        } finally {
+          setUploadingPhotos((prev) => prev.filter((p) => p.tempId !== preview.tempId));
+          URL.revokeObjectURL(preview.previewUrl);
+          activePreviewUrlsRef.current.delete(preview.previewUrl);
+        }
+      }),
+    );
   };
 
-  const handleSave = async () => {
-    setBusyAction('save');
-    try {
-      await fbIngestionService.updateCandidate(userId, candidate._id, buildPatchFromDraft(draft));
-      onActionDone(`Brouillon "${draft.title}" sauvegardé`);
-    } catch (err) {
-      onError((err as Error).message);
-    } finally {
-      setBusyAction(null);
-    }
-  };
+  const handleSave = useCallback(async () => {
+    const seq = ++saveSeqRef.current;
+    const prevBaseline = savedBaseline;
+    setSavedBaseline(currentSerialized);
+    setSaveState('saving');
 
-  const handleApprove = async () => {
+    const result = await onSaveDraft(candidate, draft, currentPatch);
+    if (saveSeqRef.current !== seq) return;
+
+    if (result) {
+      setSaveState('saved');
+      if (savedBadgeTimerRef.current) clearTimeout(savedBadgeTimerRef.current);
+      savedBadgeTimerRef.current = setTimeout(() => {
+        setSaveState((curr) => (curr === 'saved' ? 'idle' : curr));
+      }, 2600);
+    } else {
+      setSavedBaseline(prevBaseline);
+      setSaveState('idle');
+    }
+  }, [candidate, currentPatch, currentSerialized, draft, onSaveDraft, savedBaseline]);
+
+  const handleApprove = () => {
     if (!canPublish) {
-      onError('Renseignez au minimum le type, le montant (Ar) et la localité avant de publier.');
+      onToastError(
+        'Champs requis manquants',
+        'Renseignez au minimum le titre, le type, le montant (Ar) et la localité avant de publier.',
+      );
+      setIsCollapsed(false);
       return;
     }
-    setBusyAction('approve');
-    try {
-      const res = await fbIngestionService.approveCandidate(
-        userId,
-        candidate._id,
-        buildPatchFromDraft(draft),
-      );
-      onActionDone(`Annonce publiée en ligne (#${res.property?.propertyNumber || res.property?._id})`);
-    } catch (err) {
-      onError((err as Error).message);
-    } finally {
-      setBusyAction(null);
-    }
+    onApproveOptimistic(candidate, draft, currentPatch);
   };
 
-  const handleReject = async () => {
-    setBusyAction('reject');
-    try {
-      const res = await fbIngestionService.rejectCandidate(userId, candidate._id);
-      onActionDone(
-        `Annonce rejetée (${res.deletedGcsImages} photo(s) supprimée(s) du cloud)`,
-      );
-    } catch (err) {
-      onError((err as Error).message);
-    } finally {
-      setBusyAction(null);
-    }
+  const handleReject = () => {
+    onRejectOptimistic(candidate, draft);
   };
 
   const handleReanalyzeCard = async () => {
-    setBusyAction('reanalyze');
+    if (isReanalyzing) return;
+    setIsReanalyzing(true);
     try {
       const updated = await fbIngestionService.reanalyzeCandidate(userId, candidate._id);
-      onCandidateUpdated(updated);
-      setDraft(toDraft(updated));
+      const nextDraft = toDraft(updated);
+      setDraft(nextDraft);
+      setSavedBaseline(JSON.stringify(buildPatchFromDraft(nextDraft)));
+      onCandidateReanalyzed(updated);
     } catch (err) {
-      onError((err as Error).message);
+      onToastError('Erreur ré-analyse', (err as Error).message);
     } finally {
-      setBusyAction(null);
+      setIsReanalyzing(false);
     }
   };
 
@@ -476,7 +654,6 @@ function CandidateReviewCard({
         Boolean(prev.features.waterPumpSupplyJirama) &&
         prev.featureVerification.waterSupply === 'unknown'
       ) {
-        // 1-click confirmation of pre-filled probable JIRAMA water
         nextFeatures.waterPumpSupplyJirama = true;
         nextFeatures.waterFetchExternal = false;
         nextVerif.waterSupply = 'yes';
@@ -532,7 +709,6 @@ function CandidateReviewCard({
         Boolean(prev.features.electricityJirama) &&
         prev.featureVerification.electricitySupply === 'unknown'
       ) {
-        // 1-click confirmation of pre-filled probable JIRAMA power
         nextFeatures.electricityJirama = true;
         nextFeatures.electricityPower = true;
         nextVerif.electricitySupply = 'yes';
@@ -573,7 +749,7 @@ function CandidateReviewCard({
       setCopiedKey(key);
       setTimeout(() => setCopiedKey(null), 2000);
     } catch {
-      onError('Impossible de copier dans le presse-papiers');
+      onToastError('Presse-papiers', 'Impossible de copier dans le presse-papiers');
     }
   };
 
@@ -612,10 +788,18 @@ function CandidateReviewCard({
       : 'border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 focus:ring-brand-green';
 
   return (
-    <div className="bg-white dark:bg-zinc-900 rounded-[2rem] border border-zinc-200/80 dark:border-zinc-800 shadow-sm overflow-hidden">
+    <div
+      onKeyDown={(e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+          e.preventDefault();
+          void handleSave();
+        }
+      }}
+      className="bg-white dark:bg-zinc-900 rounded-[2rem] border border-zinc-200/80 dark:border-zinc-800 shadow-sm overflow-hidden"
+    >
       {/* Header strip */}
       <div className="px-6 py-4 bg-zinc-50/80 dark:bg-zinc-800/40 border-b border-zinc-200/70 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2.5 min-w-0">
           <span
             className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${
               candidate.status === 'approved'
@@ -632,20 +816,23 @@ function CandidateReviewCard({
           </span>
           <span className="inline-flex items-center gap-1.5 text-xs text-zinc-500">
             {candidate.authorAvatarUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={candidate.authorAvatarUrl}
                 alt={candidate.authorName || 'Auteur'}
                 className="w-5 h-5 rounded-full object-cover border border-zinc-200 dark:border-zinc-700"
               />
             )}
-            <span>
+            <span
+              title="Date et heure originales de publication sur Facebook (conservées telles quelles comme created_at lors de la publication sur TranoGasy)"
+            >
               par <strong className="text-zinc-700 dark:text-zinc-300">{candidate.authorName || 'Membre'}</strong>
               {candidate.authorFbId ? (
                 <span className="ml-1 font-mono text-[10px] text-zinc-400">
                   (ID: {candidate.authorFbId})
                 </span>
               ) : null}{' '}
-              • {new Date(candidate.datePosted).toLocaleString('fr-FR')}
+              • Publié FB : {new Date(candidate.datePosted).toLocaleString('fr-FR')}
             </span>
           </span>
           <span
@@ -659,6 +846,34 @@ function CandidateReviewCard({
           >
             <Sparkles className="w-3 h-3" /> Confiance {candidate.aiConfidence}
           </span>
+
+          {candidate.status === 'pending' && (
+            <span
+              className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                missing.length === 0 && canPublish
+                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
+                  : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+              }`}
+            >
+              {missing.length === 0 && canPublish
+                ? 'Prêt à publier ✓'
+                : `${missing.length} à vérifier`}
+            </span>
+          )}
+
+          {isDirty ? (
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-700 dark:text-amber-300">
+              Modifié (Ctrl+S)
+            </span>
+          ) : saveState === 'saving' ? (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-zinc-200/70 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-200">
+              <Loader2 className="w-2.5 h-2.5 animate-spin" /> Sync...
+            </span>
+          ) : saveState === 'saved' ? (
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
+              Enregistré ✓
+            </span>
+          ) : null}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -680,1066 +895,1643 @@ function CandidateReviewCard({
           >
             Voir post original <ExternalLink className="w-3.5 h-3.5" />
           </a>
+
+          <button
+            type="button"
+            onClick={() => setIsCollapsed((v) => !v)}
+            aria-label={isCollapsed ? 'Déplier la fiche' : 'Réduire la fiche'}
+            title={isCollapsed ? 'Déplier la fiche' : 'Réduire la fiche'}
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs font-semibold text-zinc-600 dark:text-zinc-300 hover:border-brand-green transition cursor-pointer"
+          >
+            {isCollapsed ? (
+              <ChevronDown className="w-3.5 h-3.5" />
+            ) : (
+              <ChevronUp className="w-3.5 h-3.5" />
+            )}
+          </button>
         </div>
       </div>
 
-      {/* Missing fields highlight banner + Publisher call helper */}
-      {missing.length > 0 && candidate.status === 'pending' && (
-        <div className="px-6 py-2.5 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200/70 dark:border-amber-900/50 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-800 dark:text-amber-200">
-          <div className="flex flex-wrap items-center gap-2">
-            <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
-            <span className="font-semibold">Champs non mentionnés ou à vérifier :</span>
-            {missing.map((m) => (
-              <span
-                key={m}
-                className="px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-900/60 font-medium"
-              >
-                {MISSING_FIELD_LABELS[m] || m}
+      {/* Compact collapsed bar */}
+      {isCollapsed && (
+        <div className="px-6 py-3 flex flex-wrap items-center justify-between gap-3 text-xs bg-white dark:bg-zinc-900">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 min-w-0">
+            <span className="font-bold text-zinc-900 dark:text-white truncate max-w-md">
+              {draft.title || 'Sans titre'}
+            </span>
+            {amountVal > 0 && (
+              <span className="font-extrabold text-brand-green">
+                {amountVal.toLocaleString('fr-FR')} Ar{draft.type === 'rent' ? '/mois' : ''}
               </span>
-            ))}
+            )}
+            <span className="text-zinc-500 truncate max-w-xs">
+              {draft.matchedCityLabel || 'Localité non définie'}
+            </span>
+            {draft.phone1 && (
+              <span className="font-mono text-zinc-600 dark:text-zinc-300">{draft.phone1}</span>
+            )}
+            <span className="text-zinc-400">{draft.gcsImages.length} photo(s)</span>
           </div>
 
-          <div className="flex flex-wrap items-center gap-1.5">
-            {primaryTelHref && (
-              <a
-                href={primaryTelHref}
-                className="inline-flex items-center gap-1 rounded-full bg-amber-600 px-2.5 py-1 text-[11px] font-bold text-white shadow-sm hover:bg-amber-700 transition"
-                title="Appeler le propriétaire pour vérifier les infos manquantes"
+          {candidate.status !== 'approved' && (
+            <div className="flex items-center gap-2 shrink-0">
+              {candidate.status !== 'rejected' && (
+                <button
+                  type="button"
+                  onClick={handleReject}
+                  className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-bold border border-red-200 dark:border-red-900 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition cursor-pointer"
+                >
+                  <Trash2 className="w-3 h-3" /> Rejeter
+                </button>
+              )}
+              <button
+                type="button"
+                disabled={!canPublish}
+                onClick={handleApprove}
+                className="inline-flex items-center gap-1 px-3.5 py-1 rounded-full text-[11px] font-bold bg-brand-green text-white hover:opacity-95 transition disabled:opacity-40 cursor-pointer"
               >
-                <PhoneCall className="w-3 h-3" />
-                Appeler {draft.phone1.trim()}
-              </a>
-            )}
-            <button
-              type="button"
-              onClick={() =>
-                handleCopyText(
-                  buildCallQuestionsText(draft.title, missing),
-                  'questions',
-                )
-              }
-              className="inline-flex items-center gap-1 rounded-full border border-amber-300 dark:border-amber-700 bg-white/80 dark:bg-amber-900/40 px-2.5 py-1 text-[11px] font-semibold text-amber-900 dark:text-amber-100 hover:bg-white transition"
-              title="Copier les questions manquantes à poser lors de l’appel"
-            >
-              <Copy className="w-3 h-3" />
-              {copiedKey === 'questions' ? 'Questions copiées !' : 'Copier questions d’appel'}
-            </button>
-          </div>
+                <Check className="w-3.5 h-3.5" /> Approuver
+              </button>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Side-by-side split view */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 divide-y lg:divide-y-0 lg:divide-x divide-zinc-200/70 dark:divide-zinc-800">
-        {/* LEFT COLUMN: Raw Facebook Post + Photos */}
-        <div className="lg:col-span-5 p-6 space-y-5 bg-zinc-50/30 dark:bg-zinc-950/20">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-2">
-              Texte original Facebook
-            </p>
-            <div className="p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 text-sm text-zinc-800 dark:text-zinc-200 whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto">
-              {candidate.rawContent}
-            </div>
-          </div>
+      {!isCollapsed && (
+        <>
+          {/* Missing fields highlight banner + Publisher call helper */}
+          {missing.length > 0 && candidate.status === 'pending' && (
+            <div className="px-6 py-2.5 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200/70 dark:border-amber-900/50 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-800 dark:text-amber-200">
+              <div className="flex flex-wrap items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
+                <span className="font-semibold">Champs non mentionnés ou à vérifier :</span>
+                {missing.map((m) => (
+                  <span
+                    key={m}
+                    className="px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-900/60 font-medium"
+                  >
+                    {MISSING_FIELD_LABELS[m] || m}
+                  </span>
+                ))}
+              </div>
 
-          {candidate.aiNotes && (
-            <div className="p-3 rounded-xl bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200/60 dark:border-blue-900/50 text-xs text-blue-800 dark:text-blue-200">
-              <span className="font-semibold">Note IA :</span> {candidate.aiNotes}
+              <div className="flex flex-wrap items-center gap-1.5">
+                {primaryTelHref && (
+                  <a
+                    href={primaryTelHref}
+                    className="inline-flex items-center gap-1 rounded-full bg-amber-600 px-2.5 py-1 text-[11px] font-bold text-white shadow-sm hover:bg-amber-700 transition"
+                    title="Appeler le propriétaire pour vérifier les infos manquantes"
+                  >
+                    <PhoneCall className="w-3 h-3" />
+                    Appeler {draft.phone1.trim()}
+                  </a>
+                )}
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleCopyText(
+                      buildCallQuestionsText(draft.title, missing),
+                      'questions',
+                    )
+                  }
+                  className="inline-flex items-center gap-1 rounded-full border border-amber-300 dark:border-amber-700 bg-white/80 dark:bg-amber-900/40 px-2.5 py-1 text-[11px] font-semibold text-amber-900 dark:text-amber-100 hover:bg-white transition cursor-pointer"
+                  title="Copier les questions manquantes à poser lors de l’appel"
+                >
+                  <Copy className="w-3 h-3" />
+                  {copiedKey === 'questions' ? 'Questions copiées !' : 'Copier questions d’appel'}
+                </button>
+              </div>
             </div>
           )}
 
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-bold uppercase tracking-wider text-zinc-400">
-                Photos GCS ({draft.gcsImages.length}){' '}
-                {draft.gcsImages.length > 0 && (
-                  <span className="normal-case font-normal text-zinc-400">
-                    • cliquer pour agrandir
-                  </span>
-                )}
-              </p>
-              <label className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-green hover:underline cursor-pointer">
-                {isUploadingPhoto ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <ImagePlus className="w-3.5 h-3.5" />
-                )}
-                Ajouter photo
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleUploadExtraPhoto}
-                  disabled={isUploadingPhoto}
-                />
-              </label>
-            </div>
-
-            {draft.gcsImages.length === 0 ? (
-              <div className="p-6 rounded-2xl border border-dashed border-zinc-300 dark:border-zinc-700 text-center text-xs text-zinc-500">
-                Aucune photo enregistrée dans GCS pour cette annonce.
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-                {draft.gcsImages.map((imgUrl, idx) => (
-                  <div
-                    key={imgUrl + idx}
-                    className={`relative group aspect-square rounded-xl overflow-hidden border bg-zinc-100 dark:bg-zinc-800 ${
-                      idx === 0
-                        ? 'border-[#7cbd1e] ring-2 ring-[#7cbd1e]/25'
-                        : 'border-zinc-200 dark:border-zinc-800'
-                    }`}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => setGalleryIndex(idx)}
-                      className="block w-full h-full cursor-zoom-in focus:outline-none"
-                      title={`Inspecter photo ${idx + 1} sur ${draft.gcsImages.length}`}
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={imgUrl}
-                        alt={`Photo ${idx + 1}`}
-                        className="w-full h-full object-cover transition duration-200 group-hover:scale-105"
-                      />
-                      <span className="pointer-events-none absolute inset-0 bg-black/0 group-hover:bg-black/25 transition flex items-center justify-center">
-                        <span className="opacity-0 group-hover:opacity-100 transition inline-flex items-center gap-1 rounded-full bg-black/75 px-2.5 py-1 text-[11px] font-semibold text-white shadow">
-                          <ZoomIn className="w-3.5 h-3.5" />
-                          Aperçu
-                        </span>
-                      </span>
-                    </button>
-
-                    <span className="pointer-events-none absolute bottom-1.5 left-1.5 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-bold text-white">
-                      {idx === 0 ? '#1 Couv.' : `#${idx + 1}`}
-                    </span>
-
-                    {idx > 0 && (
-                      <button
-                        type="button"
-                        title="Définir en photo principale (#1)"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          promotePhotoToCover(idx);
-                        }}
-                        className="absolute top-1.5 left-1.5 w-6 h-6 rounded-full bg-black/70 text-amber-300 flex items-center justify-center opacity-0 group-hover:opacity-100 transition hover:bg-[#7cbd1e] hover:text-white"
-                      >
-                        <Star className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-
-                    <button
-                      type="button"
-                      title="Retirer cette photo"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removePhotoAt(idx);
-                      }}
-                      className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/70 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition hover:bg-red-600"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <AdminPhotoGalleryModal
-              isOpen={galleryIndex !== null}
-              images={draft.gcsImages}
-              initialIndex={galleryIndex ?? 0}
-              title={draft.title || candidate.authorName || 'Annonce Facebook'}
-              onClose={() => setGalleryIndex(null)}
-              onRemoveImage={removePhotoAt}
-              onSetCoverImage={promotePhotoToCover}
-            />
-          </div>
-        </div>
-
-        {/* RIGHT COLUMN: Fast Inline Validation Form */}
-        <div className="lg:col-span-7 p-6 space-y-4">
-          {/* Type & House Type quick toggles */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-zinc-500 mb-1">
-                Transaction *
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                {(['rent', 'sale'] as const).map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => setDraft((prev) => ({ ...prev, type: t }))}
-                    className={`py-2 px-3 rounded-xl text-xs font-bold border transition ${
-                      draft.type === t
-                        ? 'bg-brand-green text-white border-brand-green shadow-sm'
-                        : 'bg-zinc-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
-                    }`}
-                  >
-                    {t === 'rent' ? 'À louer (Rent)' : 'À vendre (Sale)'}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-zinc-500 mb-1">
-                Catégorie du bien
-              </label>
-              <div className="flex flex-wrap gap-1.5">
-                {PROPERTY_TYPE_DEFS.map((def) => {
-                  const Icon = def.icon;
-                  const active = draft.houseType === def.id;
-                  return (
-                    <button
-                      key={def.id}
-                      type="button"
-                      onClick={() => setDraft((prev) => ({ ...prev, houseType: def.id }))}
-                      className={`inline-flex items-center gap-1.5 py-2 px-2.5 rounded-xl text-xs font-bold border transition ${
-                        active
-                          ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 border-zinc-900 dark:border-white'
-                          : 'bg-zinc-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:border-zinc-400 dark:hover:border-zinc-500'
-                      }`}
-                    >
-                      <Icon className="w-3.5 h-3.5 shrink-0" />
-                      {def.shortLabel}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-
-          {/* Title & Amount */}
-          <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
-            <div className="sm:col-span-7">
-              <label className="block text-xs font-semibold text-zinc-500 mb-1">
-                Titre de l&apos;annonce *
-              </label>
-              <input
-                type="text"
-                value={draft.title}
-                onChange={(e) => setDraft((prev) => ({ ...prev, title: e.target.value }))}
-                className="w-full px-3.5 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm focus:outline-none focus:ring-2 focus:ring-brand-green"
-              />
-            </div>
-
-            <div className="sm:col-span-5">
-              <label className="block text-xs font-semibold text-zinc-500 mb-1">
-                {draft.type === 'sale' ? 'Prix de vente (Ar) *' : 'Loyer / mois (Ar) *'}
-              </label>
-              <input
-                type="number"
-                value={draft.type === 'sale' ? draft.price : draft.rent}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setDraft((prev) =>
-                    prev.type === 'sale' ? { ...prev, price: val } : { ...prev, rent: val },
-                  );
-                }}
-                placeholder="ex: 600000"
-                className={`w-full px-3.5 py-2 rounded-xl border text-sm font-semibold focus:outline-none focus:ring-2 ${missingRing(
-                  draft.type === 'sale' ? 'price' : 'rent',
-                )}`}
-              />
-              {amountVal > 0 && (
-                <p className="text-[11px] text-zinc-500 mt-1">
-                  = {(amountVal * 5).toLocaleString('fr-FR')} FMG
+          {/* Side-by-side split view */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 divide-y lg:divide-y-0 lg:divide-x divide-zinc-200/70 dark:divide-zinc-800">
+            {/* LEFT COLUMN: Raw Facebook Post + Photos */}
+            <div className="lg:col-span-5 p-6 space-y-5 bg-zinc-50/30 dark:bg-zinc-950/20">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-2">
+                  Texte original Facebook
                 </p>
-              )}
-            </div>
-          </div>
-
-          {/* City / Fokontany selector with 1-click suggestions + live search */}
-          <div className="p-3.5 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 bg-zinc-50/60 dark:bg-zinc-800/20 space-y-2.5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-300 flex items-center gap-1.5">
-                <MapPin className="w-3.5 h-3.5 text-brand-green" />
-                Fokontany / Localité *
-              </label>
-              {draft.matchedCityLabel ? (
-                <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100/70 dark:bg-emerald-950/60 px-2.5 py-0.5 rounded-full">
-                  Sélectionné : {draft.matchedCityLabel}
-                </span>
-              ) : (
-                <span className="text-xs font-semibold text-amber-600">Aucune localité liée</span>
-              )}
-            </div>
-
-            {candidate.cityCandidates && candidate.cityCandidates.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {candidate.cityCandidates.map((cand) => {
-                  const selected = draft.matchedCityId === cand._id;
-                  return (
-                    <button
-                      key={cand._id}
-                      type="button"
-                      onClick={() =>
-                        setDraft((prev) => ({
-                          ...prev,
-                          matchedCityId: cand._id,
-                          matchedCityLabel: cand.label,
-                        }))
-                      }
-                      className={`text-[11px] px-2.5 py-1 rounded-full border transition font-medium ${
-                        selected
-                          ? 'bg-brand-green text-white border-brand-green'
-                          : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:border-brand-green'
-                      }`}
-                    >
-                      {cand.label} ({cand.score})
-                    </button>
-                  );
-                })}
+                <div className="p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 text-sm text-zinc-800 dark:text-zinc-200 whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto">
+                  {candidate.rawContent}
+                </div>
               </div>
-            )}
 
-            <div className="relative">
-              <input
-                type="text"
-                value={cityQuery}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setCityQuery(val);
-                  if (val.trim().length < 2) {
-                    setCityResults([]);
-                  }
-                }}
-                placeholder="Rechercher un autre Fokontany (ex: Ivandry, Andohan'i Mandroseza, Itaosy...)"
-                className={`w-full px-3.5 py-1.5 rounded-xl border text-xs focus:outline-none focus:ring-2 ${missingRing(
-                  'city',
-                )}`}
-              />
-              {isSearchingCity && (
-                <Loader2 className="w-3.5 h-3.5 animate-spin absolute right-3 top-2 text-zinc-400" />
-              )}
-              {cityResults.length > 0 && (
-                <div className="mt-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 divide-y divide-zinc-100 dark:divide-zinc-800 max-h-40 overflow-y-auto shadow-md">
-                  {cityResults.map((city) => {
-                    const label = [city.fokontany, city.commune, city.district]
-                      .filter(Boolean)
-                      .join(' — ');
-                    return (
-                      <button
-                        key={city._id}
-                        type="button"
-                        onClick={() => {
-                          setDraft((prev) => ({
-                            ...prev,
-                            matchedCityId: city._id,
-                            matchedCityLabel: label,
-                          }));
-                          setCityQuery('');
-                          setCityResults([]);
-                        }}
-                        className="w-full text-left px-3 py-1.5 text-xs hover:bg-brand-green/10 transition"
-                      >
-                        {label}
-                      </button>
-                    );
-                  })}
+              {candidate.aiNotes && (
+                <div className="p-3 rounded-xl bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200/60 dark:border-blue-900/50 text-xs text-blue-800 dark:text-blue-200">
+                  <span className="font-semibold">Note IA :</span> {candidate.aiNotes}
                 </div>
               )}
-            </div>
-          </div>
 
-          {/* Numeric rooms & dimensions */}
-          {(() => {
-            const commercial = isCommercialHouseType(draft.houseType);
-            const numericFields = commercial
-              ? ([
-                  { key: 'toilet', label: 'WC (opt.)' },
-                  { key: 'area', label: 'm²' },
-                ] as const)
-              : ([
-                  { key: 'rooms', label: 'Chambres' },
-                  { key: 'livingRoom', label: 'Salon' },
-                  { key: 'kitchen', label: 'Cuisine' },
-                  { key: 'toilet', label: 'WC' },
-                  { key: 'bathrooms', label: 'Douche' },
-                  { key: 'area', label: 'm²' },
-                ] as const);
-
-            return (
-              <div className={`grid gap-2 ${commercial ? 'grid-cols-3' : 'grid-cols-3 sm:grid-cols-7'}`}>
-                {numericFields.map((field) => (
-                  <div key={field.key}>
-                    <label className="block text-[11px] font-semibold text-zinc-500 mb-1">
-                      {field.label}
-                    </label>
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-bold uppercase tracking-wider text-zinc-400">
+                    Photos GCS ({draft.gcsImages.length}){' '}
+                    {draft.gcsImages.length > 0 && (
+                      <span className="normal-case font-normal text-zinc-400">
+                        • cliquer pour agrandir
+                      </span>
+                    )}
+                  </p>
+                  <label className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-green hover:underline cursor-pointer">
+                    {uploadingPhotos.length > 0 ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <ImagePlus className="w-3.5 h-3.5" />
+                    )}
+                    {uploadingPhotos.length > 0
+                      ? `Upload (${uploadingPhotos.length})...`
+                      : 'Ajouter photo(s)'}
                     <input
-                      type="number"
-                      min={0}
-                      value={draft[field.key]}
-                      onChange={(e) =>
-                        setDraft((prev) => ({ ...prev, [field.key]: e.target.value }))
-                      }
-                      placeholder="—"
-                      className={`w-full px-2.5 py-1.5 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 ${missingRing(
-                        field.key,
-                      )}`}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={handleUploadExtraPhoto}
                     />
-                  </div>
-                ))}
-                <div>
-                  <label className="block text-[11px] font-semibold text-zinc-500 mb-1">Étage</label>
-                  <input
-                    type="text"
-                    value={draft.floor}
-                    onChange={(e) => setDraft((prev) => ({ ...prev, floor: e.target.value }))}
-                    placeholder={commercial ? 'RDC / Bord de route' : 'RDC'}
-                    className="w-full px-2.5 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs focus:outline-none focus:ring-2 focus:ring-brand-green"
-                  />
+                  </label>
                 </div>
-              </div>
-            );
-          })()}
 
-          {/* Phones with quick Call & Copy */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            {(
-              [
-                { key: 'phone1', label: 'Téléphone 1 *' },
-                { key: 'phone2', label: 'Téléphone 2' },
-                { key: 'phone3', label: 'Téléphone 3' },
-              ] as const
-            ).map((p) => {
-              const rawVal = draft[p.key].trim();
-              const telHref = rawVal ? `tel:${rawVal.replace(/[^\d+]/g, '')}` : null;
-              return (
-                <div key={p.key}>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="block text-[11px] font-semibold text-zinc-500">
-                      {p.label}
-                    </label>
-                    {telHref && (
-                      <div className="flex items-center gap-1.5">
-                        {p.key === 'phone1' && (
+                {draft.gcsImages.length === 0 && uploadingPhotos.length === 0 ? (
+                  <div className="p-6 rounded-2xl border border-dashed border-zinc-300 dark:border-zinc-700 text-center text-xs text-zinc-500">
+                    Aucune photo enregistrée dans GCS pour cette annonce.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                    {draft.gcsImages.map((imgUrl, idx) => (
+                      <div
+                        key={imgUrl + idx}
+                        className={`relative group aspect-square rounded-xl overflow-hidden border bg-zinc-100 dark:bg-zinc-800 ${
+                          idx === 0
+                            ? 'border-[#7cbd1e] ring-2 ring-[#7cbd1e]/25'
+                            : 'border-zinc-200 dark:border-zinc-800'
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setGalleryIndex(idx)}
+                          className="block w-full h-full cursor-zoom-in focus:outline-none"
+                          title={`Inspecter photo ${idx + 1} sur ${draft.gcsImages.length}`}
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={imgUrl}
+                            alt={`Photo ${idx + 1}`}
+                            className="w-full h-full object-cover transition duration-200 group-hover:scale-105"
+                          />
+                          <span className="pointer-events-none absolute inset-0 bg-black/0 group-hover:bg-black/25 transition flex items-center justify-center">
+                            <span className="opacity-0 group-hover:opacity-100 transition inline-flex items-center gap-1 rounded-full bg-black/75 px-2.5 py-1 text-[11px] font-semibold text-white shadow">
+                              <ZoomIn className="w-3.5 h-3.5" />
+                              Aperçu
+                            </span>
+                          </span>
+                        </button>
+
+                        <span className="pointer-events-none absolute bottom-1.5 left-1.5 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                          {idx === 0 ? '#1 Couv.' : `#${idx + 1}`}
+                        </span>
+
+                        {idx > 0 && (
                           <button
                             type="button"
-                            onClick={() => handleCopyText(rawVal, 'phone1')}
-                            className="text-[10px] font-semibold text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
-                            title="Copier le numéro"
+                            title="Définir en photo principale (#1)"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              promotePhotoToCover(idx);
+                            }}
+                            className="absolute top-1.5 left-1.5 w-6 h-6 rounded-full bg-black/70 text-amber-300 flex items-center justify-center opacity-0 group-hover:opacity-100 transition hover:bg-[#7cbd1e] hover:text-white cursor-pointer"
                           >
-                            {copiedKey === 'phone1' ? 'Copié' : 'Copier'}
+                            <Star className="w-3.5 h-3.5" />
                           </button>
                         )}
-                        <a
-                          href={telHref}
-                          className="inline-flex items-center gap-0.5 text-[10px] font-bold text-brand-green hover:underline"
-                          title={`Appeler ${rawVal}`}
-                        >
-                          <PhoneCall className="w-2.5 h-2.5" /> Appeler
-                        </a>
-                      </div>
-                    )}
-                  </div>
-                  <input
-                    type="text"
-                    value={draft[p.key]}
-                    onChange={(e) =>
-                      setDraft((prev) => ({ ...prev, [p.key]: e.target.value }))
-                    }
-                    placeholder="034..."
-                    className={`w-full px-3 py-1.5 rounded-xl border text-xs focus:outline-none focus:ring-2 ${missingRing(
-                      p.key,
-                    )}`}
-                  />
-                </div>
-              );
-            })}
-          </div>
 
-          {/* Description preserving layout (spaces, newlines, returns) */}
-          <div>
-            <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
-              <label className="block text-xs font-semibold text-zinc-500">
-                Description nettoyée (mise en page conservée)
-              </label>
-              <button
-                type="button"
-                onClick={() =>
-                  setDraft((prev) => ({
-                    ...prev,
-                    description: normalizeDescriptionLayout(candidate.rawContent || ''),
-                  }))
-                }
-                className="inline-flex items-center gap-1 text-[11px] font-semibold text-zinc-600 dark:text-zinc-300 hover:text-brand-green transition"
-                title="Copier exactement le texte original Facebook avec sa mise en page (retours à la ligne et espaces)"
-              >
-                <RotateCcw className="w-3 h-3" />
-                Reprendre mise en page originale
-              </button>
-            </div>
-            {descriptionLooksFlattened && (
-              <p className="mb-1.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
-                Le texte original Facebook comporte plusieurs lignes mais la description a été aplatie : cliquez « Reprendre mise en page originale » ou « Ré-analyser ».
-              </p>
-            )}
-            <textarea
-              rows={Math.min(14, Math.max(5, draft.description.split('\n').length + 1))}
-              value={draft.description}
-              onChange={(e) => setDraft((prev) => ({ ...prev, description: e.target.value }))}
-              className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs leading-relaxed font-sans whitespace-pre-wrap focus:outline-none focus:ring-2 focus:ring-brand-green"
-            />
-          </div>
-
-          {/* Critical Access, Water, Electricity & Furnished Verification */}
-          <div className="p-3.5 rounded-2xl bg-zinc-50/90 dark:bg-zinc-800/30 border border-zinc-200/80 dark:border-zinc-800 space-y-2.5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs font-bold text-zinc-700 dark:text-zinc-200">
-                Vérification critique : Accès, Eau, Électricité &amp; Meublé
-              </span>
-              <button
-                type="button"
-                disabled={busyAction !== null}
-                onClick={handleReanalyzeCard}
-                className="inline-flex items-center gap-1 rounded-full border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2.5 py-1 text-[11px] font-semibold text-zinc-700 dark:text-zinc-200 hover:border-brand-green hover:text-brand-green transition disabled:opacity-50"
-                title="Ré-analyser le texte (FR / MG / EN) pour détecter terrasse, parking, accès, JIRAMA, moto-pompe, solaire, maka rano, meublé et restaurer la mise en page"
-              >
-                {busyAction === 'reanalyze' ? (
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                ) : (
-                  <RefreshCw className="w-3 h-3" />
-                )}
-                Ré-analyser texte &amp; équipements
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              {(
-                [
-                  { key: 'carAccess', label: 'Accès voiture' },
-                  { key: 'motoAccess', label: 'Accès moto' },
-                ] as const
-              ).map((item) => {
-                const cur = draft.featureVerification[item.key];
-                const isUnknown = cur === 'unknown';
-                return (
-                  <div
-                    key={item.key}
-                    className={`flex items-center justify-between gap-2 rounded-xl border px-3 py-2 ${
-                      isUnknown
-                        ? 'border-amber-400 bg-amber-50/60 dark:bg-amber-950/25'
-                        : 'border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900'
-                    }`}
-                  >
-                    <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">
-                      {item.label}
-                    </span>
-                    <div className="inline-flex rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden text-[11px] font-bold">
-                      {(
-                        [
-                          { val: 'unknown', text: '? Vérifier', activeClass: 'bg-amber-500 text-white' },
-                          { val: 'yes', text: 'Oui', activeClass: 'bg-brand-green text-white' },
-                          { val: 'no', text: 'Non', activeClass: 'bg-red-600 text-white' },
-                        ] as const
-                      ).map((opt) => (
                         <button
-                          key={opt.val}
                           type="button"
-                          onClick={() => setAccessState(item.key, opt.val)}
-                          className={`px-2 py-1 transition ${
-                            cur === opt.val
-                              ? opt.activeClass
-                              : 'bg-white dark:bg-zinc-900 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                          title="Retirer cette photo"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removePhotoAt(idx);
+                          }}
+                          className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/70 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition hover:bg-red-600 cursor-pointer"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+
+                    {uploadingPhotos.map((preview) => (
+                      <div
+                        key={preview.tempId}
+                        className="relative aspect-square rounded-xl overflow-hidden border border-brand-green/60 bg-zinc-100 dark:bg-zinc-800"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={preview.previewUrl}
+                          alt="Upload en cours"
+                          className="w-full h-full object-cover opacity-65"
+                        />
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                          <Loader2 className="w-5 h-5 animate-spin text-white" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <AdminPhotoGalleryModal
+                  isOpen={galleryIndex !== null}
+                  images={draft.gcsImages}
+                  initialIndex={galleryIndex ?? 0}
+                  title={draft.title || candidate.authorName || 'Annonce Facebook'}
+                  onClose={() => setGalleryIndex(null)}
+                  onRemoveImage={removePhotoAt}
+                  onSetCoverImage={promotePhotoToCover}
+                />
+              </div>
+            </div>
+
+            {/* RIGHT COLUMN: Fast Inline Validation Form */}
+            <div className="lg:col-span-7 p-6 space-y-4">
+              {/* Type & House Type quick toggles */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-zinc-500 mb-1">
+                    Transaction *
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(['rent', 'sale'] as const).map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => setDraft((prev) => ({ ...prev, type: t }))}
+                        className={`py-2 px-3 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                          draft.type === t
+                            ? 'bg-brand-green text-white border-brand-green shadow-sm'
+                            : 'bg-zinc-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
+                        }`}
+                      >
+                        {t === 'rent' ? 'À louer (Rent)' : 'À vendre (Sale)'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-zinc-500 mb-1">
+                    Catégorie du bien
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {PROPERTY_TYPE_DEFS.map((def) => {
+                      const Icon = def.icon;
+                      const active = draft.houseType === def.id;
+                      return (
+                        <button
+                          key={def.id}
+                          type="button"
+                          onClick={() => setDraft((prev) => ({ ...prev, houseType: def.id }))}
+                          className={`inline-flex items-center gap-1.5 py-2 px-2.5 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                            active
+                              ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 border-zinc-900 dark:border-white'
+                              : 'bg-zinc-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:border-zinc-400 dark:hover:border-zinc-500'
                           }`}
                         >
-                          {opt.text}
+                          <Icon className="w-3.5 h-3.5 shrink-0" />
+                          {def.shortLabel}
                         </button>
-                      ))}
-                    </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
-            </div>
-
-            {/* Water source verification (JIRAMA probable / Moto-pompe / Puits / Maka rano / Pas d'eau) */}
-            <div
-              className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 ${
-                missing.includes('waterSupply')
-                  ? 'border-amber-400 bg-amber-50/60 dark:bg-amber-950/25'
-                  : 'border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900'
-              }`}
-            >
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">
-                  Source d&apos;eau
-                </span>
-                {draft.featureVerification.waterSupply === 'unknown' &&
-                  Boolean(draft.features.waterPumpSupplyJirama) && (
-                    <span className="text-[10px] font-semibold text-amber-700 dark:text-amber-300">
-                      (JIRAMA probable)
-                    </span>
-                  )}
+                </div>
               </div>
-              <div className="inline-flex flex-wrap rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden text-[11px] font-bold">
-                {(
-                  [
-                    {
-                      key: 'unknown',
-                      text: '? Vérifier',
-                      active:
-                        draft.featureVerification.waterSupply === 'unknown' &&
-                        !hasKnownWaterSupply(draft.features),
-                      activeClass: 'bg-amber-500 text-white',
-                    },
-                    {
-                      key: 'waterPumpSupplyJirama',
-                      text:
-                        draft.featureVerification.waterSupply === 'unknown' &&
-                        Boolean(draft.features.waterPumpSupplyJirama)
-                          ? 'JIRAMA (à confirmer)'
-                          : 'JIRAMA',
-                      active: Boolean(draft.features.waterPumpSupplyJirama),
-                      activeClass:
-                        draft.featureVerification.waterSupply === 'unknown'
-                          ? 'bg-amber-100 text-amber-900 dark:bg-amber-900/50 dark:text-amber-100'
-                          : 'bg-brand-green text-white',
-                    },
-                    {
-                      key: 'waterPumpSupply',
-                      text: 'Moto-pompe / Citerne',
-                      active: Boolean(draft.features.waterPumpSupply),
-                      activeClass: 'bg-brand-green text-white',
-                    },
-                    {
-                      key: 'waterWellSupply',
-                      text: 'Puits / Vovo',
-                      active: Boolean(draft.features.waterWellSupply),
-                      activeClass: 'bg-brand-green text-white',
-                    },
-                    {
-                      key: 'waterFetchExternal',
-                      text: 'Maka rano',
-                      active: Boolean(draft.features.waterFetchExternal),
-                      activeClass: 'bg-amber-600 text-white',
-                    },
-                    {
-                      key: 'no',
-                      text: "Pas d'eau",
-                      active: draft.featureVerification.waterSupply === 'no',
-                      activeClass: 'bg-red-600 text-white',
-                    },
-                  ] as const
-                ).map((opt) => (
-                  <button
-                    key={opt.key}
-                    type="button"
-                    onClick={() => toggleWaterFeature(opt.key)}
-                    className={`px-2 py-1 transition ${
-                      opt.active
-                        ? opt.activeClass
-                        : 'bg-white dark:bg-zinc-900 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                    }`}
-                  >
-                    {opt.text}
-                  </button>
-                ))}
-              </div>
-            </div>
 
-            {/* Electricity source verification (JIRAMA probable / Solaire / Autre / Pas d'électricité) */}
-            <div
-              className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 ${
-                missing.includes('electricitySupply')
-                  ? 'border-amber-400 bg-amber-50/60 dark:bg-amber-950/25'
-                  : 'border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900'
-              }`}
-            >
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">
-                  Électricité
-                </span>
-                {draft.featureVerification.electricitySupply === 'unknown' &&
-                  Boolean(draft.features.electricityJirama) && (
-                    <span className="text-[10px] font-semibold text-amber-700 dark:text-amber-300">
-                      (JIRAMA probable)
-                    </span>
-                  )}
-              </div>
-              <div className="inline-flex flex-wrap rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden text-[11px] font-bold">
-                {(
-                  [
-                    {
-                      key: 'unknown',
-                      text: '? Vérifier',
-                      active:
-                        draft.featureVerification.electricitySupply === 'unknown' &&
-                        !hasKnownElectricitySupply(draft.features),
-                      activeClass: 'bg-amber-500 text-white',
-                    },
-                    {
-                      key: 'electricityJirama',
-                      text:
-                        draft.featureVerification.electricitySupply === 'unknown' &&
-                        Boolean(draft.features.electricityJirama)
-                          ? 'JIRAMA (à confirmer)'
-                          : 'JIRAMA',
-                      active: Boolean(draft.features.electricityJirama),
-                      activeClass:
-                        draft.featureVerification.electricitySupply === 'unknown'
-                          ? 'bg-amber-100 text-amber-900 dark:bg-amber-900/50 dark:text-amber-100'
-                          : 'bg-brand-green text-white',
-                    },
-                    {
-                      key: 'solarPanels',
-                      text: 'Solaire',
-                      active: Boolean(draft.features.solarPanels),
-                      activeClass: 'bg-brand-green text-white',
-                    },
-                    {
-                      key: 'electricityPower',
-                      text: 'Compteur / Groupe',
-                      active:
-                        Boolean(draft.features.electricityPower) &&
-                        !Boolean(draft.features.electricityJirama),
-                      activeClass: 'bg-brand-green text-white',
-                    },
-                    {
-                      key: 'no',
-                      text: "Pas d'élec.",
-                      active: draft.featureVerification.electricitySupply === 'no',
-                      activeClass: 'bg-red-600 text-white',
-                    },
-                  ] as const
-                ).map((opt) => (
-                  <button
-                    key={opt.key}
-                    type="button"
-                    onClick={() => toggleElectricityFeature(opt.key)}
-                    className={`px-2 py-1 transition ${
-                      opt.active
-                        ? opt.activeClass
-                        : 'bg-white dark:bg-zinc-900 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                    }`}
-                  >
-                    {opt.text}
-                  </button>
-                ))}
-              </div>
-            </div>
+              {/* Title & Amount */}
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                <div className="sm:col-span-7">
+                  <label className="block text-xs font-semibold text-zinc-500 mb-1">
+                    Titre de l&apos;annonce *
+                  </label>
+                  <input
+                    type="text"
+                    value={draft.title}
+                    onChange={(e) => setDraft((prev) => ({ ...prev, title: e.target.value }))}
+                    className="w-full px-3.5 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm focus:outline-none focus:ring-2 focus:ring-brand-green"
+                  />
+                </div>
 
-            {/* Furnished status verification */}
-            <div
-              className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 ${
-                missing.includes('furnishedProperty')
-                  ? 'border-amber-400 bg-amber-50/60 dark:bg-amber-950/25'
-                  : 'border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900'
-              }`}
-            >
-              <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">
-                Meublé (Misy fanaka)
-              </span>
-              <div className="inline-flex rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden text-[11px] font-bold">
-                {(
-                  [
-                    { val: 'unknown', text: '? Vérifier', activeClass: 'bg-amber-500 text-white' },
-                    { val: 'yes', text: 'Meublé', activeClass: 'bg-brand-green text-white' },
-                    { val: 'no', text: 'Non meublé', activeClass: 'bg-red-600 text-white' },
-                  ] as const
-                ).map((opt) => (
-                  <button
-                    key={opt.val}
-                    type="button"
-                    onClick={() => setFurnishedState(opt.val)}
-                    className={`px-2 py-1 transition ${
-                      draft.featureVerification.furnishedProperty === opt.val
-                        ? opt.activeClass
-                        : 'bg-white dark:bg-zinc-900 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                    }`}
-                  >
-                    {opt.text}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Equipment / Features pills */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">
-                Équipements détectés ({enabledFeatureKeys.length})
-              </span>
-              <button
-                type="button"
-                onClick={() => setShowAllFeatures((v) => !v)}
-                className="inline-flex items-center gap-1 text-xs font-semibold text-brand-green hover:underline"
-              >
-                {showAllFeatures
-                  ? 'Réduire la liste'
-                  : `Modifier les ${Object.keys(ALL_FEATURE_LABELS).length} équipements`}
-                {showAllFeatures ? (
-                  <ChevronUp className="w-3.5 h-3.5" />
-                ) : (
-                  <ChevronDown className="w-3.5 h-3.5" />
-                )}
-              </button>
-            </div>
-
-            {!showAllFeatures && (
-              <div className="flex flex-wrap gap-1.5">
-                {enabledFeatureKeys.length === 0 ? (
-                  <span className="text-xs text-zinc-400">Aucun équipement spécifié</span>
-                ) : (
-                  enabledFeatureKeys.map((k) => (
-                    <span
-                      key={k}
-                      className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
-                        k === 'waterFetchExternal'
-                          ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
-                          : 'bg-brand-green/15 text-brand-green'
-                      }`}
-                    >
-                      {ALL_FEATURE_LABELS[k] || k}
-                    </span>
-                  ))
-                )}
-              </div>
-            )}
-
-            {showAllFeatures && (
-              <div className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800/30 border border-zinc-200/70 dark:border-zinc-800 space-y-3">
-                {PROPERTY_FEATURE_GROUPS.map((grp) => (
-                  <div key={grp.label}>
-                    <p className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-1.5">
-                      {grp.label}
+                <div className="sm:col-span-5">
+                  <label className="block text-xs font-semibold text-zinc-500 mb-1">
+                    {draft.type === 'sale' ? 'Prix de vente (Ar) *' : 'Loyer / mois (Ar) *'}
+                  </label>
+                  <input
+                    type="number"
+                    value={draft.type === 'sale' ? draft.price : draft.rent}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setDraft((prev) =>
+                        prev.type === 'sale' ? { ...prev, price: val } : { ...prev, rent: val },
+                      );
+                    }}
+                    placeholder="ex: 600000"
+                    className={`w-full px-3.5 py-2 rounded-xl border text-sm font-semibold focus:outline-none focus:ring-2 ${missingRing(
+                      draft.type === 'sale' ? 'price' : 'rent',
+                    )}`}
+                  />
+                  {amountVal > 0 && (
+                    <p className="text-[11px] text-zinc-500 mt-1">
+                      = {(amountVal * 5).toLocaleString('fr-FR')} FMG
                     </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {grp.items.map((item) => {
-                        const active = Boolean(draft.features[item.key]);
+                  )}
+                </div>
+              </div>
+
+              {/* City / Fokontany selector with 1-click suggestions + live search */}
+              <div className="p-3.5 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 bg-zinc-50/60 dark:bg-zinc-800/20 space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="text-xs font-semibold text-zinc-600 dark:text-zinc-300 flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-brand-green" />
+                    Fokontany / Localité *
+                  </label>
+                  {draft.matchedCityLabel ? (
+                    <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100/70 dark:bg-emerald-950/60 px-2.5 py-0.5 rounded-full">
+                      Sélectionné : {draft.matchedCityLabel}
+                    </span>
+                  ) : (
+                    <span className="text-xs font-semibold text-amber-600">
+                      Aucune localité liée
+                    </span>
+                  )}
+                </div>
+
+                {draft.resolvedPlaceName && (
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] text-zinc-600 dark:text-zinc-300 bg-white/80 dark:bg-zinc-900/60 border border-zinc-200/80 dark:border-zinc-700/70 rounded-xl px-2.5 py-1.5">
+                    <span className="font-medium truncate max-w-[320px]" title={draft.resolvedAddress || draft.resolvedPlaceName}>
+                      Repère : <strong>{draft.resolvedPlaceName}</strong>
+                    </span>
+                    {draft.resolvedCoords && (
+                      <span className="font-mono text-[10px] text-zinc-400">
+                        ({draft.resolvedCoords.lat.toFixed(5)}, {draft.resolvedCoords.lng.toFixed(5)})
+                      </span>
+                    )}
+                    {draft.resolutionSource && (
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                          draft.resolutionSource === 'google_places_cache'
+                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
+                            : draft.resolutionSource === 'google_places_api'
+                              ? 'bg-sky-100 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300'
+                              : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'
+                        }`}
+                      >
+                        {draft.resolutionSource === 'google_places_cache'
+                          ? 'Places (cache · 0 token)'
+                          : draft.resolutionSource === 'google_places_api'
+                            ? 'Google Places API'
+                            : 'Fallback texte'}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {draft.cityCandidates && draft.cityCandidates.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {draft.cityCandidates.map((cand) => {
+                      const selected = draft.matchedCityId === cand._id;
+                      const distLabel = formatDistanceMeters(cand.distanceMeters);
+                      return (
+                        <button
+                          key={cand._id}
+                          type="button"
+                          onClick={() => {
+                            setPlacesFeedback(null);
+                            setDraft((prev) => ({
+                              ...prev,
+                              matchedCityId: cand._id,
+                              matchedCityLabel: cand.label,
+                            }));
+                          }}
+                          className={`text-[11px] px-2.5 py-1 rounded-full border transition font-medium cursor-pointer ${
+                            selected
+                              ? 'bg-brand-green text-white border-brand-green'
+                              : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:border-brand-green'
+                          }`}
+                        >
+                          {cand.label}
+                          {distLabel ? ` · ${distLabel}` : ` (${cand.score})`}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <div className="relative">
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <input
+                        type="text"
+                        value={cityQuery}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setCityQuery(val);
+                          setPlacesFeedback(null);
+                          if (val.trim().length < 2) {
+                            setCityResults([]);
+                          }
+                        }}
+                        placeholder="Rechercher un Fokontany ou un lieu/repère (ex: Rond-point Ivandry, Lycée Français...)"
+                        className={`w-full px-3.5 py-1.5 rounded-xl border text-xs focus:outline-none focus:ring-2 ${missingRing(
+                          'city',
+                        )}`}
+                      />
+                      {isSearchingCity && (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin absolute right-3 top-2 text-zinc-400" />
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      disabled={cityQuery.trim().length < 2 || isResolvingPlaces}
+                      onClick={() => void handleResolvePlaces()}
+                      title="Géolocaliser ce quartier/repère via Google Places (avec cache 90j) et trouver le Fokontany DB le plus proche"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-[11px] font-semibold text-zinc-700 dark:text-zinc-200 hover:border-brand-green hover:text-brand-green disabled:opacity-45 disabled:cursor-not-allowed transition cursor-pointer shrink-0"
+                    >
+                      {isResolvingPlaces ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Search className="w-3.5 h-3.5 text-brand-green" />
+                      )}
+                      Via Places
+                    </button>
+                  </div>
+                  {placesFeedback && (
+                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1">
+                      {placesFeedback}
+                    </p>
+                  )}
+                  {cityResults.length > 0 && (
+                    <div className="mt-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 divide-y divide-zinc-100 dark:divide-zinc-800 max-h-40 overflow-y-auto shadow-md">
+                      {cityResults.map((city) => {
+                        const label = [city.fokontany, city.commune, city.district]
+                          .filter(Boolean)
+                          .join(' — ');
                         return (
                           <button
-                            key={item.key}
+                            key={city._id}
                             type="button"
                             onClick={() => {
-                              if (item.key === 'carAccess' || item.key === 'motoAccess') {
-                                setAccessState(
-                                  item.key,
-                                  active ? 'unknown' : 'yes',
-                                );
-                                return;
-                              }
-                              if (
-                                item.key === 'waterPumpSupplyJirama' ||
-                                item.key === 'waterPumpSupply' ||
-                                item.key === 'waterWellSupply' ||
-                                item.key === 'waterFetchExternal'
-                              ) {
-                                toggleWaterFeature(item.key);
-                                return;
-                              }
-                              if (
-                                item.key === 'electricityJirama' ||
-                                item.key === 'electricityPower' ||
-                                item.key === 'solarPanels'
-                              ) {
-                                toggleElectricityFeature(item.key);
-                                return;
-                              }
-                              if (item.key === 'furnishedProperty') {
-                                setFurnishedState(active ? 'unknown' : 'yes');
-                                return;
-                              }
+                              setPlacesFeedback(null);
                               setDraft((prev) => ({
                                 ...prev,
-                                features: { ...prev.features, [item.key]: !active },
+                                matchedCityId: city._id,
+                                matchedCityLabel: label,
+                                resolvedCoords: city.coords ?? null,
+                                resolvedPlaceName: null,
+                                resolvedAddress: null,
+                                resolutionSource: null,
                               }));
+                              setCityQuery('');
+                              setCityResults([]);
                             }}
-                            className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition ${
-                              active
-                                ? item.key === 'waterFetchExternal'
-                                  ? 'bg-amber-600 text-white border-amber-600'
-                                  : 'bg-brand-green text-white border-brand-green'
-                                : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
-                            }`}
+                            className="w-full text-left px-3 py-1.5 text-xs hover:bg-brand-green/10 transition cursor-pointer"
                           >
-                            {item.label}
+                            {label}
                           </button>
                         );
                       })}
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Action Buttons */}
-          {candidate.status !== 'approved' ? (
-            <div className="pt-3 border-t border-zinc-200/70 dark:border-zinc-800 flex flex-wrap items-center justify-end gap-2.5">
-              {candidate.status !== 'rejected' && (
-                <button
-                  type="button"
-                  disabled={busyAction !== null}
-                  onClick={handleReject}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold border border-red-200 dark:border-red-900 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition disabled:opacity-50"
-                >
-                  {busyAction === 'reject' ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Trash2 className="w-3.5 h-3.5" />
                   )}
-                  Rejeter & Nettoyer GCS
-                </button>
-              )}
+                </div>
+              </div>
 
-              <button
-                type="button"
-                disabled={busyAction !== null}
-                onClick={handleSave}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition disabled:opacity-50"
-              >
-                {busyAction === 'save' ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Save className="w-3.5 h-3.5" />
-                )}
-                Sauvegarder brouillon
-              </button>
+              {/* Numeric rooms & dimensions */}
+              {(() => {
+                const commercial = isCommercialHouseType(draft.houseType);
+                const numericFields = commercial
+                  ? ([
+                      { key: 'toilet', label: 'WC (opt.)' },
+                      { key: 'area', label: 'm²' },
+                    ] as const)
+                  : ([
+                      { key: 'rooms', label: 'Chambres' },
+                      { key: 'livingRoom', label: 'Salon' },
+                      { key: 'kitchen', label: 'Cuisine' },
+                      { key: 'toilet', label: 'WC' },
+                      { key: 'bathrooms', label: 'Douche' },
+                      { key: 'area', label: 'm²' },
+                    ] as const);
 
-              <button
-                type="button"
-                disabled={busyAction !== null || !canPublish}
-                onClick={handleApprove}
-                className="inline-flex items-center gap-1.5 px-5 py-2 rounded-full text-xs font-bold bg-brand-green text-white hover:opacity-95 shadow-sm transition disabled:opacity-40"
-              >
-                {busyAction === 'approve' ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Check className="w-4 h-4" />
+                return (
+                  <div
+                    className={`grid gap-2 ${
+                      commercial ? 'grid-cols-3' : 'grid-cols-3 sm:grid-cols-7'
+                    }`}
+                  >
+                    {numericFields.map((field) => (
+                      <div key={field.key}>
+                        <label className="block text-[11px] font-semibold text-zinc-500 mb-1">
+                          {field.label}
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={draft[field.key]}
+                          onChange={(e) =>
+                            setDraft((prev) => ({ ...prev, [field.key]: e.target.value }))
+                          }
+                          placeholder="—"
+                          className={`w-full px-2.5 py-1.5 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 ${missingRing(
+                            field.key,
+                          )}`}
+                        />
+                      </div>
+                    ))}
+                    <div>
+                      <label className="block text-[11px] font-semibold text-zinc-500 mb-1">
+                        Étage
+                      </label>
+                      <input
+                        type="text"
+                        value={draft.floor}
+                        onChange={(e) => setDraft((prev) => ({ ...prev, floor: e.target.value }))}
+                        placeholder={commercial ? 'RDC / Bord de route' : 'RDC'}
+                        className="w-full px-2.5 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs focus:outline-none focus:ring-2 focus:ring-brand-green"
+                      />
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Phones with quick Call & Copy */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {(
+                  [
+                    { key: 'phone1', label: 'Téléphone 1 *' },
+                    { key: 'phone2', label: 'Téléphone 2' },
+                    { key: 'phone3', label: 'Téléphone 3' },
+                  ] as const
+                ).map((p) => {
+                  const rawVal = draft[p.key].trim();
+                  const telHref = rawVal ? `tel:${rawVal.replace(/[^\d+]/g, '')}` : null;
+                  return (
+                    <div key={p.key}>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-[11px] font-semibold text-zinc-500">
+                          {p.label}
+                        </label>
+                        {telHref && (
+                          <div className="flex items-center gap-1.5">
+                            {p.key === 'phone1' && (
+                              <button
+                                type="button"
+                                onClick={() => handleCopyText(rawVal, 'phone1')}
+                                className="text-[10px] font-semibold text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 cursor-pointer"
+                                title="Copier le numéro"
+                              >
+                                {copiedKey === 'phone1' ? 'Copié' : 'Copier'}
+                              </button>
+                            )}
+                            <a
+                              href={telHref}
+                              className="inline-flex items-center gap-0.5 text-[10px] font-bold text-brand-green hover:underline"
+                              title={`Appeler ${rawVal}`}
+                            >
+                              <PhoneCall className="w-2.5 h-2.5" /> Appeler
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                      <input
+                        type="text"
+                        value={draft[p.key]}
+                        onChange={(e) =>
+                          setDraft((prev) => ({ ...prev, [p.key]: e.target.value }))
+                        }
+                        placeholder="034..."
+                        className={`w-full px-3 py-1.5 rounded-xl border text-xs focus:outline-none focus:ring-2 ${missingRing(
+                          p.key,
+                        )}`}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Description preserving layout */}
+              <div>
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+                  <label className="block text-xs font-semibold text-zinc-500">
+                    Description nettoyée (mise en page conservée)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setDraft((prev) => ({
+                        ...prev,
+                        description: normalizeDescriptionLayout(candidate.rawContent || ''),
+                      }))
+                    }
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-zinc-600 dark:text-zinc-300 hover:text-brand-green transition cursor-pointer"
+                    title="Copier exactement le texte original Facebook avec sa mise en page (retours à la ligne et espaces)"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    Reprendre mise en page originale
+                  </button>
+                </div>
+                {descriptionLooksFlattened && (
+                  <p className="mb-1.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+                    Le texte original Facebook comporte plusieurs lignes mais la description a été aplatie : cliquez « Reprendre mise en page originale » ou « Ré-analyser ».
+                  </p>
                 )}
-                Approuver & Publier en ligne
-              </button>
-            </div>
-          ) : (
-            <div className="pt-3 border-t border-zinc-200/70 dark:border-zinc-800 flex items-center justify-between text-xs text-emerald-700 dark:text-emerald-300">
-              <span>Annonce publiée dans Tranogasy</span>
-              {candidate.publishedPropertyId && (
-                <a
-                  href={`/properties/${candidate.publishedPropertyId}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="font-bold underline inline-flex items-center gap-1"
+                <textarea
+                  rows={Math.min(14, Math.max(5, draft.description.split('\n').length + 1))}
+                  value={draft.description}
+                  onChange={(e) => setDraft((prev) => ({ ...prev, description: e.target.value }))}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs leading-relaxed font-sans whitespace-pre-wrap focus:outline-none focus:ring-2 focus:ring-brand-green"
+                />
+              </div>
+
+              {/* Critical Access, Water, Electricity & Furnished Verification */}
+              <div className="p-3.5 rounded-2xl bg-zinc-50/90 dark:bg-zinc-800/30 border border-zinc-200/80 dark:border-zinc-800 space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-bold text-zinc-700 dark:text-zinc-200">
+                    Vérification critique : Accès, Eau, Électricité &amp; Meublé
+                  </span>
+                  <button
+                    type="button"
+                    disabled={isReanalyzing}
+                    onClick={handleReanalyzeCard}
+                    className="inline-flex items-center gap-1 rounded-full border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2.5 py-1 text-[11px] font-semibold text-zinc-700 dark:text-zinc-200 hover:border-brand-green hover:text-brand-green transition disabled:opacity-50 cursor-pointer"
+                    title="Ré-analyser le texte (FR / MG / EN) pour détecter terrasse, parking, accès, JIRAMA, moto-pompe, solaire, maka rano, meublé et restaurer la mise en page"
+                  >
+                    {isReanalyzing ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-3 h-3" />
+                    )}
+                    Ré-analyser texte &amp; équipements
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {(
+                    [
+                      { key: 'carAccess', label: 'Accès voiture' },
+                      { key: 'motoAccess', label: 'Accès moto' },
+                    ] as const
+                  ).map((item) => {
+                    const cur = draft.featureVerification[item.key];
+                    const isUnknown = cur === 'unknown';
+                    return (
+                      <div
+                        key={item.key}
+                        className={`flex items-center justify-between gap-2 rounded-xl border px-3 py-2 ${
+                          isUnknown
+                            ? 'border-amber-400 bg-amber-50/60 dark:bg-amber-950/25'
+                            : 'border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900'
+                        }`}
+                      >
+                        <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">
+                          {item.label}
+                        </span>
+                        <div className="inline-flex rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden text-[11px] font-bold">
+                          {(
+                            [
+                              { val: 'unknown', text: '? Vérifier', activeClass: 'bg-amber-500 text-white' },
+                              { val: 'yes', text: 'Oui', activeClass: 'bg-brand-green text-white' },
+                              { val: 'no', text: 'Non', activeClass: 'bg-red-600 text-white' },
+                            ] as const
+                          ).map((opt) => (
+                            <button
+                              key={opt.val}
+                              type="button"
+                              onClick={() => setAccessState(item.key, opt.val)}
+                              className={`px-2 py-1 transition cursor-pointer ${
+                                cur === opt.val
+                                  ? opt.activeClass
+                                  : 'bg-white dark:bg-zinc-900 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                              }`}
+                            >
+                              {opt.text}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Water source verification */}
+                <div
+                  className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 ${
+                    missing.includes('waterSupply')
+                      ? 'border-amber-400 bg-amber-50/60 dark:bg-amber-950/25'
+                      : 'border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900'
+                  }`}
                 >
-                  Voir la fiche publiée <ExternalLink className="w-3.5 h-3.5" />
-                </a>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">
+                      Source d&apos;eau
+                    </span>
+                    {draft.featureVerification.waterSupply === 'unknown' &&
+                      Boolean(draft.features.waterPumpSupplyJirama) && (
+                        <span className="text-[10px] font-semibold text-amber-700 dark:text-amber-300">
+                          (JIRAMA probable)
+                        </span>
+                      )}
+                  </div>
+                  <div className="inline-flex flex-wrap rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden text-[11px] font-bold">
+                    {(
+                      [
+                        {
+                          key: 'unknown',
+                          text: '? Vérifier',
+                          active:
+                            draft.featureVerification.waterSupply === 'unknown' &&
+                            !hasKnownWaterSupply(draft.features),
+                          activeClass: 'bg-amber-500 text-white',
+                        },
+                        {
+                          key: 'waterPumpSupplyJirama',
+                          text:
+                            draft.featureVerification.waterSupply === 'unknown' &&
+                            Boolean(draft.features.waterPumpSupplyJirama)
+                              ? 'JIRAMA (à confirmer)'
+                              : 'JIRAMA',
+                          active: Boolean(draft.features.waterPumpSupplyJirama),
+                          activeClass:
+                            draft.featureVerification.waterSupply === 'unknown'
+                              ? 'bg-amber-100 text-amber-900 dark:bg-amber-900/50 dark:text-amber-100'
+                              : 'bg-brand-green text-white',
+                        },
+                        {
+                          key: 'waterPumpSupply',
+                          text: 'Moto-pompe / Citerne',
+                          active: Boolean(draft.features.waterPumpSupply),
+                          activeClass: 'bg-brand-green text-white',
+                        },
+                        {
+                          key: 'waterWellSupply',
+                          text: 'Puits / Vovo',
+                          active: Boolean(draft.features.waterWellSupply),
+                          activeClass: 'bg-brand-green text-white',
+                        },
+                        {
+                          key: 'waterFetchExternal',
+                          text: 'Maka rano',
+                          active: Boolean(draft.features.waterFetchExternal),
+                          activeClass: 'bg-amber-600 text-white',
+                        },
+                        {
+                          key: 'no',
+                          text: "Pas d'eau",
+                          active: draft.featureVerification.waterSupply === 'no',
+                          activeClass: 'bg-red-600 text-white',
+                        },
+                      ] as const
+                    ).map((opt) => (
+                      <button
+                        key={opt.key}
+                        type="button"
+                        onClick={() => toggleWaterFeature(opt.key)}
+                        className={`px-2 py-1 transition cursor-pointer ${
+                          opt.active
+                            ? opt.activeClass
+                            : 'bg-white dark:bg-zinc-900 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                        }`}
+                      >
+                        {opt.text}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Electricity source verification */}
+                <div
+                  className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 ${
+                    missing.includes('electricitySupply')
+                      ? 'border-amber-400 bg-amber-50/60 dark:bg-amber-950/25'
+                      : 'border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">
+                      Électricité
+                    </span>
+                    {draft.featureVerification.electricitySupply === 'unknown' &&
+                      Boolean(draft.features.electricityJirama) && (
+                        <span className="text-[10px] font-semibold text-amber-700 dark:text-amber-300">
+                          (JIRAMA probable)
+                        </span>
+                      )}
+                  </div>
+                  <div className="inline-flex flex-wrap rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden text-[11px] font-bold">
+                    {(
+                      [
+                        {
+                          key: 'unknown',
+                          text: '? Vérifier',
+                          active:
+                            draft.featureVerification.electricitySupply === 'unknown' &&
+                            !hasKnownElectricitySupply(draft.features),
+                          activeClass: 'bg-amber-500 text-white',
+                        },
+                        {
+                          key: 'electricityJirama',
+                          text:
+                            draft.featureVerification.electricitySupply === 'unknown' &&
+                            Boolean(draft.features.electricityJirama)
+                              ? 'JIRAMA (à confirmer)'
+                              : 'JIRAMA',
+                          active: Boolean(draft.features.electricityJirama),
+                          activeClass:
+                            draft.featureVerification.electricitySupply === 'unknown'
+                              ? 'bg-amber-100 text-amber-900 dark:bg-amber-900/50 dark:text-amber-100'
+                              : 'bg-brand-green text-white',
+                        },
+                        {
+                          key: 'solarPanels',
+                          text: 'Solaire',
+                          active: Boolean(draft.features.solarPanels),
+                          activeClass: 'bg-brand-green text-white',
+                        },
+                        {
+                          key: 'electricityPower',
+                          text: 'Compteur / Groupe',
+                          active:
+                            Boolean(draft.features.electricityPower) &&
+                            !Boolean(draft.features.electricityJirama),
+                          activeClass: 'bg-brand-green text-white',
+                        },
+                        {
+                          key: 'no',
+                          text: "Pas d'élec.",
+                          active: draft.featureVerification.electricitySupply === 'no',
+                          activeClass: 'bg-red-600 text-white',
+                        },
+                      ] as const
+                    ).map((opt) => (
+                      <button
+                        key={opt.key}
+                        type="button"
+                        onClick={() => toggleElectricityFeature(opt.key)}
+                        className={`px-2 py-1 transition cursor-pointer ${
+                          opt.active
+                            ? opt.activeClass
+                            : 'bg-white dark:bg-zinc-900 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                        }`}
+                      >
+                        {opt.text}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Furnished status verification */}
+                <div
+                  className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 ${
+                    missing.includes('furnishedProperty')
+                      ? 'border-amber-400 bg-amber-50/60 dark:bg-amber-950/25'
+                      : 'border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900'
+                  }`}
+                >
+                  <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">
+                    Meublé (Misy fanaka)
+                  </span>
+                  <div className="inline-flex rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden text-[11px] font-bold">
+                    {(
+                      [
+                        { val: 'unknown', text: '? Vérifier', activeClass: 'bg-amber-500 text-white' },
+                        { val: 'yes', text: 'Meublé', activeClass: 'bg-brand-green text-white' },
+                        { val: 'no', text: 'Non meublé', activeClass: 'bg-red-600 text-white' },
+                      ] as const
+                    ).map((opt) => (
+                      <button
+                        key={opt.val}
+                        type="button"
+                        onClick={() => setFurnishedState(opt.val)}
+                        className={`px-2 py-1 transition cursor-pointer ${
+                          draft.featureVerification.furnishedProperty === opt.val
+                            ? opt.activeClass
+                            : 'bg-white dark:bg-zinc-900 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                        }`}
+                      >
+                        {opt.text}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Equipment / Features pills */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">
+                    Équipements détectés ({enabledFeatureKeys.length})
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowAllFeatures((v) => !v)}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-brand-green hover:underline cursor-pointer"
+                  >
+                    {showAllFeatures
+                      ? 'Réduire la liste'
+                      : `Modifier les ${Object.keys(ALL_FEATURE_LABELS).length} équipements`}
+                    {showAllFeatures ? (
+                      <ChevronUp className="w-3.5 h-3.5" />
+                    ) : (
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                </div>
+
+                {!showAllFeatures && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {enabledFeatureKeys.length === 0 ? (
+                      <span className="text-xs text-zinc-400">Aucun équipement spécifié</span>
+                    ) : (
+                      enabledFeatureKeys.map((k) => (
+                        <span
+                          key={k}
+                          className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
+                            k === 'waterFetchExternal'
+                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                              : 'bg-brand-green/15 text-brand-green'
+                          }`}
+                        >
+                          {ALL_FEATURE_LABELS[k] || k}
+                        </span>
+                      ))
+                    )}
+                  </div>
+                )}
+
+                {showAllFeatures && (
+                  <div className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800/30 border border-zinc-200/70 dark:border-zinc-800 space-y-3">
+                    {PROPERTY_FEATURE_GROUPS.map((grp) => (
+                      <div key={grp.label}>
+                        <p className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-1.5">
+                          {grp.label}
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {grp.items.map((item) => {
+                            const active = Boolean(draft.features[item.key]);
+                            return (
+                              <button
+                                key={item.key}
+                                type="button"
+                                onClick={() => {
+                                  if (item.key === 'carAccess' || item.key === 'motoAccess') {
+                                    setAccessState(
+                                      item.key,
+                                      active ? 'unknown' : 'yes',
+                                    );
+                                    return;
+                                  }
+                                  if (
+                                    item.key === 'waterPumpSupplyJirama' ||
+                                    item.key === 'waterPumpSupply' ||
+                                    item.key === 'waterWellSupply' ||
+                                    item.key === 'waterFetchExternal'
+                                  ) {
+                                    toggleWaterFeature(item.key);
+                                    return;
+                                  }
+                                  if (
+                                    item.key === 'electricityJirama' ||
+                                    item.key === 'electricityPower' ||
+                                    item.key === 'solarPanels'
+                                  ) {
+                                    toggleElectricityFeature(item.key);
+                                    return;
+                                  }
+                                  if (item.key === 'furnishedProperty') {
+                                    setFurnishedState(active ? 'unknown' : 'yes');
+                                    return;
+                                  }
+                                  setDraft((prev) => ({
+                                    ...prev,
+                                    features: { ...prev.features, [item.key]: !active },
+                                  }));
+                                }}
+                                className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition cursor-pointer ${
+                                  active
+                                    ? item.key === 'waterFetchExternal'
+                                      ? 'bg-amber-600 text-white border-amber-600'
+                                      : 'bg-brand-green text-white border-brand-green'
+                                    : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
+                                }`}
+                              >
+                                {item.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons (Non-blocking & Optimistic) */}
+              {candidate.status !== 'approved' ? (
+                <div className="pt-3 border-t border-zinc-200/70 dark:border-zinc-800 flex flex-wrap items-center justify-end gap-2.5">
+                  {candidate.status !== 'rejected' && (
+                    <button
+                      type="button"
+                      onClick={handleReject}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold border border-red-200 dark:border-red-900 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Rejeter &amp; Nettoyer GCS
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => void handleSave()}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition cursor-pointer"
+                  >
+                    {saveState === 'saving' ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-brand-green" />
+                    ) : saveState === 'saved' && !isDirty ? (
+                      <Check className="w-3.5 h-3.5 text-brand-green" />
+                    ) : (
+                      <Save className="w-3.5 h-3.5" />
+                    )}
+                    {saveState === 'saved' && !isDirty
+                      ? 'Brouillon sauvegardé'
+                      : 'Sauvegarder brouillon'}
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={!canPublish}
+                    onClick={handleApprove}
+                    className="inline-flex items-center gap-1.5 px-5 py-2 rounded-full text-xs font-bold bg-brand-green text-white hover:opacity-95 shadow-sm transition disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
+                  >
+                    <Check className="w-4 h-4" />
+                    Approuver &amp; Publier en ligne
+                  </button>
+                </div>
+              ) : (
+                <div className="pt-3 border-t border-zinc-200/70 dark:border-zinc-800 flex items-center justify-between text-xs text-emerald-700 dark:text-emerald-300">
+                  <span>Annonce publiée dans Tranogasy</span>
+                  {candidate.publishedPropertyId && (
+                    <a
+                      href={`/properties/${candidate.publishedPropertyId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-bold underline inline-flex items-center gap-1"
+                    >
+                      Voir la fiche publiée <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  )}
+                </div>
               )}
             </div>
-          )}
-        </div>
-      </div>
+          </div>
+        </>
+      )}
     </div>
   );
-}
+});
 
 interface Props {
   userId: string;
   groups: FbGroupTarget[];
-  onRefreshAll: () => Promise<void>;
-  onNotify?: (notice: { kind: 'ok' | 'err'; text: string }) => void;
+  refreshNonce?: number;
+  onCandidateCountDelta?: (
+    groupId: string,
+    delta: { approvedCount?: number; rejectedCount?: number },
+  ) => void;
+  onPushToast: (toast: Omit<HudToast, 'id'>, autoHideMs?: number) => string;
+  onUpdateToast: (
+    id: string,
+    patch: Partial<Omit<HudToast, 'id'>>,
+    autoHideMs?: number,
+  ) => void;
 }
 
-export default function ValidationQueueTab({ userId, groups, onRefreshAll, onNotify }: Props) {
+const PAGE_SIZE = 40;
+
+export default function ValidationQueueTab({
+  userId,
+  groups,
+  refreshNonce = 0,
+  onCandidateCountDelta,
+  onPushToast,
+  onUpdateToast,
+}: Props) {
   const [statusFilter, setStatusFilter] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
   const [typeFilter, setTypeFilter] = useState<'all' | 'rent' | 'sale'>('all');
   const [houseTypeFilter, setHouseTypeFilter] = useState<HouseCategoryFilter>('all');
   const [groupFilter, setGroupFilter] = useState('');
-  const [items, setItems] = useState<FbIngestedCandidate[]>([]);
-  const [counts, setCounts] = useState({ pending: 0, approved: 0, rejected: 0 });
-  const [loading, setLoading] = useState(true);
-  const [reanalyzingAll, setReanalyzingAll] = useState(false);
-  const [reanalyzeTick, setReanalyzeTick] = useState(0);
-  const [feedback, setFeedback] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const [quickSearch, setQuickSearch] = useState('');
 
-  const loadCandidates = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fbIngestionService.listCandidates(userId, {
-        status: statusFilter,
-        type: typeFilter === 'all' ? undefined : typeFilter,
-        houseType: houseTypeFilter === 'all' ? undefined : houseTypeFilter,
-        groupId: groupFilter || undefined,
-        limit: 40,
-      });
-      setItems(res.items);
-      setCounts(res.counts);
-    } catch (err) {
-      setFeedback({ kind: 'err', text: (err as Error).message });
-    } finally {
-      setLoading(false);
+  const [items, setItems] = useState<FbIngestedCandidate[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [counts, setCounts] = useState({ pending: 0, approved: 0, rejected: 0 });
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [isFetching, setIsFetching] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const [reanalyzingAll, setReanalyzingAll] = useState(false);
+  const [cardVersions, setCardVersions] = useState<Record<string, number>>({});
+  const [restoredDrafts, setRestoredDrafts] = useState<Record<string, CandidateDraft>>({});
+  const [collapseSignal, setCollapseSignal] = useState<{ collapsed: boolean; seq: number }>({
+    collapsed: false,
+    seq: 0,
+  });
+
+  const dirtyIdsRef = useRef<Set<string>>(new Set());
+  const listAbortRef = useRef<AbortController | null>(null);
+  const statusFilterRef = useRef(statusFilter);
+  useEffect(() => {
+    statusFilterRef.current = statusFilter;
+  }, [statusFilter]);
+
+  const handleDirtyChange = useCallback((id: string, dirty: boolean) => {
+    if (dirty) {
+      dirtyIdsRef.current.add(id);
+    } else {
+      dirtyIdsRef.current.delete(id);
     }
-  }, [userId, statusFilter, typeFilter, houseTypeFilter, groupFilter]);
+  }, []);
+
+  const fetchCandidatesPage = useCallback(
+    async (opts?: { pageNum?: number; append?: boolean; bumpCleanCards?: boolean }) => {
+      const targetPage = opts?.pageNum ?? 1;
+      const append = Boolean(opts?.append);
+
+      if (!append) {
+        listAbortRef.current?.abort();
+      }
+      const controller = new AbortController();
+      if (!append) {
+        listAbortRef.current = controller;
+        setIsFetching(true);
+      } else {
+        setIsLoadingMore(true);
+      }
+      setLoadError(null);
+
+      try {
+        const res = await fbIngestionService.listCandidates(
+          userId,
+          {
+            status: statusFilter,
+            type: typeFilter === 'all' ? undefined : typeFilter,
+            houseType: houseTypeFilter === 'all' ? undefined : houseTypeFilter,
+            groupId: groupFilter || undefined,
+            page: targetPage,
+            limit: PAGE_SIZE,
+          },
+          { signal: controller.signal },
+        );
+        if (controller.signal.aborted) return;
+
+        setTotal(res.total);
+        setCounts(res.counts);
+        setPage(targetPage);
+
+        if (append) {
+          setItems((prev) => {
+            const seen = new Set(prev.map((x) => x._id));
+            const nextExtra = res.items.filter((x) => !seen.has(x._id));
+            return [...prev, ...nextExtra];
+          });
+        } else {
+          setItems(res.items);
+          if (opts?.bumpCleanCards) {
+            setCardVersions((prev) => {
+              const next = { ...prev };
+              for (const item of res.items) {
+                if (!dirtyIdsRef.current.has(item._id)) {
+                  next[item._id] = (next[item._id] || 0) + 1;
+                }
+              }
+              return next;
+            });
+          }
+        }
+      } catch (err) {
+        if (controller.signal.aborted || (err as Error)?.name === 'AbortError') return;
+        const msg = (err as Error).message || 'Erreur lors du chargement des annonces.';
+        setLoadError(msg);
+      } finally {
+        if (!controller.signal.aborted) {
+          setInitialLoading(false);
+          setIsFetching(false);
+          setIsLoadingMore(false);
+        }
+      }
+    },
+    [userId, statusFilter, typeFilter, houseTypeFilter, groupFilter],
+  );
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void fetchCandidatesPage({ pageNum: 1 });
+    }, 0);
+    return () => {
+      clearTimeout(timer);
+      listAbortRef.current?.abort();
+    };
+  }, [fetchCandidatesPage, refreshNonce]);
+
+  const handleSaveDraft = useCallback(
+    async (
+      candidate: FbIngestedCandidate,
+      draft: CandidateDraft,
+      patch: Record<string, unknown>,
+    ): Promise<FbIngestedCandidate | null> => {
+      const optimisticCandidate = mergeDraftIntoCandidate(candidate, draft);
+      setItems((prev) =>
+        prev.map((it) => (it._id === candidate._id ? optimisticCandidate : it)),
+      );
+
+      try {
+        const saved = await fbIngestionService.updateCandidate(userId, candidate._id, patch);
+        setItems((prev) =>
+          prev.map((it) => (it._id === candidate._id ? saved : it)),
+        );
+        onPushToast(
+          {
+            kind: 'ok',
+            title: 'Brouillon sauvegardé',
+            text: draft.title.trim() || candidate.groupName,
+          },
+          3200,
+        );
+        return saved;
+      } catch (err) {
+        setItems((prev) =>
+          prev.map((it) => (it._id === candidate._id ? candidate : it)),
+        );
+        onPushToast({
+          kind: 'err',
+          title: 'Échec sauvegarde brouillon',
+          text: (err as Error).message,
+        });
+        return null;
+      }
+    },
+    [userId, onPushToast],
+  );
+
+  const handleApproveOptimistic = useCallback(
+    (
+      candidate: FbIngestedCandidate,
+      draft: CandidateDraft,
+      patch: Record<string, unknown>,
+    ) => {
+      const prevStatus = candidate.status;
+      const originalIndex = items.findIndex((it) => it._id === candidate._id);
+      const activeFilter = statusFilterRef.current;
+
+      // Clear any leftover draft restore key for this card
+      setRestoredDrafts((prev) => {
+        if (!(candidate._id in prev)) return prev;
+        const next = { ...prev };
+        delete next[candidate._id];
+        return next;
+      });
+
+      // Immediate optimistic UI update
+      if (activeFilter === 'pending') {
+        setItems((prev) => prev.filter((it) => it._id !== candidate._id));
+        setTotal((t) => Math.max(0, t - 1));
+      } else {
+        setItems((prev) =>
+          prev.map((it) =>
+            it._id === candidate._id
+              ? { ...mergeDraftIntoCandidate(it, draft), status: 'approved' }
+              : it,
+          ),
+        );
+      }
+
+      setCounts((c) => ({
+        ...c,
+        [prevStatus]: Math.max(0, c[prevStatus] - 1),
+        approved: c.approved + 1,
+      }));
+      onCandidateCountDelta?.(candidate.groupId, { approvedCount: 1 });
+
+      const toastId = onPushToast({
+        kind: 'pending',
+        title: 'Publication en cours...',
+        text: draft.title.trim() || candidate.groupName,
+      });
+
+      void fbIngestionService
+        .approveCandidate(userId, candidate._id, patch)
+        .then((res) => {
+          const propId = res.property?._id ? String(res.property._id) : null;
+          const propLabel = res.property?.propertyNumber || propId || '';
+          onUpdateToast(
+            toastId,
+            {
+              kind: 'ok',
+              title: 'Annonce publiée en ligne',
+              text: `#${propLabel} — ${draft.title.trim() || candidate.groupName}`,
+              actionLabel: propId ? 'Voir la fiche publiée' : undefined,
+              actionHref: propId ? `/properties/${propId}` : undefined,
+            },
+            6500,
+          );
+          setItems((prev) =>
+            prev.map((it) => (it._id === candidate._id ? res.candidate : it)),
+          );
+        })
+        .catch((err) => {
+          // Roll back card (with all unsaved edits preserved!) and counters
+          setCounts((c) => ({
+            ...c,
+            [prevStatus]: c[prevStatus] + 1,
+            approved: Math.max(0, c.approved - 1),
+          }));
+          onCandidateCountDelta?.(candidate.groupId, { approvedCount: -1 });
+
+          if (activeFilter === 'pending') {
+            setRestoredDrafts((prev) => ({ ...prev, [candidate._id]: draft }));
+            setItems((prev) => {
+              if (prev.some((it) => it._id === candidate._id)) return prev;
+              const copy = [...prev];
+              const insertAt = originalIndex >= 0 ? Math.min(originalIndex, copy.length) : 0;
+              copy.splice(insertAt, 0, candidate);
+              return copy;
+            });
+            setTotal((t) => t + 1);
+          } else {
+            setItems((prev) =>
+              prev.map((it) => (it._id === candidate._id ? candidate : it)),
+            );
+          }
+
+          onUpdateToast(toastId, {
+            kind: 'err',
+            title: 'Échec de publication (fiche restaurée)',
+            text: (err as Error).message,
+          });
+        });
+    },
+    [items, onCandidateCountDelta, onPushToast, onUpdateToast, userId],
+  );
+
+  const handleRejectOptimistic = useCallback(
+    (candidate: FbIngestedCandidate, draft: CandidateDraft) => {
+      const prevStatus = candidate.status;
+      const originalIndex = items.findIndex((it) => it._id === candidate._id);
+      const activeFilter = statusFilterRef.current;
+
+      if (activeFilter === 'pending') {
+        setItems((prev) => prev.filter((it) => it._id !== candidate._id));
+        setTotal((t) => Math.max(0, t - 1));
+      } else {
+        setItems((prev) =>
+          prev.map((it) =>
+            it._id === candidate._id
+              ? { ...it, status: 'rejected', gcsImages: [] }
+              : it,
+          ),
+        );
+      }
+
+      setCounts((c) => ({
+        ...c,
+        [prevStatus]: Math.max(0, c[prevStatus] - 1),
+        rejected: c.rejected + 1,
+      }));
+      onCandidateCountDelta?.(candidate.groupId, { rejectedCount: 1 });
+
+      const toastId = onPushToast({
+        kind: 'pending',
+        title: 'Rejet & nettoyage GCS...',
+        text: draft.title.trim() || candidate.groupName,
+      });
+
+      void fbIngestionService
+        .rejectCandidate(userId, candidate._id)
+        .then((res) => {
+          onUpdateToast(
+            toastId,
+            {
+              kind: 'ok',
+              title: 'Annonce rejetée',
+              text: `${res.deletedGcsImages} photo(s) supprimée(s) du cloud`,
+            },
+            4500,
+          );
+        })
+        .catch((err) => {
+          setCounts((c) => ({
+            ...c,
+            [prevStatus]: c[prevStatus] + 1,
+            rejected: Math.max(0, c.rejected - 1),
+          }));
+          onCandidateCountDelta?.(candidate.groupId, { rejectedCount: -1 });
+
+          if (activeFilter === 'pending') {
+            setRestoredDrafts((prev) => ({ ...prev, [candidate._id]: draft }));
+            setItems((prev) => {
+              if (prev.some((it) => it._id === candidate._id)) return prev;
+              const copy = [...prev];
+              const insertAt = originalIndex >= 0 ? Math.min(originalIndex, copy.length) : 0;
+              copy.splice(insertAt, 0, candidate);
+              return copy;
+            });
+            setTotal((t) => t + 1);
+          } else {
+            setItems((prev) =>
+              prev.map((it) => (it._id === candidate._id ? candidate : it)),
+            );
+          }
+
+          onUpdateToast(toastId, {
+            kind: 'err',
+            title: 'Échec du rejet (fiche restaurée)',
+            text: (err as Error).message,
+          });
+        });
+    },
+    [items, onCandidateCountDelta, onPushToast, onUpdateToast, userId],
+  );
+
+  const handleCandidateReanalyzed = useCallback(
+    (updated: FbIngestedCandidate) => {
+      setItems((prev) => prev.map((it) => (it._id === updated._id ? updated : it)));
+      const featuresCount = Object.values(updated.extracted?.features || {}).filter(
+        Boolean,
+      ).length;
+      onPushToast(
+        {
+          kind: 'ok',
+          title: 'Annonce ré-analysée',
+          text: `${featuresCount} équipement(s) détecté(s)`,
+        },
+        4000,
+      );
+    },
+    [onPushToast],
+  );
+
+  const handleToastError = useCallback(
+    (title: string, text: string) => {
+      onPushToast({ kind: 'err', title, text });
+    },
+    [onPushToast],
+  );
 
   const handleReanalyzePending = async () => {
+    if (reanalyzingAll) return;
     setReanalyzingAll(true);
+    const toastId = onPushToast({
+      kind: 'pending',
+      title: 'Ré-analyse de la file en cours...',
+      text: 'Analyse déterministe des équipements et mise en page (0 crédit IA)',
+    });
     try {
       const res = await fbIngestionService.reanalyzePending(userId);
-      setFeedback({
-        kind: 'ok',
-        text: `Ré-analyse terminée (${res.analyzed} examinée(s), ${res.updated} mise(s) à jour : équipements, accès & mise en page).`,
-      });
-      await loadCandidates();
-      setReanalyzeTick((t) => t + 1);
+      onUpdateToast(
+        toastId,
+        {
+          kind: 'ok',
+          title: 'Ré-analyse terminée',
+          text: `${res.analyzed} examinée(s), ${res.updated} mise(s) à jour.`,
+        },
+        5000,
+      );
+      await fetchCandidatesPage({ pageNum: 1, bumpCleanCards: true });
     } catch (err) {
-      setFeedback({ kind: 'err', text: (err as Error).message });
+      onUpdateToast(toastId, {
+        kind: 'err',
+        title: 'Erreur ré-analyse',
+        text: (err as Error).message,
+      });
     } finally {
       setReanalyzingAll(false);
     }
   };
 
-  useEffect(() => {
-    let active = true;
-    const fetchInitial = async () => {
-      try {
-        const res = await fbIngestionService.listCandidates(userId, {
-          status: statusFilter,
-          type: typeFilter === 'all' ? undefined : typeFilter,
-          houseType: houseTypeFilter === 'all' ? undefined : houseTypeFilter,
-          groupId: groupFilter || undefined,
-          limit: 40,
-        });
-        if (!active) return;
-        setItems(res.items);
-        setCounts(res.counts);
-      } catch (err) {
-        if (active) setFeedback({ kind: 'err', text: (err as Error).message });
-      } finally {
-        if (active) setLoading(false);
-      }
-    };
-    void fetchInitial();
-    return () => {
-      active = false;
-    };
-  }, [userId, statusFilter, typeFilter, houseTypeFilter, groupFilter]);
+  const filteredItems = useMemo(() => {
+    const q = quickSearch.trim().toLowerCase();
+    if (!q) return items;
+    return items.filter((c) => {
+      const haystack = [
+        c.extracted?.title,
+        c.authorName,
+        c.groupName,
+        c.matchedCityLabel,
+        c.extracted?.phone1,
+        c.extracted?.phone2,
+        c.rawContent,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [items, quickSearch]);
+
+  const toggleAllCollapsed = () => {
+    setCollapseSignal((prev) => ({
+      collapsed: !prev.collapsed,
+      seq: prev.seq + 1,
+    }));
+  };
 
   return (
     <div className="space-y-5">
       {/* Filter Toolbar */}
-      <div className="bg-white dark:bg-zinc-900 rounded-[2rem] p-4 border border-zinc-200/80 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          {(
-            [
-              { id: 'pending', label: `En attente (${counts.pending})` },
-              { id: 'approved', label: `Approuvés (${counts.approved})` },
-              { id: 'rejected', label: `Rejetés (${counts.rejected})` },
-              { id: 'all', label: 'Tous' },
-            ] as const
-          ).map((tab) => (
+      <div className="bg-white dark:bg-zinc-900 rounded-[2rem] p-4 border border-zinc-200/80 dark:border-zinc-800 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            {(
+              [
+                { id: 'pending', label: `En attente (${counts.pending})` },
+                { id: 'approved', label: `Approuvés (${counts.approved})` },
+                { id: 'rejected', label: `Rejetés (${counts.rejected})` },
+                { id: 'all', label: 'Tous' },
+              ] as const
+            ).map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setStatusFilter(tab.id)}
+                className={`px-4 py-1.5 rounded-full text-xs font-bold transition cursor-pointer ${
+                  statusFilter === tab.id
+                    ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900'
+                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+
+            {isFetching && !initialLoading && (
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-zinc-500 px-2">
+                <Loader2 className="w-3 h-3 animate-spin text-brand-green" />
+                Mise à jour...
+              </span>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={quickSearch}
+                onChange={(e) => setQuickSearch(e.target.value)}
+                placeholder="Filtrer dans la file..."
+                className="pl-8 pr-7 py-1.5 rounded-full border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs w-48 focus:outline-none focus:ring-2 focus:ring-brand-green"
+              />
+              {quickSearch && (
+                <button
+                  type="button"
+                  onClick={() => setQuickSearch('')}
+                  aria-label="Effacer le filtre"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-700 cursor-pointer"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+
+            {filteredItems.length > 0 && (
+              <button
+                type="button"
+                onClick={toggleAllCollapsed}
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs font-semibold text-zinc-600 dark:text-zinc-300 hover:border-brand-green transition cursor-pointer"
+                title={
+                  collapseSignal.collapsed
+                    ? 'Déplier toutes les fiches'
+                    : 'Réduire toutes les fiches'
+                }
+              >
+                {collapseSignal.collapsed ? (
+                  <>
+                    <ChevronsUpDown className="w-3.5 h-3.5" /> Tout déplier
+                  </>
+                ) : (
+                  <>
+                    <ChevronsDownUp className="w-3.5 h-3.5" /> Tout réduire
+                  </>
+                )}
+              </button>
+            )}
+
             <button
-              key={tab.id}
               type="button"
-              onClick={() => setStatusFilter(tab.id)}
-              className={`px-4 py-1.5 rounded-full text-xs font-bold transition ${
-                statusFilter === tab.id
-                  ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900'
-                  : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-              }`}
+              onClick={() => void fetchCandidatesPage({ pageNum: 1 })}
+              disabled={isFetching}
+              title="Actualiser la file en arrière-plan"
+              className="p-1.5 rounded-full border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:border-brand-green transition disabled:opacity-50 cursor-pointer"
             >
-              {tab.label}
+              <RefreshCw className={`w-3.5 h-3.5 ${isFetching ? 'animate-spin' : ''}`} />
             </button>
-          ))}
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -1783,7 +2575,7 @@ export default function ValidationQueueTab({ userId, groups, onRefreshAll, onNot
               type="button"
               disabled={reanalyzingAll}
               onClick={handleReanalyzePending}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-xs font-bold text-zinc-700 dark:text-zinc-200 hover:border-brand-green hover:text-brand-green transition disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-xs font-bold text-zinc-700 dark:text-zinc-200 hover:border-brand-green hover:text-brand-green transition disabled:opacity-50 cursor-pointer"
               title="Ré-analyser toutes les annonces en attente (0 crédit IA) pour détecter les équipements FR/MG/EN, les accès manquants et restaurer la mise en page"
             >
               {reanalyzingAll ? (
@@ -1797,61 +2589,89 @@ export default function ValidationQueueTab({ userId, groups, onRefreshAll, onNot
         </div>
       </div>
 
-      {feedback && (
-        <div
-          className={`px-4 py-3 rounded-2xl text-xs font-semibold flex items-center justify-between ${
-            feedback.kind === 'ok'
-              ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-900'
-              : 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-200 border border-red-200 dark:border-red-900'
-          }`}
-        >
-          <span>{feedback.text}</span>
-          <button type="button" onClick={() => setFeedback(null)}>
-            <X className="w-4 h-4" />
+      {loadError && (
+        <div className="px-4 py-3 rounded-2xl text-xs font-semibold flex items-center justify-between gap-2 bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-200 border border-red-200 dark:border-red-900">
+          <span>{loadError}</span>
+          <button
+            type="button"
+            onClick={() => void fetchCandidatesPage({ pageNum: 1 })}
+            className="px-3 py-1 rounded-full bg-red-700 text-white text-[11px] font-bold hover:opacity-90 cursor-pointer"
+          >
+            Réessayer
           </button>
         </div>
       )}
 
-      {loading ? (
-        <div className="py-16 flex items-center justify-center text-zinc-500 text-sm gap-2">
-          <Loader2 className="w-5 h-5 animate-spin text-brand-green" /> Chargement des annonces...
+      {initialLoading ? (
+        <div className="space-y-4">
+          {[0, 1].map((idx) => (
+            <div
+              key={idx}
+              className="bg-white dark:bg-zinc-900 rounded-[2rem] border border-zinc-200/80 dark:border-zinc-800 p-6 space-y-4 animate-pulse"
+            >
+              <div className="flex items-center justify-between">
+                <div className="h-5 w-1/3 rounded-full bg-zinc-200 dark:bg-zinc-800" />
+                <div className="h-5 w-28 rounded-full bg-zinc-200 dark:bg-zinc-800" />
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                <div className="lg:col-span-5 h-48 rounded-2xl bg-zinc-200 dark:bg-zinc-800" />
+                <div className="lg:col-span-7 space-y-3">
+                  <div className="h-8 rounded-xl bg-zinc-200 dark:bg-zinc-800" />
+                  <div className="h-8 rounded-xl bg-zinc-200 dark:bg-zinc-800" />
+                  <div className="h-24 rounded-xl bg-zinc-200 dark:bg-zinc-800" />
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
-      ) : items.length === 0 ? (
+      ) : filteredItems.length === 0 ? (
         <div className="bg-white dark:bg-zinc-900 rounded-[2rem] p-12 border border-zinc-200/80 dark:border-zinc-800 text-center space-y-2">
           <p className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">
-            Aucun candidat dans cette file pour le moment.
+            {quickSearch
+              ? 'Aucune annonce ne correspond à ce filtre texte.'
+              : 'Aucun candidat dans cette file pour le moment.'}
           </p>
           <p className="text-xs text-zinc-500">
-            Activez le scraper Live ou importez un Snapshot Bright Data existant ci-dessus pour alimenter la file de validation.
+            {quickSearch
+              ? 'Effacez le champ de recherche rapide pour voir toute la file.'
+              : 'Activez le scraper Live ou importez un Snapshot Bright Data existant ci-dessus pour alimenter la file de validation.'}
           </p>
         </div>
       ) : (
-        <div className="space-y-6">
-          {items.map((candidate) => (
+        <div
+          className={`space-y-6 transition-opacity duration-150 ${
+            isFetching ? 'opacity-65' : 'opacity-100'
+          }`}
+        >
+          {filteredItems.map((candidate) => (
             <CandidateReviewCard
-              key={`${candidate._id}_${reanalyzeTick}`}
+              key={`${candidate._id}_${cardVersions[candidate._id] || 0}`}
               candidate={candidate}
               userId={userId}
-              onCandidateUpdated={(updated) => {
-                setItems((prev) =>
-                  prev.map((it) => (it._id === updated._id ? updated : it)),
-                );
-                const msg = `Annonce ré-analysée (${Object.values(updated.extracted?.features || {}).filter(Boolean).length} équipements détectés)`;
-                setFeedback({ kind: 'ok', text: msg });
-                onNotify?.({ kind: 'ok', text: msg });
-              }}
-              onActionDone={async (msg) => {
-                setFeedback({ kind: 'ok', text: msg });
-                onNotify?.({ kind: 'ok', text: msg });
-                await loadCandidates();
-                await onRefreshAll();
-              }}
-              onError={(msg) => {
-                setFeedback({ kind: 'err', text: msg });
-                onNotify?.({ kind: 'err', text: msg });
-              }}
+              initialDraftOverride={restoredDrafts[candidate._id]}
+              collapseSignal={collapseSignal}
+              onDirtyChange={handleDirtyChange}
+              onSaveDraft={handleSaveDraft}
+              onApproveOptimistic={handleApproveOptimistic}
+              onRejectOptimistic={handleRejectOptimistic}
+              onCandidateReanalyzed={handleCandidateReanalyzed}
+              onToastError={handleToastError}
             />
           ))}
+
+          {items.length < total && !quickSearch && (
+            <div className="flex justify-center pt-2">
+              <button
+                type="button"
+                disabled={isLoadingMore}
+                onClick={() => void fetchCandidatesPage({ pageNum: page + 1, append: true })}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs font-bold text-zinc-700 dark:text-zinc-200 hover:border-brand-green transition disabled:opacity-50 cursor-pointer"
+              >
+                {isLoadingMore && <Loader2 className="w-3.5 h-3.5 animate-spin text-brand-green" />}
+                Charger plus ({items.length} / {total})
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

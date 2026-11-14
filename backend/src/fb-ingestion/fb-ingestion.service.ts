@@ -5,6 +5,7 @@ import {
   NotFoundException,
   OnModuleDestroy,
   OnModuleInit,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -46,6 +47,7 @@ import {
   preserveDescriptionLayout,
 } from './fb-feature-analyzer.util';
 import { FbGeminiService, PROPERTY_FEATURE_KEYS } from './fb-gemini.service';
+import { FbPlacesService } from './fb-places.service';
 import { INITIAL_FB_GROUP_TARGETS } from './fb-seed.data';
 import {
   FbGroupTarget,
@@ -74,6 +76,8 @@ export interface RunSummary {
   spamSkipped: number;
   candidatesCreated: number;
   geminiCalls: number;
+  placesApiCalls?: number;
+  placesCacheHits?: number;
   errors: string[];
 }
 
@@ -108,6 +112,7 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
     private readonly cityMatcherService: FbCityMatcherService,
     private readonly gcsService: FbGcsService,
     private readonly configService: ConfigService,
+    @Optional() private readonly fbPlacesService?: FbPlacesService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -385,6 +390,27 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       cfg = (await this.configModel.findOne({ key: 'default' })) || cfg;
     }
     return cfg;
+  }
+
+  async getConfigWithDiagnostics() {
+    const cfg = await this.getConfig();
+    const raw = typeof cfg.toObject === 'function' ? cfg.toObject() : { ...cfg };
+    const placesApiConfigured = this.fbPlacesService?.isConfigured() ?? false;
+    const placesCacheEntries = this.fbPlacesService
+      ? await this.fbPlacesService.getCacheEntryCount().catch(() => 0)
+      : 0;
+    return {
+      ...raw,
+      placesApiConfigured,
+      placesCacheEntries,
+    };
+  }
+
+  async resolveAdminLocationQuery(queryText: string, groupName = '') {
+    if (typeof this.cityMatcherService?.resolveLocationQuery !== 'function') {
+      return { place: null, bestMatch: null, candidates: [] };
+    }
+    return this.cityMatcherService.resolveLocationQuery(queryText, groupName);
   }
 
   async updateConfig(
@@ -946,6 +972,11 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       post.content,
       post.groupName,
     );
+    if (cityMatch.apiCallMade) {
+      summary.placesApiCalls = (summary.placesApiCalls || 0) + 1;
+    } else if (cityMatch.resolutionSource === 'google_places_cache') {
+      summary.placesCacheHits = (summary.placesCacheHits || 0) + 1;
+    }
 
     const [gcsUpload, gcsAvatarUrl] = await Promise.all([
       this.gcsService.reuploadFbImages(post.photoUrls, post.canonicalPostId),
@@ -1016,7 +1047,14 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
           _id: c._id,
           label: c.label,
           score: c.score,
+          distanceMeters: c.distanceMeters ?? null,
+          coords: c.coords,
         })),
+        resolvedCoords: cityMatch.resolvedCoords || null,
+        resolvedPlaceName: cityMatch.resolvedPlaceName || null,
+        resolvedAddress: cityMatch.resolvedAddress || null,
+        resolutionSource: cityMatch.resolutionSource || null,
+        manualCityOverride: false,
         missingFields,
         featureVerification: parsedResult.featureVerification,
         aiConfidence: parsedResult.aiConfidence,
@@ -1051,6 +1089,8 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       spamSkipped: 0,
       candidatesCreated: 0,
       geminiCalls: 0,
+      placesApiCalls: 0,
+      placesCacheHits: 0,
       errors: [],
     };
 
@@ -1656,18 +1696,49 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
     }
 
     if ('matchedCityId' in patch) {
-      candidate.matchedCityId = patch.matchedCityId || null;
-      if (patch.matchedCityId && Types.ObjectId.isValid(patch.matchedCityId)) {
+      const nextCityId = patch.matchedCityId || null;
+      const cityChanged = nextCityId !== (candidate.matchedCityId || null);
+      candidate.matchedCityId = nextCityId;
+
+      if (patch.resolvedCoords && typeof patch.resolvedCoords?.lat === 'number' && typeof patch.resolvedCoords?.lng === 'number') {
+        candidate.resolvedCoords = {
+          lat: patch.resolvedCoords.lat,
+          lng: patch.resolvedCoords.lng,
+        };
+        candidate.resolvedPlaceName = patch.resolvedPlaceName ? String(patch.resolvedPlaceName) : null;
+        candidate.resolvedAddress = patch.resolvedAddress ? String(patch.resolvedAddress) : null;
+        candidate.resolutionSource = patch.resolutionSource || 'google_places_cache';
+      } else if (cityChanged) {
+        candidate.resolvedPlaceName = null;
+        candidate.resolvedAddress = null;
+        candidate.resolutionSource = null;
+      }
+
+      if (Array.isArray(patch.cityCandidates)) {
+        candidate.cityCandidates = patch.cityCandidates;
+      }
+
+      if (cityChanged) {
+        candidate.manualCityOverride = Boolean(nextCityId && !patch.resolvedPlaceName);
+      }
+
+      if (nextCityId && Types.ObjectId.isValid(nextCityId)) {
         const city = await this.cityModel
-          .findById(patch.matchedCityId, { fokontany: 1, commune: 1, district: 1 })
+          .findById(nextCityId, { fokontany: 1, commune: 1, district: 1, coords: 1 })
           .lean();
         if (city) {
           candidate.matchedCityLabel = [city.fokontany, city.commune, city.district]
             .filter(Boolean)
             .join(' — ');
+          if (cityChanged && !patch.resolvedCoords) {
+            candidate.resolvedCoords = (city as any).coords || null;
+          }
         }
       } else {
         candidate.matchedCityLabel = null;
+        if (cityChanged && !patch.resolvedCoords) {
+          candidate.resolvedCoords = null;
+        }
       }
     }
 
@@ -1783,26 +1854,92 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
     return changed;
   }
 
+  private async applyGeoReanalysisIfEligible(
+    candidate: FbIngestedCandidateDocument,
+    force = false,
+  ): Promise<boolean> {
+    if (candidate.manualCityOverride) return false;
+    if (typeof this.cityMatcherService?.matchLocation !== 'function') return false;
+
+    const alreadyPlacesResolved =
+      candidate.resolutionSource === 'google_places_api' ||
+      candidate.resolutionSource === 'google_places_cache';
+    if (!force && alreadyPlacesResolved && candidate.matchedCityId) {
+      return false;
+    }
+
+    const hints = Array.isArray(candidate.extracted?.locationHints)
+      ? candidate.extracted.locationHints.map(String).filter(Boolean)
+      : [];
+    if (hints.length === 0 && candidate.matchedCityId && !force) {
+      return false;
+    }
+
+    const cityMatch = await this.cityMatcherService.matchLocation(
+      hints,
+      candidate.rawContent || '',
+      candidate.groupName || '',
+    );
+
+    const nextCityId = cityMatch.bestMatch?._id || null;
+    const nextCandidates = cityMatch.candidates.map((c) => ({
+      _id: c._id,
+      label: c.label,
+      score: c.score,
+      distanceMeters: c.distanceMeters ?? null,
+      coords: c.coords,
+    }));
+
+    const changed =
+      nextCityId !== (candidate.matchedCityId || null) ||
+      cityMatch.resolutionSource !== (candidate.resolutionSource || null) ||
+      cityMatch.resolvedPlaceName !== (candidate.resolvedPlaceName || null) ||
+      JSON.stringify(nextCandidates) !== JSON.stringify(candidate.cityCandidates || []);
+
+    if (!changed) return false;
+
+    candidate.matchedCityId = nextCityId;
+    candidate.matchedCityLabel = cityMatch.bestMatch?.label || null;
+    candidate.cityCandidates = nextCandidates;
+    candidate.resolvedCoords = cityMatch.resolvedCoords || null;
+    candidate.resolvedPlaceName = cityMatch.resolvedPlaceName || null;
+    candidate.resolvedAddress = cityMatch.resolvedAddress || null;
+    candidate.resolutionSource = cityMatch.resolutionSource || null;
+    return true;
+  }
+
   async reanalyzeCandidate(id: string) {
     const candidate = await this.candidateModel.findById(id);
     if (!candidate) {
       throw new NotFoundException('Candidate not found');
     }
-    this.applyDeterministicReanalysis(candidate);
-    await candidate.save();
+    const geoChanged = await this.applyGeoReanalysisIfEligible(candidate, true);
+    const featureChanged = this.applyDeterministicReanalysis(candidate);
+    if (geoChanged || featureChanged) {
+      await candidate.save();
+    }
     return candidate;
   }
 
   async reanalyzePendingCandidates() {
     const candidates = await this.candidateModel.find({ status: 'pending' });
     let updated = 0;
-    for (const candidate of candidates) {
-      const changed = this.applyDeterministicReanalysis(candidate);
-      if (changed) {
-        await candidate.save();
-        updated++;
-      }
-    }
+    let nextIdx = 0;
+    const workers = Array.from(
+      { length: Math.min(3, Math.max(1, candidates.length)) },
+      async () => {
+        while (nextIdx < candidates.length) {
+          const candidate = candidates[nextIdx++];
+          const geoChanged = await this.applyGeoReanalysisIfEligible(candidate, false);
+          const featureChanged = this.applyDeterministicReanalysis(candidate);
+          if (geoChanged || featureChanged) {
+            await candidate.save();
+            updated++;
+          }
+        }
+      },
+    );
+    await Promise.all(workers);
     return { analyzed: candidates.length, updated };
   }
 
@@ -1896,6 +2033,28 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       return normalizeMalagasyPhone(str) || str || null;
     };
 
+    const rawPostDate = candidate.datePosted || (candidate as any).created_at;
+    const fbCreatedAt =
+      rawPostDate && !Number.isNaN(new Date(rawPostDate).getTime())
+        ? new Date(rawPostDate)
+        : new Date();
+
+    const cityCoords =
+      cityDoc.coords &&
+      typeof cityDoc.coords.lat === 'number' &&
+      typeof cityDoc.coords.lng === 'number'
+        ? cityDoc.coords
+        : null;
+    const resolvedCoords =
+      !candidate.manualCityOverride &&
+      candidate.resolvedCoords &&
+      typeof candidate.resolvedCoords.lat === 'number' &&
+      typeof candidate.resolvedCoords.lng === 'number'
+        ? candidate.resolvedCoords
+        : null;
+    const listingCoords =
+      resolvedCoords || cityCoords || { lat: -18.8792, lng: 47.5079 };
+
     const propertyPayload = {
       title: String(ex.title || 'Propriété').trim(),
       description: normalizePreservingLayout(
@@ -1917,12 +2076,13 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       phone3: normalizePhone(ex.phone3),
       images: candidate.gcsImages || [],
       owner: String(shadowOwner._id),
-      coords: cityDoc.coords || { lat: -18.8792, lng: 47.5079 },
+      coords: listingCoords,
       status: 'available',
       origin: 'facebook_scraper',
       claimStatus: 'unclaimed',
       claimedBy: null,
       claimedAt: null,
+      created_at: fbCreatedAt,
       sources: {
         fbUserId: fbUserId || undefined,
         username: normalizedAuthorName,
@@ -2483,7 +2643,26 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
               patch.owner = shadowOwner._id;
             }
 
-            await this.propertyModel.updateOne({ _id: prop._id }, { $set: patch });
+            if (linkedCandidate?.datePosted) {
+              const targetDate = new Date(linkedCandidate.datePosted);
+              const existingCreatedMs = prop.created_at ? new Date(prop.created_at).getTime() : NaN;
+              if (
+                !Number.isNaN(targetDate.getTime()) &&
+                (Number.isNaN(existingCreatedMs) || Math.abs(targetDate.getTime() - existingCreatedMs) > 1000)
+              ) {
+                patch.created_at = targetDate;
+              }
+            }
+
+            if ('created_at' in patch) {
+              await this.propertyModel.updateOne(
+                { _id: prop._id },
+                { $set: patch },
+                { overwriteImmutable: true } as any,
+              );
+            } else {
+              await this.propertyModel.updateOne({ _id: prop._id }, { $set: patch });
+            }
             jobState.migratedScraped++;
           } else if (!prop.origin) {
             const isAdminManual =

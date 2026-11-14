@@ -94,6 +94,14 @@ export class PropertiesController {
 
   @Post()
   async create(@Body() createPropertyDto: any) {
-    return this.propertiesService.create(createPropertyDto);
+    const safeDto =
+      createPropertyDto && typeof createPropertyDto === 'object'
+        ? { ...createPropertyDto }
+        : createPropertyDto;
+    if (safeDto && typeof safeDto === 'object') {
+      delete safeDto.created_at;
+      delete safeDto.updated_at;
+    }
+    return this.propertiesService.create(safeDto);
   }
 }

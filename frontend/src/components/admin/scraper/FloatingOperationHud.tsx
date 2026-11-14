@@ -1,14 +1,25 @@
 'use client';
 
 import React from 'react';
-import { AlertTriangle, Ban, CheckCircle2, Eye, Loader2, X } from 'lucide-react';
+import {
+  AlertTriangle,
+  Ban,
+  CheckCircle2,
+  ExternalLink,
+  Eye,
+  Loader2,
+  X,
+} from 'lucide-react';
 import type { BackfillJobState } from '@/services/fbIngestion.service';
-import { formatDurationFr } from './OperationProgressCard';
+import { formatDurationFr, useLiveElapsedSeconds } from './OperationProgressCard';
 
 export interface HudToast {
-  kind: 'ok' | 'err' | 'warn';
+  id: string;
+  kind: 'pending' | 'ok' | 'err' | 'warn';
   title: string;
-  text: string;
+  text?: string;
+  actionLabel?: string;
+  actionHref?: string;
 }
 
 interface FloatingOperationHudProps {
@@ -16,7 +27,8 @@ interface FloatingOperationHudProps {
     title: string;
     message: string;
     percent: number;
-    elapsedSec: number;
+    startedAt?: string | null;
+    elapsedSec?: number;
     etaSeconds?: number | null;
     countLabel?: string | null;
     isCancelling?: boolean;
@@ -28,32 +40,49 @@ interface FloatingOperationHudProps {
   isCancellingBackfill?: boolean;
   onCancelBackfill?: () => void;
   onFocusOriginsTab?: () => void;
-  toast: HudToast | null;
-  onDismissToast: () => void;
+  toasts: HudToast[];
+  onDismissToast: (id: string) => void;
 }
 
 export default function FloatingOperationHud({
   activeRun,
   activeBackfill,
-  backfillElapsedSec = 0,
+  backfillElapsedSec,
   isCancellingBackfill = false,
   onCancelBackfill,
   onFocusOriginsTab,
-  toast,
+  toasts,
   onDismissToast,
 }: FloatingOperationHudProps) {
   const showBackfill = activeBackfill?.status === 'running';
-  if (!activeRun && !showBackfill && !toast) {
+  const liveRunElapsed = useLiveElapsedSeconds(
+    activeRun?.startedAt,
+    Boolean(activeRun && activeRun.elapsedSec === undefined),
+  );
+  const liveBackfillElapsed = useLiveElapsedSeconds(
+    activeBackfill?.startedAt,
+    Boolean(showBackfill && backfillElapsedSec === undefined),
+  );
+
+  const resolvedRunElapsed =
+    activeRun?.elapsedSec !== undefined ? activeRun.elapsedSec : liveRunElapsed;
+  const resolvedBackfillElapsed =
+    backfillElapsedSec !== undefined ? backfillElapsedSec : liveBackfillElapsed;
+
+  if (!activeRun && !showBackfill && toasts.length === 0) {
     return null;
   }
 
   return (
     <div className="fixed bottom-4 right-4 z-50 w-[min(25rem,calc(100vw-2rem))] space-y-2.5 pointer-events-none">
-      {toast && (
+      {toasts.map((toast) => (
         <div
+          key={toast.id}
           role="alert"
-          className={`pointer-events-auto rounded-2xl p-3.5 shadow-xl border backdrop-blur-md flex items-start gap-2.5 text-xs ${
-            toast.kind === 'ok'
+          className={`pointer-events-auto rounded-2xl p-3.5 shadow-xl border backdrop-blur-md flex items-start gap-2.5 text-xs transition-all duration-200 ${
+            toast.kind === 'pending'
+              ? 'bg-white/95 dark:bg-zinc-900/95 border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100'
+              : toast.kind === 'ok'
               ? 'bg-emerald-50/95 dark:bg-emerald-950/95 border-emerald-300 dark:border-emerald-800 text-emerald-900 dark:text-emerald-100'
               : toast.kind === 'warn'
               ? 'bg-amber-50/95 dark:bg-amber-950/95 border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-100'
@@ -61,7 +90,9 @@ export default function FloatingOperationHud({
           }`}
         >
           <div className="mt-0.5 shrink-0">
-            {toast.kind === 'ok' ? (
+            {toast.kind === 'pending' ? (
+              <Loader2 className="w-4 h-4 animate-spin text-brand-green" />
+            ) : toast.kind === 'ok' ? (
               <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
             ) : (
               <AlertTriangle
@@ -71,20 +102,33 @@ export default function FloatingOperationHud({
               />
             )}
           </div>
-          <div className="min-w-0 flex-1 space-y-0.5">
-            <p className="font-bold">{toast.title}</p>
-            <p className="text-[11px] opacity-90 break-words">{toast.text}</p>
+          <div className="min-w-0 flex-1 space-y-1">
+            <p className="font-bold leading-snug">{toast.title}</p>
+            {toast.text && (
+              <p className="text-[11px] opacity-90 break-words leading-snug">{toast.text}</p>
+            )}
+            {toast.actionLabel && toast.actionHref && (
+              <a
+                href={toast.actionHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-[11px] font-bold text-brand-green hover:underline pt-0.5"
+              >
+                {toast.actionLabel}
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            )}
           </div>
           <button
             type="button"
-            onClick={onDismissToast}
+            onClick={() => onDismissToast(toast.id)}
             aria-label="Fermer la notification"
             className="p-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 shrink-0 cursor-pointer"
           >
             <X className="w-3.5 h-3.5" />
           </button>
         </div>
-      )}
+      ))}
 
       {activeRun && (
         <div className="pointer-events-auto rounded-2xl p-3.5 bg-white/95 dark:bg-zinc-900/95 border border-emerald-300/80 dark:border-emerald-800 shadow-xl backdrop-blur-md space-y-2 text-xs">
@@ -111,7 +155,7 @@ export default function FloatingOperationHud({
 
           <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-zinc-500">
             <span className="font-mono">
-              {formatDurationFr(activeRun.elapsedSec)}
+              {formatDurationFr(resolvedRunElapsed)}
               {activeRun.etaSeconds ? ` • ~${formatDurationFr(activeRun.etaSeconds)} rest.` : ''}
               {activeRun.countLabel ? ` • ${activeRun.countLabel}` : ''}
             </span>
@@ -165,7 +209,7 @@ export default function FloatingOperationHud({
 
           <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-zinc-500">
             <span className="font-mono">
-              {formatDurationFr(backfillElapsedSec)}
+              {formatDurationFr(resolvedBackfillElapsed)}
               {activeBackfill.etaSeconds !== null && activeBackfill.etaSeconds !== undefined
                 ? ` • ~${formatDurationFr(activeBackfill.etaSeconds)} rest.`
                 : ''}

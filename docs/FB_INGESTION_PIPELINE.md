@@ -147,6 +147,7 @@ Never commit real secrets. Configure these keys in `.env` / cloud secret manager
 | `BRIGHT_DATA_DATASET_ID` | Facebook Groups dataset ID (default: `gd_lz11l67o2cb3r0lkj3`) |
 | `GEMINI_API_KEY` | Google AI Studio API key |
 | `GEMINI_MODEL` | Preferred model override (default: `gemini-3.5-flash-lite`) |
+| `GOOGLE_MAPS_API_KEY` | Google Maps / Places API key (`GOOGLE_PLACES_API_KEY` also supported) for geo-resolving listing hints to exact coords and nearest DB Fokontany (3-tier cache: memory LRU + MongoDB 90d TTL + singleflight) |
 | `GCS_BUCKET_NAME` | Target Google Cloud Storage bucket (`tranogasy-images`) |
 | `GCS_PROJECT_ID` | GCP project ID |
 | `GCS_SERVICE_ACCOUNT_JSON` | Service account JSON string for GCS uploads/deletes |

@@ -209,6 +209,33 @@ export function computeTextSimilarity(a: string, b: string): number {
 }
 
 /**
+ * Parses Bright Data date fields (ISO string or Unix epoch seconds/ms) safely.
+ */
+export function parseBrightDataDate(value: unknown): Date | null {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    const ms = value < 1e12 ? value * 1000 : value;
+    const parsed = new Date(ms);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    if (/^\d{9,13}$/.test(trimmed)) {
+      const num = Number(trimmed);
+      const ms = num < 1e12 ? num * 1000 : num;
+      const parsed = new Date(ms);
+      return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
+    const parsed = new Date(trimmed);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  return null;
+}
+
+/**
  * Normalizes Bright Data FB group records where shared posts wrap real content inside `original_post`.
  */
 export function unwrapBrightDataPost(raw: BrightDataPostRecord): UnwrappedFbPost | null {
@@ -247,8 +274,15 @@ export function unwrapBrightDataPost(raw: BrightDataPostRecord): UnwrappedFbPost
   const photoUrls = Array.from(photoUrlsSet);
   const isVideoOnly = photoUrls.length === 0 && (hasVideo || /video/i.test(raw.url || ''));
 
-  const parsedDate = new Date(raw.date_posted || Date.now());
-  const datePosted = Number.isNaN(parsedDate.getTime()) ? new Date() : parsedDate;
+  const rawAny = raw as Record<string, unknown>;
+  const origAny = orig as Record<string, unknown> | undefined;
+  const datePosted =
+    parseBrightDataDate(orig?.date_posted) ??
+    parseBrightDataDate(origAny?.created_time) ??
+    parseBrightDataDate(raw.date_posted) ??
+    parseBrightDataDate(rawAny.created_time) ??
+    parseBrightDataDate(rawAny.timestamp) ??
+    new Date();
 
   const normalizedText = normalizeTextForHash(content);
   const textHash = sha256Text(normalizedText || canonicalPostId);

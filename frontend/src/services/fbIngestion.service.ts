@@ -58,6 +58,8 @@ export interface FbIngestionConfig {
   totalRuns: number;
   totalBrightDataRecords: number;
   totalGeminiCalls: number;
+  placesApiConfigured?: boolean;
+  placesCacheEntries?: number;
 }
 
 export interface AsyncRunStartResponse {
@@ -152,7 +154,18 @@ export interface FbIngestedCandidate {
   };
   matchedCityId: string | null;
   matchedCityLabel: string | null;
-  cityCandidates: Array<{ _id: string; label: string; score: number }>;
+  cityCandidates: Array<{
+    _id: string;
+    label: string;
+    score: number;
+    distanceMeters?: number;
+    coords?: { lat: number; lng: number } | null;
+  }>;
+  resolvedCoords?: { lat: number; lng: number } | null;
+  resolvedPlaceName?: string | null;
+  resolvedAddress?: string | null;
+  resolutionSource?: 'google_places_cache' | 'google_places_api' | 'text_fallback' | null;
+  manualCityOverride?: boolean;
   missingFields: string[];
   featureVerification?: {
     carAccess?: 'yes' | 'no' | 'unknown';
@@ -180,7 +193,33 @@ export interface RunSummary {
   spamSkipped: number;
   candidatesCreated: number;
   geminiCalls: number;
+  placesApiCalls?: number;
+  placesCacheHits?: number;
   errors: string[];
+}
+
+export interface ResolveLocationResponse {
+  place: {
+    coords: { lat: number; lng: number };
+    placeName: string;
+    formattedAddress: string | null;
+    source: 'google_places_cache' | 'google_places_api' | 'text_fallback' | null;
+    apiCallMade: boolean;
+  } | null;
+  bestMatch: {
+    _id: string;
+    label: string;
+    score: number;
+    distanceMeters?: number;
+    coords?: { lat: number; lng: number } | null;
+  } | null;
+  candidates: Array<{
+    _id: string;
+    label: string;
+    score: number;
+    distanceMeters?: number;
+    coords?: { lat: number; lng: number } | null;
+  }>;
 }
 
 export interface BrightDataSnapshotMeta {
@@ -291,8 +330,8 @@ export const fbIngestionService = {
       body: JSON.stringify({ identifier, password }),
     }),
 
-  getConfig: (userId: string) =>
-    apiFetch<FbIngestionConfig>('/fb-ingestion/config', withAdminHeaders(userId)),
+  getConfig: (userId: string, options?: FetchOptions) =>
+    apiFetch<FbIngestionConfig>('/fb-ingestion/config', withAdminHeaders(userId, options)),
 
   updateConfig: (
     userId: string,
@@ -314,8 +353,8 @@ export const fbIngestionService = {
       }),
     ),
 
-  listGroups: (userId: string) =>
-    apiFetch<FbGroupTarget[]>('/fb-ingestion/groups', withAdminHeaders(userId)),
+  listGroups: (userId: string, options?: FetchOptions) =>
+    apiFetch<FbGroupTarget[]>('/fb-ingestion/groups', withAdminHeaders(userId, options)),
 
   addGroup: (
     userId: string,
@@ -348,14 +387,14 @@ export const fbIngestionService = {
       withAdminHeaders(userId, { method: 'DELETE' }),
     ),
 
-  getOverlapMatrix: (userId: string) =>
+  getOverlapMatrix: (userId: string, options?: FetchOptions) =>
     apiFetch<{ generatedAt: string; groups: FbOverlapMatrixRow[] }>(
       '/fb-ingestion/overlap-matrix',
-      withAdminHeaders(userId),
+      withAdminHeaders(userId, options),
     ),
 
-  listRemoteSnapshots: (userId: string) =>
-    apiFetch<BrightDataSnapshotMeta[]>('/fb-ingestion/snapshots', withAdminHeaders(userId)),
+  listRemoteSnapshots: (userId: string, options?: FetchOptions) =>
+    apiFetch<BrightDataSnapshotMeta[]>('/fb-ingestion/snapshots', withAdminHeaders(userId, options)),
 
   runNow: (userId: string, groupIds?: string[]) =>
     apiFetch<RunSummary>(
@@ -381,6 +420,15 @@ export const fbIngestionService = {
       withAdminHeaders(userId, { method: 'POST' }),
     ),
 
+  resolveLocation: (userId: string, q: string, groupName?: string) => {
+    const query = new URLSearchParams({ q });
+    if (groupName?.trim()) query.set('groupName', groupName.trim());
+    return apiFetch<ResolveLocationResponse>(
+      `/fb-ingestion/resolve-location?${query.toString()}`,
+      withAdminHeaders(userId),
+    );
+  },
+
   importSnapshot: (userId: string, snapshotId: string) =>
     apiFetch<RunSummary>(
       '/fb-ingestion/import-snapshot',
@@ -402,6 +450,7 @@ export const fbIngestionService = {
   listCandidates: (
     userId: string,
     params: { status?: string; groupId?: string; type?: string; houseType?: string; page?: number; limit?: number } = {},
+    options?: FetchOptions,
   ) => {
     const query = new URLSearchParams();
     if (params.status) query.set('status', params.status);
@@ -412,7 +461,7 @@ export const fbIngestionService = {
     if (params.limit) query.set('limit', String(params.limit));
     return apiFetch<CandidateListResponse>(
       `/fb-ingestion/candidates?${query.toString()}`,
-      withAdminHeaders(userId),
+      withAdminHeaders(userId, options),
     );
   },
 
@@ -461,6 +510,7 @@ export const fbIngestionService = {
       page?: number;
       limit?: number;
     } = {},
+    options?: FetchOptions,
   ) => {
     const query = new URLSearchParams();
     if (params.origin && params.origin !== 'all') query.set('origin', params.origin);
@@ -472,7 +522,7 @@ export const fbIngestionService = {
     if (params.limit) query.set('limit', String(params.limit));
     return apiFetch<AdminOriginPropertyListResponse>(
       `/fb-ingestion/properties?${query.toString()}`,
-      withAdminHeaders(userId),
+      withAdminHeaders(userId, options),
     );
   },
 

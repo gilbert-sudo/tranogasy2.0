@@ -43,6 +43,9 @@ import OperationProgressCard, {
 import FloatingOperationHud, {
   type HudToast,
 } from '@/components/admin/scraper/FloatingOperationHud';
+import AsyncToggleSwitch from '@/components/admin/scraper/AsyncToggleSwitch';
+
+type AdminTab = 'queue' | 'groups' | 'matrix' | 'origins';
 
 function buildScraperPipelineSteps(
   phase: string | null | undefined,
@@ -106,14 +109,18 @@ export default function AdminScraperPage() {
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
 
-  const [activeTab, setActiveTab] = useState<'queue' | 'groups' | 'matrix' | 'origins'>('queue');
+  const [activeTab, setActiveTab] = useState<AdminTab>('queue');
+  const [visitedTabs, setVisitedTabs] = useState<Set<AdminTab>>(() => new Set(['queue']));
+
   const [config, setConfig] = useState<FbIngestionConfig | null>(null);
   const [groups, setGroups] = useState<FbGroupTarget[]>([]);
   const [matrix, setMatrix] = useState<FbOverlapMatrixRow[]>([]);
   const [snapshots, setSnapshots] = useState<BrightDataSnapshotMeta[]>([]);
   const [snapshotInput, setSnapshotInput] = useState('sd_mwewhh3hvi9vt8yqk');
   const [loading, setLoading] = useState(true);
-  const [isLaunching, setIsLaunching] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const [launchingMode, setLaunchingMode] = useState<'scrape' | 'snapshot'>('scrape');
   const [isCancellingRun, setIsCancellingRun] = useState(false);
   const [runPollWarning, setRunPollWarning] = useState<string | null>(null);
@@ -124,105 +131,185 @@ export default function AdminScraperPage() {
   } | null>(null);
 
   const [backfillJob, setBackfillJob] = useState<BackfillJobState | null>(null);
-  const [isStartingBackfill, setIsStartingBackfill] = useState(false);
   const [isCancellingBackfill, setIsCancellingBackfill] = useState(false);
   const [backfillPollWarning, setBackfillPollWarning] = useState<string | null>(null);
   const [showBackfillCard, setShowBackfillCard] = useState(false);
-  const [originsRefreshNonce, setOriginsRefreshNonce] = useState(0);
 
-  const [banner, setBanner] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
-  const [hudToast, setHudToast] = useState<HudToast | null>(null);
+  const [originsRefreshNonce, setOriginsRefreshNonce] = useState(0);
+  const [queueRefreshNonce, setQueueRefreshNonce] = useState(0);
+
+  const [toasts, setToasts] = useState<HudToast[]>([]);
   const [lastSummary, setLastSummary] = useState<RunSummary | null>(null);
-  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [syncingGroupIds, setSyncingGroupIds] = useState<Set<string>>(() => new Set());
+  const [syncingConfig, setSyncingConfig] = useState(false);
 
   const isPollingCompletionRef = useRef(false);
   const isBackfillCompletionRef = useRef(false);
   const runPollFailuresRef = useRef(0);
   const backfillPollFailuresRef = useRef(0);
-  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const controlBarRef = useRef<HTMLElement | null>(null);
 
-  const pushToast = useCallback((nextToast: HudToast, autoHideMs = 9000) => {
-    setHudToast(nextToast);
-    if (toastTimerRef.current) {
-      clearTimeout(toastTimerRef.current);
-      toastTimerRef.current = null;
+  // Toast management (non-blocking stack, supports updating pending -> ok/err)
+  const toastIdCounterRef = useRef(0);
+  const toastTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
+  const scheduleToastAutoDismiss = useCallback((id: string, ms: number) => {
+    const existingTimer = toastTimersRef.current.get(id);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+      toastTimersRef.current.delete(id);
     }
-    if (nextToast.kind === 'ok' && autoHideMs > 0) {
-      toastTimerRef.current = setTimeout(() => {
-        setHudToast((curr) => (curr === nextToast ? null : curr));
-      }, autoHideMs);
+    if (ms > 0) {
+      const timer = setTimeout(() => {
+        toastTimersRef.current.delete(id);
+        setToasts((prev) => prev.filter((t) => t.id !== id));
+      }, ms);
+      toastTimersRef.current.set(id, timer);
     }
   }, []);
 
-  useEffect(() => {
-    return () => {
-      if (toastTimerRef.current) {
-        clearTimeout(toastTimerRef.current);
+  const dismissToast = useCallback((id: string) => {
+    const timer = toastTimersRef.current.get(id);
+    if (timer) {
+      clearTimeout(timer);
+      toastTimersRef.current.delete(id);
+    }
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  const pushToast = useCallback(
+    (
+      nextToast: Omit<HudToast, 'id'> & { id?: string },
+      autoHideMs = 4500,
+    ): string => {
+      const id = nextToast.id || `toast_${++toastIdCounterRef.current}`;
+      const fullToast: HudToast = { ...nextToast, id };
+      setToasts((prev) => {
+        const withoutSameId = prev.filter((t) => t.id !== id);
+        return [...withoutSameId.slice(-3), fullToast];
+      });
+      if (fullToast.kind === 'ok' && autoHideMs > 0) {
+        scheduleToastAutoDismiss(id, autoHideMs);
+      } else {
+        const existingTimer = toastTimersRef.current.get(id);
+        if (existingTimer) {
+          clearTimeout(existingTimer);
+          toastTimersRef.current.delete(id);
+        }
       }
+      return id;
+    },
+    [scheduleToastAutoDismiss],
+  );
+
+  const updateToast = useCallback(
+    (id: string, patch: Partial<Omit<HudToast, 'id'>>, autoHideMs = 5000) => {
+      let resolvedKind: HudToast['kind'] | undefined = patch.kind;
+      setToasts((prev) =>
+        prev.map((t) => {
+          if (t.id !== id) return t;
+          const merged = { ...t, ...patch };
+          resolvedKind = merged.kind;
+          return merged;
+        }),
+      );
+      if (resolvedKind === 'ok' && autoHideMs > 0) {
+        scheduleToastAutoDismiss(id, autoHideMs);
+      }
+    },
+    [scheduleToastAutoDismiss],
+  );
+
+  useEffect(() => {
+    const timers = toastTimersRef.current;
+    return () => {
+      timers.forEach((t) => clearTimeout(t));
+      timers.clear();
     };
   }, []);
 
+  // Optimistic sequence tracking for Config & Groups so rapid clicks never revert or race
+  const serverConfigRef = useRef<FbIngestionConfig | null>(null);
+  const configSeqRef = useRef(0);
+  const configFieldSeqRef = useRef<Partial<Record<keyof FbIngestionConfig, number>>>({});
+  const configInFlightCountRef = useRef(0);
+
+  const serverGroupsRef = useRef<Map<string, FbGroupTarget>>(new Map());
+  const groupSeqRef = useRef(0);
+  const groupFieldSeqRef = useRef<Map<string, number>>(new Map());
+  const groupInFlightCountRef = useRef<Map<string, number>>(new Map());
+
   const runActive =
-    isLaunching ||
     config?.lastPollStatus === 'running' ||
     config?.lastPollStatus === 'importing_snapshot';
 
-  const backfillActive = isStartingBackfill || backfillJob?.status === 'running';
-
-  const elapsedSec =
-    runActive && config?.lastPollStartedAt
-      ? Math.max(0, Math.round((nowMs - new Date(config.lastPollStartedAt).getTime()) / 1000))
-      : 0;
-
-  const backfillElapsedSec =
-    backfillActive && backfillJob?.startedAt
-      ? Math.max(0, Math.round((nowMs - new Date(backfillJob.startedAt).getTime()) / 1000))
-      : 0;
-
+  const backfillActive = backfillJob?.status === 'running';
   const displayedSummary = lastSummary || config?.lastRunSummary || null;
 
   useEffect(() => {
     initializeUser();
   }, [initializeUser]);
 
-  const loadAll = useCallback(async () => {
-    if (!userId || !isAdmin) {
-      setLoading(false);
-      return;
+  const syncServerGroupsSnapshot = useCallback((grp: FbGroupTarget[]) => {
+    const nextMap = new Map<string, FbGroupTarget>();
+    for (const g of grp) {
+      nextMap.set(g.groupId, g);
     }
-    try {
-      const [cfg, grp, mat] = await Promise.all([
-        fbIngestionService.getConfig(userId),
-        fbIngestionService.listGroups(userId),
-        fbIngestionService.getOverlapMatrix(userId),
-      ]);
-      setConfig(cfg);
-      if (cfg.lastRunSummary) {
-        setLastSummary(cfg.lastRunSummary);
-      }
-      if (cfg.backfillJob) {
-        setBackfillJob(cfg.backfillJob);
-        if (cfg.backfillJob.status === 'running' || cfg.backfillJob.phase === 'interrupted') {
-          setShowBackfillCard(true);
-        }
-      }
-      setGroups(grp);
-      setMatrix(mat.groups);
+    serverGroupsRef.current = nextMap;
+  }, []);
 
-      // Load remote Bright Data snapshot list asynchronously so slow external calls never block UI
-      fbIngestionService
-        .listRemoteSnapshots(userId)
-        .then(setSnapshots)
-        .catch(() => {});
-    } catch (err) {
-      const msg = (err as Error).message;
-      setBanner({ kind: 'err', text: msg });
-      pushToast({ kind: 'err', title: 'Erreur de chargement', text: msg });
-    } finally {
-      setLoading(false);
-    }
-  }, [userId, isAdmin, pushToast]);
+  const loadAll = useCallback(
+    async (opts?: { refreshSubTabs?: boolean }) => {
+      if (!userId || !isAdmin) {
+        setLoading(false);
+        return;
+      }
+      setIsRefreshing(true);
+      setLoadError(null);
+      try {
+        const [cfg, grp, mat] = await Promise.all([
+          fbIngestionService.getConfig(userId),
+          fbIngestionService.listGroups(userId),
+          fbIngestionService.getOverlapMatrix(userId),
+        ]);
+        serverConfigRef.current = cfg;
+        setConfig(cfg);
+        if (cfg.lastRunSummary) {
+          setLastSummary(cfg.lastRunSummary);
+        }
+        if (cfg.backfillJob) {
+          setBackfillJob(cfg.backfillJob);
+          if (
+            cfg.backfillJob.status === 'running' ||
+            cfg.backfillJob.phase === 'interrupted'
+          ) {
+            setShowBackfillCard(true);
+          }
+        }
+        syncServerGroupsSnapshot(grp);
+        setGroups(grp);
+        setMatrix(mat.groups);
+
+        if (opts?.refreshSubTabs) {
+          setQueueRefreshNonce((n) => n + 1);
+          setOriginsRefreshNonce((n) => n + 1);
+        }
+
+        fbIngestionService
+          .listRemoteSnapshots(userId)
+          .then(setSnapshots)
+          .catch(() => {});
+      } catch (err) {
+        const msg = (err as Error).message;
+        setLoadError(msg);
+        pushToast({ kind: 'err', title: 'Erreur de chargement', text: msg });
+      } finally {
+        setLoading(false);
+        setIsRefreshing(false);
+      }
+    },
+    [userId, isAdmin, pushToast, syncServerGroupsSnapshot],
+  );
 
   useEffect(() => {
     let active = true;
@@ -238,16 +325,21 @@ export default function AdminScraperPage() {
           fbIngestionService.getOverlapMatrix(userId),
         ]);
         if (!active) return;
+        serverConfigRef.current = cfg;
         setConfig(cfg);
         if (cfg.lastRunSummary) {
           setLastSummary(cfg.lastRunSummary);
         }
         if (cfg.backfillJob) {
           setBackfillJob(cfg.backfillJob);
-          if (cfg.backfillJob.status === 'running' || cfg.backfillJob.phase === 'interrupted') {
+          if (
+            cfg.backfillJob.status === 'running' ||
+            cfg.backfillJob.phase === 'interrupted'
+          ) {
             setShowBackfillCard(true);
           }
         }
+        syncServerGroupsSnapshot(grp);
         setGroups(grp);
         setMatrix(mat.groups);
 
@@ -260,7 +352,7 @@ export default function AdminScraperPage() {
       } catch (err) {
         if (active) {
           const msg = (err as Error).message;
-          setBanner({ kind: 'err', text: msg });
+          setLoadError(msg);
           pushToast({ kind: 'err', title: 'Erreur de chargement', text: msg });
         }
       } finally {
@@ -271,7 +363,7 @@ export default function AdminScraperPage() {
     return () => {
       active = false;
     };
-  }, [userId, isAdmin, pushToast]);
+  }, [userId, isAdmin, pushToast, syncServerGroupsSnapshot]);
 
   const pollRunStatusNow = useCallback(async () => {
     if (!userId || !isAdmin) return;
@@ -279,13 +371,25 @@ export default function AdminScraperPage() {
       const cfg = await fbIngestionService.getConfig(userId);
       runPollFailuresRef.current = 0;
       setRunPollWarning(null);
-      setConfig(cfg);
+      serverConfigRef.current = cfg;
+      setConfig((prev) => {
+        if (!prev) return cfg;
+        // Preserve any optimistic config toggle made concurrently
+        const merged = { ...cfg };
+        (Object.keys(configFieldSeqRef.current) as Array<keyof FbIngestionConfig>).forEach(
+          (k) => {
+            if ((configFieldSeqRef.current[k] || 0) > 0 && configInFlightCountRef.current > 0) {
+              (merged as Record<string, unknown>)[k] = prev[k];
+            }
+          },
+        );
+        return merged;
+      });
 
       const stillRunning =
         cfg.lastPollStatus === 'running' || cfg.lastPollStatus === 'importing_snapshot';
       if (!stillRunning && !isPollingCompletionRef.current) {
         isPollingCompletionRef.current = true;
-        setIsLaunching(false);
         setIsCancellingRun(false);
         if (cfg.lastRunSummary) {
           setLastSummary(cfg.lastRunSummary);
@@ -306,12 +410,10 @@ export default function AdminScraperPage() {
         if (cfg.lastPollPhase === 'cancelled') {
           const msg = cfg.lastPollMessage || 'Collecte annulée.';
           setRunOutcomeCard({ status: 'cancelled', message: msg, elapsedSec: runDurationSec });
-          setBanner({ kind: 'err', text: msg });
           pushToast({ kind: 'warn', title: 'Opération annulée', text: msg });
         } else if (cfg.lastPollStatus === 'error') {
           const msg = cfg.lastError || cfg.lastPollMessage || 'Erreur lors de la collecte Facebook.';
           setRunOutcomeCard({ status: 'error', message: msg, elapsedSec: runDurationSec });
-          setBanner({ kind: 'err', text: msg });
           pushToast({ kind: 'err', title: 'Échec de la collecte', text: msg });
         } else if (cfg.lastRunSummary) {
           const errSuffix =
@@ -324,10 +426,6 @@ export default function AdminScraperPage() {
             message: msg,
             elapsedSec: runDurationSec,
           });
-          setBanner({
-            kind: cfg.lastRunSummary.errors?.length > 0 ? 'err' : 'ok',
-            text: msg,
-          });
           pushToast({
             kind: cfg.lastRunSummary.errors?.length > 0 ? 'warn' : 'ok',
             title: 'Collecte terminée',
@@ -336,11 +434,10 @@ export default function AdminScraperPage() {
         } else {
           const msg = cfg.lastPollMessage || 'Collecte terminée. Groupes et file mis à jour.';
           setRunOutcomeCard({ status: 'completed', message: msg, elapsedSec: runDurationSec });
-          setBanner({ kind: 'ok', text: msg });
           pushToast({ kind: 'ok', title: 'Collecte terminée', text: msg });
         }
 
-        await loadAll();
+        await loadAll({ refreshSubTabs: true });
         isPollingCompletionRef.current = false;
       }
     } catch (err) {
@@ -375,22 +472,18 @@ export default function AdminScraperPage() {
 
       if (job.status !== 'running' && !isBackfillCompletionRef.current) {
         isBackfillCompletionRef.current = true;
-        setIsStartingBackfill(false);
         setIsCancellingBackfill(false);
 
         if (job.status === 'completed') {
           const msg =
             job.message ||
             `Migration terminée (${job.scanned} analysées) : ${job.migratedScraped} annonces FB migrées.`;
-          setBanner({ kind: 'ok', text: msg });
           pushToast({ kind: 'ok', title: 'Migration terminée', text: msg });
         } else if (job.status === 'cancelled') {
           const msg = job.message || 'Migration annulée.';
-          setBanner({ kind: 'err', text: msg });
           pushToast({ kind: 'warn', title: 'Migration annulée', text: msg });
         } else if (job.status === 'error') {
           const msg = job.lastError || job.message || 'Erreur durant la migration.';
-          setBanner({ kind: 'err', text: msg });
           pushToast({ kind: 'err', title: 'Erreur de migration', text: msg });
         }
 
@@ -420,117 +513,489 @@ export default function AdminScraperPage() {
     return () => clearInterval(intervalId);
   }, [userId, isAdmin, backfillActive, pollBackfillStatusNow]);
 
-  // Smooth local elapsed timer during any active operation
-  useEffect(() => {
-    if (!runActive && !backfillActive) return;
-    const id = setInterval(() => {
-      setNowMs(Date.now());
-    }, 1000);
-    return () => clearInterval(id);
-  }, [runActive, backfillActive]);
+  // Optimistic, race-safe config update (toggles, selects, error dismiss)
+  const updateConfigPatch = useCallback(
+    async (patch: Parameters<typeof fbIngestionService.updateConfig>[1]) => {
+      if (!userId) return;
 
-  const updateConfigPatch = async (patch: Parameters<typeof fbIngestionService.updateConfig>[1]) => {
-    if (!userId) return;
-    try {
-      const updated = await fbIngestionService.updateConfig(userId, patch);
-      setConfig(updated);
-      if (patch.lastError === null) return;
-      const msg =
+      const seq = ++configSeqRef.current;
+      const patchKeys = Object.keys(patch) as Array<keyof FbIngestionConfig>;
+      patchKeys.forEach((k) => {
+        configFieldSeqRef.current[k] = seq;
+      });
+
+      // Immediate UI update
+      setConfig((prev) => (prev ? { ...prev, ...patch } : prev));
+      configInFlightCountRef.current += 1;
+      setSyncingConfig(true);
+
+      const toastTitle =
         typeof patch.isLive === 'boolean'
           ? patch.isLive
-            ? 'Scraper activé en mode LIVE (surveillance automatique démarrée).'
-            : 'Scraper mis en PAUSE (0 crédit consommé).'
-          : 'Configuration mise à jour.';
-      setBanner({ kind: 'ok', text: msg });
-      pushToast({ kind: 'ok', title: 'Configuration enregistrée', text: msg });
-    } catch (err) {
-      const msg = (err as Error).message;
-      setBanner({ kind: 'err', text: msg });
-      pushToast({ kind: 'err', title: 'Erreur configuration', text: msg });
-    }
-  };
+            ? 'Mode LIVE activé'
+            : 'Scraper en PAUSE'
+          : typeof patch.onlyActiveHours === 'boolean'
+          ? patch.onlyActiveHours
+            ? 'Heures actives activées'
+            : 'Mode 24h/24 activé'
+          : 'Configuration enregistrée';
 
-  const handleRunActiveGroups = async () => {
-    if (!userId || runActive) return;
-    setLaunchingMode('scrape');
-    setIsLaunching(true);
-    setRunOutcomeCard(null);
-    setRunPollWarning(null);
-    setBanner(null);
-    try {
-      const res = await fbIngestionService.startRunNow(userId);
-      const msg = `Collecte lancée sur ${res.groupsCount ?? 'les'} groupe(s) actif(s). Suivi en direct ci-dessus...`;
-      setBanner({ kind: 'ok', text: msg });
-      pushToast({ kind: 'ok', title: 'Collecte démarrée', text: msg }, 5000);
-      const cfg = await fbIngestionService.getConfig(userId);
-      setConfig(cfg);
-      setIsLaunching(false);
-    } catch (err) {
-      setIsLaunching(false);
-      const msg = (err as Error).message;
-      setRunOutcomeCard({ status: 'error', message: msg });
-      setBanner({ kind: 'err', text: msg });
-      pushToast({ kind: 'err', title: 'Impossible de lancer le scraper', text: msg });
-    }
-  };
+      try {
+        const updated = await fbIngestionService.updateConfig(userId, patch);
+        serverConfigRef.current = updated;
 
-  const handleImportSnapshot = async () => {
-    if (!userId || !snapshotInput.trim() || runActive) return;
-    setLaunchingMode('snapshot');
-    setIsLaunching(true);
-    setRunOutcomeCard(null);
-    setRunPollWarning(null);
-    setBanner(null);
-    try {
-      const res = await fbIngestionService.startImportSnapshot(userId, snapshotInput.trim());
-      const msg = `Import du snapshot ${res.snapshotId || snapshotInput.trim()} démarré en arrière-plan...`;
-      setBanner({ kind: 'ok', text: msg });
-      pushToast({ kind: 'ok', title: 'Import Snapshot démarré', text: msg }, 5000);
-      const cfg = await fbIngestionService.getConfig(userId);
-      setConfig(cfg);
-      setIsLaunching(false);
-    } catch (err) {
-      setIsLaunching(false);
-      const msg = (err as Error).message;
-      setRunOutcomeCard({ status: 'error', message: msg });
-      setBanner({ kind: 'err', text: msg });
-      pushToast({ kind: 'err', title: 'Échec lancement import', text: msg });
-    }
-  };
+        setConfig((prev) => {
+          if (!prev) return updated;
+          const merged = { ...updated };
+          (Object.keys(configFieldSeqRef.current) as Array<keyof FbIngestionConfig>).forEach(
+            (k) => {
+              if ((configFieldSeqRef.current[k] || 0) > seq) {
+                (merged as Record<string, unknown>)[k] = prev[k];
+              }
+            },
+          );
+          return merged;
+        });
 
-  const handleCancelRun = async () => {
+        if (patch.lastError === null) return;
+        const msg =
+          typeof patch.isLive === 'boolean'
+            ? patch.isLive
+              ? 'Surveillance automatique démarrée.'
+              : '0 crédit consommé en pause.'
+            : typeof patch.onlyActiveHours === 'boolean'
+            ? patch.onlyActiveHours
+              ? `Actif de ${updated.activeHourStart}h à ${updated.activeHourEnd}h (UTC+3).`
+              : 'Collecte autorisée 24h/24.'
+            : 'Préférence appliquée.';
+
+        pushToast({ id: 'config-sync', kind: 'ok', title: toastTitle, text: msg }, 3000);
+      } catch (err) {
+        const msg = (err as Error).message;
+        const fallback = serverConfigRef.current;
+        if (fallback) {
+          setConfig((prev) => {
+            if (!prev) return prev;
+            const reverted = { ...prev };
+            patchKeys.forEach((k) => {
+              if (configFieldSeqRef.current[k] === seq) {
+                (reverted as Record<string, unknown>)[k] = fallback[k];
+              }
+            });
+            return reverted;
+          });
+        }
+        pushToast({
+          id: 'config-sync',
+          kind: 'err',
+          title: 'Erreur configuration (annulée)',
+          text: msg,
+        });
+      } finally {
+        configInFlightCountRef.current = Math.max(0, configInFlightCountRef.current - 1);
+        if (configInFlightCountRef.current === 0) {
+          setSyncingConfig(false);
+        }
+      }
+    },
+    [userId, pushToast],
+  );
+
+  // Optimistic, race-safe group update shared between Groups tab & Matrix tab
+  const handleUpdateGroupOptimistic = useCallback(
+    async (
+      groupId: string,
+      patch: {
+        name?: string;
+        isActive?: boolean;
+        scrapeLimitPer30Min?: number;
+        fbActivityNote?: string;
+      },
+    ) => {
+      if (!userId) return;
+      const seq = ++groupSeqRef.current;
+      const patchKeys = Object.keys(patch) as Array<keyof typeof patch>;
+      patchKeys.forEach((k) => {
+        groupFieldSeqRef.current.set(`${groupId}:${String(k)}`, seq);
+      });
+
+      const currentCount = groupInFlightCountRef.current.get(groupId) || 0;
+      groupInFlightCountRef.current.set(groupId, currentCount + 1);
+      setSyncingGroupIds((prev) => {
+        const next = new Set(prev);
+        next.add(groupId);
+        return next;
+      });
+
+      // Immediate UI update on both groups and matrix
+      setGroups((prev) =>
+        prev.map((g) => (g.groupId === groupId ? { ...g, ...patch } : g)),
+      );
+      if (typeof patch.isActive === 'boolean' || typeof patch.name === 'string') {
+        setMatrix((prev) =>
+          prev.map((m) =>
+            m.groupId === groupId
+              ? {
+                  ...m,
+                  ...(typeof patch.isActive === 'boolean'
+                    ? { isActive: patch.isActive }
+                    : {}),
+                  ...(typeof patch.name === 'string' ? { name: patch.name } : {}),
+                }
+              : m,
+          ),
+        );
+      }
+
+      try {
+        const updated = await fbIngestionService.updateGroup(userId, groupId, patch);
+        serverGroupsRef.current.set(groupId, updated);
+
+        setGroups((prev) =>
+          prev.map((g) => {
+            if (g.groupId !== groupId) return g;
+            const merged = { ...updated };
+            (['name', 'isActive', 'scrapeLimitPer30Min', 'fbActivityNote'] as const).forEach(
+              (k) => {
+                if ((groupFieldSeqRef.current.get(`${groupId}:${k}`) || 0) > seq) {
+                  (merged as Record<string, unknown>)[k] = g[k];
+                }
+              },
+            );
+            return merged;
+          }),
+        );
+
+        setMatrix((prev) =>
+          prev.map((m) => {
+            if (m.groupId !== groupId) return m;
+            const activeSeq = groupFieldSeqRef.current.get(`${groupId}:isActive`) || 0;
+            const nameSeq = groupFieldSeqRef.current.get(`${groupId}:name`) || 0;
+            return {
+              ...m,
+              isActive: activeSeq > seq ? m.isActive : updated.isActive,
+              name: nameSeq > seq ? m.name : updated.name,
+            };
+          }),
+        );
+      } catch (err) {
+        const msg = (err as Error).message;
+        const fallback = serverGroupsRef.current.get(groupId);
+        if (fallback) {
+          setGroups((prev) =>
+            prev.map((g) => {
+              if (g.groupId !== groupId) return g;
+              const reverted = { ...g };
+              patchKeys.forEach((k) => {
+                if (groupFieldSeqRef.current.get(`${groupId}:${String(k)}`) === seq) {
+                  (reverted as Record<string, unknown>)[k] = fallback[k];
+                }
+              });
+              return reverted;
+            }),
+          );
+          setMatrix((prev) =>
+            prev.map((m) => {
+              if (m.groupId !== groupId) return m;
+              const reverted = { ...m };
+              if (
+                typeof patch.isActive === 'boolean' &&
+                groupFieldSeqRef.current.get(`${groupId}:isActive`) === seq
+              ) {
+                reverted.isActive = fallback.isActive;
+              }
+              if (
+                typeof patch.name === 'string' &&
+                groupFieldSeqRef.current.get(`${groupId}:name`) === seq
+              ) {
+                reverted.name = fallback.name;
+              }
+              return reverted;
+            }),
+          );
+        }
+        pushToast({
+          kind: 'err',
+          title: 'Erreur mise à jour groupe (annulée)',
+          text: msg,
+        });
+      } finally {
+        const nextCount = Math.max(0, (groupInFlightCountRef.current.get(groupId) || 1) - 1);
+        if (nextCount === 0) {
+          groupInFlightCountRef.current.delete(groupId);
+          setSyncingGroupIds((prev) => {
+            const next = new Set(prev);
+            next.delete(groupId);
+            return next;
+          });
+        } else {
+          groupInFlightCountRef.current.set(groupId, nextCount);
+        }
+      }
+    },
+    [userId, pushToast],
+  );
+
+  const handleDeleteGroupOptimistic = useCallback(
+    async (group: FbGroupTarget) => {
+      if (!userId) return;
+      const groupIdx = groups.findIndex((g) => g.groupId === group.groupId);
+      const matrixIdx = matrix.findIndex((m) => m.groupId === group.groupId);
+      const matrixSnapshot = matrixIdx >= 0 ? matrix[matrixIdx] : null;
+
+      setGroups((prev) => prev.filter((g) => g.groupId !== group.groupId));
+      setMatrix((prev) => prev.filter((m) => m.groupId !== group.groupId));
+
+      const toastId = pushToast({
+        kind: 'pending',
+        title: `Suppression de « ${group.name} »...`,
+      });
+
+      try {
+        await fbIngestionService.deleteGroup(userId, group.groupId);
+        serverGroupsRef.current.delete(group.groupId);
+        updateToast(
+          toastId,
+          { kind: 'ok', title: 'Groupe supprimé', text: group.name },
+          3500,
+        );
+      } catch (err) {
+        setGroups((prev) => {
+          if (prev.some((g) => g.groupId === group.groupId)) return prev;
+          const copy = [...prev];
+          copy.splice(
+            groupIdx >= 0 ? Math.min(groupIdx, copy.length) : copy.length,
+            0,
+            group,
+          );
+          return copy;
+        });
+        if (matrixSnapshot) {
+          setMatrix((prev) => {
+            if (prev.some((m) => m.groupId === group.groupId)) return prev;
+            const copy = [...prev];
+            copy.splice(
+              matrixIdx >= 0 ? Math.min(matrixIdx, copy.length) : copy.length,
+              0,
+              matrixSnapshot,
+            );
+            return copy;
+          });
+        }
+        updateToast(toastId, {
+          kind: 'err',
+          title: 'Échec suppression groupe (restauré)',
+          text: (err as Error).message,
+        });
+      }
+    },
+    [userId, groups, matrix, pushToast, updateToast],
+  );
+
+  const handleGroupAdded = useCallback(
+    (created: FbGroupTarget) => {
+      serverGroupsRef.current.set(created.groupId, created);
+      setGroups((prev) => [created, ...prev.filter((g) => g.groupId !== created.groupId)]);
+      setMatrix((prev) => [
+        {
+          groupId: created.groupId,
+          name: created.name,
+          isActive: created.isActive,
+          totalFetched: created.totalFetched || 0,
+          uniqueAccepted: created.uniqueAccepted || 0,
+          approvedCount: created.approvedCount || 0,
+          duplicateSkipped: created.duplicateSkipped || 0,
+          landSkipped: created.landSkipped || 0,
+          videoOnlySkipped: created.videoOnlySkipped || 0,
+          spamSkipped: created.spamSkipped || 0,
+          sharedTotal: 0,
+          redundancyRate: 0,
+          topOverlaps: [],
+        },
+        ...prev.filter((m) => m.groupId !== created.groupId),
+      ]);
+      pushToast(
+        {
+          kind: 'ok',
+          title: 'Groupe ajouté',
+          text: created.name,
+        },
+        3500,
+      );
+    },
+    [pushToast],
+  );
+
+  const handleCandidateCountDelta = useCallback(
+    (
+      groupId: string,
+      delta: { approvedCount?: number; rejectedCount?: number },
+    ) => {
+      setGroups((prev) =>
+        prev.map((g) =>
+          g.groupId === groupId
+            ? {
+                ...g,
+                approvedCount: Math.max(0, g.approvedCount + (delta.approvedCount || 0)),
+                rejectedCount: Math.max(0, g.rejectedCount + (delta.rejectedCount || 0)),
+              }
+            : g,
+        ),
+      );
+      if (delta.approvedCount) {
+        setMatrix((prev) =>
+          prev.map((m) =>
+            m.groupId === groupId
+              ? {
+                  ...m,
+                  approvedCount: Math.max(0, m.approvedCount + (delta.approvedCount || 0)),
+                }
+              : m,
+          ),
+        );
+      }
+    },
+    [],
+  );
+
+  const startOptimisticRun = useCallback(
+    async (mode: 'scrape' | 'snapshot', opts?: { groupIds?: string[]; groupName?: string; snapshotId?: string }) => {
+      if (!userId || runActive) return;
+      const prevConfig = config;
+      const startedAtIso = new Date().toISOString();
+
+      setLaunchingMode(mode);
+      setRunOutcomeCard(null);
+      setRunPollWarning(null);
+      setConfig((prev) =>
+        prev
+          ? {
+              ...prev,
+              lastPollStatus: mode === 'snapshot' ? 'importing_snapshot' : 'running',
+              lastPollPhase:
+                mode === 'snapshot' ? 'downloading_snapshot' : 'triggering_brightdata',
+              lastPollStartedAt: startedAtIso,
+              lastPollFinishedAt: null,
+              lastSnapshotId: opts?.snapshotId || prev.lastSnapshotId,
+              lastPollMessage:
+                mode === 'snapshot'
+                  ? `Démarrage de l'import ${opts?.snapshotId || ''}...`
+                  : opts?.groupName
+                  ? `Démarrage collecte pour « ${opts.groupName} »...`
+                  : 'Démarrage de la collecte sur le serveur...',
+              lastRunProgress: { current: 4, total: 100, percent: 4, unit: 'percent' },
+            }
+          : prev,
+      );
+
+      try {
+        const res =
+          mode === 'snapshot'
+            ? await fbIngestionService.startImportSnapshot(userId, opts?.snapshotId || '')
+            : await fbIngestionService.startRunNow(userId, opts?.groupIds);
+
+        const msg =
+          mode === 'snapshot'
+            ? `Import du snapshot ${res.snapshotId || opts?.snapshotId} démarré en arrière-plan...`
+            : opts?.groupName
+            ? `Collecte démarrée pour « ${opts.groupName} ». Suivi en temps réel actif...`
+            : `Collecte lancée sur ${res.groupsCount ?? 'les'} groupe(s) actif(s).`;
+
+        pushToast(
+          {
+            kind: 'ok',
+            title: mode === 'snapshot' ? 'Import Snapshot démarré' : 'Collecte démarrée',
+            text: msg,
+          },
+          4500,
+        );
+
+        const cfg = await fbIngestionService.getConfig(userId);
+        serverConfigRef.current = cfg;
+        setConfig(cfg);
+      } catch (err) {
+        if (prevConfig) {
+          setConfig(prevConfig);
+        }
+        const msg = (err as Error).message;
+        setRunOutcomeCard({ status: 'error', message: msg });
+        pushToast({
+          kind: 'err',
+          title: mode === 'snapshot' ? 'Échec lancement import' : 'Impossible de lancer le scraper',
+          text: msg,
+        });
+      }
+    },
+    [userId, runActive, config, pushToast],
+  );
+
+  const handleRunActiveGroups = useCallback(
+    () => startOptimisticRun('scrape'),
+    [startOptimisticRun],
+  );
+
+  const handleImportSnapshot = useCallback(() => {
+    if (!snapshotInput.trim()) return;
+    return startOptimisticRun('snapshot', { snapshotId: snapshotInput.trim() });
+  }, [snapshotInput, startOptimisticRun]);
+
+  const handleStartSingleGroupRun = useCallback(
+    (g: FbGroupTarget) =>
+      startOptimisticRun('scrape', { groupIds: [g.groupId], groupName: g.name }),
+    [startOptimisticRun],
+  );
+
+  const handleCancelRun = useCallback(async () => {
     if (!userId || isCancellingRun) return;
     setIsCancellingRun(true);
     isPollingCompletionRef.current = true;
     try {
       const cfg = await fbIngestionService.cancelRun(userId);
+      serverConfigRef.current = cfg;
       setConfig(cfg);
-      setIsLaunching(false);
       setRunPollWarning(null);
       const msg = 'Collecte annulée / état réinitialisé.';
       setRunOutcomeCard({ status: 'cancelled', message: msg });
-      setBanner({ kind: 'err', text: msg });
       pushToast({ kind: 'warn', title: 'Opération annulée', text: msg });
     } catch (err) {
       const msg = (err as Error).message;
-      setBanner({ kind: 'err', text: msg });
       pushToast({ kind: 'err', title: 'Échec annulation', text: msg });
     } finally {
       setIsCancellingRun(false);
       isPollingCompletionRef.current = false;
     }
-  };
+  }, [userId, isCancellingRun, pushToast]);
 
-  const handleStartBackfill = async () => {
+  const handleStartBackfill = useCallback(async () => {
     if (!userId || backfillActive) return;
-    setIsStartingBackfill(true);
+    const prevJob = backfillJob;
+    const startedAtIso = new Date().toISOString();
+
     setShowBackfillCard(true);
     setBackfillPollWarning(null);
-    setBanner(null);
+    setBackfillJob({
+      status: 'running',
+      phase: 'starting',
+      message: 'Démarrage de la migration en arrière-plan...',
+      current: 0,
+      total: 0,
+      percent: 2,
+      etaSeconds: null,
+      scanned: 0,
+      migratedScraped: 0,
+      markedOrganic: 0,
+      markedAdminManual: 0,
+      avatarsPersisted: 0,
+      errorCount: 0,
+      lastError: null,
+      startedAt: startedAtIso,
+      finishedAt: null,
+      updatedAt: startedAtIso,
+    });
+
     try {
       const res = await fbIngestionService.startBackfillShadowOwners(userId);
       setBackfillJob(res.job);
-      setIsStartingBackfill(false);
       pushToast(
         {
           kind: 'ok',
@@ -539,45 +1004,41 @@ export default function AdminScraperPage() {
             res.job.message ||
             'Analyse des annonces et upload des avatars sur GCS en arrière-plan...',
         },
-        5000,
+        4500,
       );
     } catch (err) {
-      setIsStartingBackfill(false);
       const msg = (err as Error).message || 'Erreur lors du démarrage de la migration.';
-      setBackfillJob((prev) => ({
+      setBackfillJob({
         status: 'error',
         phase: 'error',
         message: msg,
-        current: prev?.current ?? 0,
-        total: prev?.total ?? 0,
-        percent: prev?.percent ?? 0,
+        current: prevJob?.current ?? 0,
+        total: prevJob?.total ?? 0,
+        percent: prevJob?.percent ?? 0,
         etaSeconds: null,
-        scanned: prev?.scanned ?? 0,
-        migratedScraped: prev?.migratedScraped ?? 0,
-        markedOrganic: prev?.markedOrganic ?? 0,
-        markedAdminManual: prev?.markedAdminManual ?? 0,
-        avatarsPersisted: prev?.avatarsPersisted ?? 0,
-        errorCount: (prev?.errorCount ?? 0) + 1,
+        scanned: prevJob?.scanned ?? 0,
+        migratedScraped: prevJob?.migratedScraped ?? 0,
+        markedOrganic: prevJob?.markedOrganic ?? 0,
+        markedAdminManual: prevJob?.markedAdminManual ?? 0,
+        avatarsPersisted: prevJob?.avatarsPersisted ?? 0,
+        errorCount: (prevJob?.errorCount ?? 0) + 1,
         lastError: msg,
-        startedAt: prev?.startedAt ?? null,
+        startedAt: prevJob?.startedAt ?? null,
         finishedAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-      }));
-      setBanner({ kind: 'err', text: msg });
+      });
       pushToast({ kind: 'err', title: 'Erreur migration', text: msg });
     }
-  };
+  }, [userId, backfillActive, backfillJob, pushToast]);
 
-  const handleCancelBackfill = async () => {
+  const handleCancelBackfill = useCallback(async () => {
     if (!userId || isCancellingBackfill) return;
     setIsCancellingBackfill(true);
     try {
       const job = await fbIngestionService.cancelBackfill(userId);
       setBackfillJob(job);
       if (job.status === 'cancelled') {
-        setIsStartingBackfill(false);
         const msg = job.message || 'Migration annulée.';
-        setBanner({ kind: 'err', text: msg });
         pushToast({ kind: 'warn', title: 'Migration annulée', text: msg });
       }
     } catch (err) {
@@ -585,7 +1046,7 @@ export default function AdminScraperPage() {
     } finally {
       setIsCancellingBackfill(false);
     }
-  };
+  }, [userId, isCancellingBackfill, pushToast]);
 
   const handleAdminSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -604,6 +1065,39 @@ export default function AdminScraperPage() {
       setLoginBusy(false);
     }
   };
+
+  const selectTab = useCallback((tab: AdminTab) => {
+    setActiveTab(tab);
+    setVisitedTabs((prev) => {
+      if (prev.has(tab)) return prev;
+      const next = new Set(prev);
+      next.add(tab);
+      return next;
+    });
+  }, []);
+
+  const handleGroupError = useCallback(
+    (msg: string) => pushToast({ kind: 'err', title: 'Erreur groupe', text: msg }),
+    [pushToast],
+  );
+
+  const handleOriginsError = useCallback(
+    (msg: string) => pushToast({ kind: 'err', title: 'Erreur Origines', text: msg }),
+    [pushToast],
+  );
+
+  const handleScrollToTop = useCallback(() => {
+    controlBarRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, []);
+
+  const handleFocusOriginsTab = useCallback(() => {
+    selectTab('origins');
+    setShowBackfillCard(true);
+  }, [selectTab]);
+
+  const handleDismissBackfillCard = useCallback(() => {
+    setShowBackfillCard(false);
+  }, []);
 
   if (!loading && (!currentUser || !isAdmin)) {
     return (
@@ -659,7 +1153,7 @@ export default function AdminScraperPage() {
               <button
                 type="submit"
                 disabled={loginBusy}
-                className="w-full inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-full bg-brand-green text-white text-xs font-bold hover:opacity-95 transition disabled:opacity-50"
+                className="w-full inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-full bg-brand-green text-white text-xs font-bold hover:opacity-95 transition disabled:opacity-50 cursor-pointer"
               >
                 {loginBusy ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -708,7 +1202,7 @@ export default function AdminScraperPage() {
                 </h1>
                 {config && (
                   <span
-                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${
+                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition-colors duration-150 ${
                       config.isLive
                         ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
                         : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'
@@ -722,6 +1216,11 @@ export default function AdminScraperPage() {
                     {config.isLive ? 'LIVE (Actif)' : 'EN PAUSE'}
                   </span>
                 )}
+                {syncingConfig && (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-medium text-zinc-400">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  </span>
+                )}
               </div>
               <p className="text-xs text-zinc-500">
                 Contrôlez la collecte Bright Data, le filtrage IA Gemini, le stock d&apos;images GCS et la validation humaine rapide avant mise en ligne.
@@ -732,8 +1231,8 @@ export default function AdminScraperPage() {
               <div className="flex flex-wrap items-center gap-2.5">
                 <button
                   type="button"
-                  onClick={() => updateConfigPatch({ isLive: !config.isLive })}
-                  className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold shadow-sm transition ${
+                  onClick={() => void updateConfigPatch({ isLive: !config.isLive })}
+                  className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold shadow-sm transition-colors duration-150 cursor-pointer ${
                     config.isLive
                       ? 'bg-amber-500 text-white hover:bg-amber-600'
                       : 'bg-brand-green text-white hover:opacity-95'
@@ -746,8 +1245,8 @@ export default function AdminScraperPage() {
                 <button
                   type="button"
                   disabled={runActive}
-                  onClick={handleRunActiveGroups}
-                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-xs font-bold bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 hover:opacity-90 transition disabled:opacity-50"
+                  onClick={() => void handleRunActiveGroups()}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-xs font-bold bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 hover:opacity-90 transition disabled:opacity-50 cursor-pointer"
                 >
                   {runActive ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -764,7 +1263,7 @@ export default function AdminScraperPage() {
                     type="button"
                     disabled={isCancellingRun}
                     onClick={() => void handleCancelRun()}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-full text-xs font-bold border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 hover:bg-red-100 transition disabled:opacity-50"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-full text-xs font-bold border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 hover:bg-red-100 transition disabled:opacity-50 cursor-pointer"
                   >
                     {isCancellingRun ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -777,11 +1276,16 @@ export default function AdminScraperPage() {
 
                 <button
                   type="button"
-                  onClick={() => loadAll()}
-                  title="Rafraîchir"
-                  className="p-2.5 rounded-full border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition"
+                  disabled={isRefreshing}
+                  onClick={() => void loadAll({ refreshSubTabs: true })}
+                  title="Rafraîchir en arrière-plan"
+                  className="p-2.5 rounded-full border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition cursor-pointer disabled:opacity-60"
                 >
-                  <RefreshCw className="w-4 h-4 text-zinc-600 dark:text-zinc-300" />
+                  <RefreshCw
+                    className={`w-4 h-4 text-zinc-600 dark:text-zinc-300 ${
+                      isRefreshing ? 'animate-spin' : ''
+                    }`}
+                  />
                 </button>
               </div>
             )}
@@ -797,7 +1301,7 @@ export default function AdminScraperPage() {
                 <select
                   value={config.pollIntervalMinutes}
                   onChange={(e) =>
-                    updateConfigPatch({ pollIntervalMinutes: Number(e.target.value) })
+                    void updateConfigPatch({ pollIntervalMinutes: Number(e.target.value) })
                   }
                   className="w-full px-3 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 font-semibold"
                 >
@@ -814,7 +1318,7 @@ export default function AdminScraperPage() {
                 </label>
                 <select
                   value={config.geminiModel}
-                  onChange={(e) => updateConfigPatch({ geminiModel: e.target.value })}
+                  onChange={(e) => void updateConfigPatch({ geminiModel: e.target.value })}
                   className="w-full px-3 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 font-semibold"
                 >
                   {GEMINI_MODELS.map((m) => (
@@ -826,23 +1330,18 @@ export default function AdminScraperPage() {
               </div>
 
               <div className="p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 flex flex-col justify-between">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <span className="font-semibold text-zinc-500">
                     Heures actives Tana ({config.activeHourStart}h–{config.activeHourEnd}h)
                   </span>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      updateConfigPatch({ onlyActiveHours: !config.onlyActiveHours })
+                  <AsyncToggleSwitch
+                    checked={config.onlyActiveHours}
+                    size="sm"
+                    label="Activer la collecte uniquement pendant les heures actives de Tana"
+                    onToggle={() =>
+                      void updateConfigPatch({ onlyActiveHours: !config.onlyActiveHours })
                     }
-                    className={`w-10 h-5 rounded-full p-0.5 transition flex items-center ${
-                      config.onlyActiveHours
-                        ? 'bg-brand-green justify-end'
-                        : 'bg-zinc-300 dark:bg-zinc-700 justify-start'
-                    }`}
-                  >
-                    <span className="w-4 h-4 rounded-full bg-white shadow" />
-                  </button>
+                  />
                 </div>
                 <p className="text-[11px] text-zinc-400 mt-1">
                   Économise ~33% de crédits la nuit (UTC+3).
@@ -873,8 +1372,8 @@ export default function AdminScraperPage() {
                   <button
                     type="button"
                     disabled={runActive}
-                    onClick={handleImportSnapshot}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-brand-green text-white font-bold disabled:opacity-50"
+                    onClick={() => void handleImportSnapshot()}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-brand-green text-white font-bold disabled:opacity-50 cursor-pointer"
                   >
                     {runActive ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -898,6 +1397,29 @@ export default function AdminScraperPage() {
                 <span>Runs : {config.totalRuns}</span>
                 <span>Posts récupérés : {config.totalBrightDataRecords}</span>
                 <span>Appels Gemini : {config.totalGeminiCalls}</span>
+                {typeof config.placesApiConfigured === 'boolean' && (
+                  <span
+                    className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                      config.placesApiConfigured
+                        ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
+                        : 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'
+                    }`}
+                    title={
+                      config.placesApiConfigured
+                        ? 'Résolution Google Places active avec index spatial Fokontany + cache persistant 90j'
+                        : 'Ajoutez GOOGLE_MAPS_API_KEY dans backend/.env pour activer la géolocalisation Google Places'
+                    }
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        config.placesApiConfigured ? 'bg-emerald-500' : 'bg-amber-500'
+                      }`}
+                    />
+                    {config.placesApiConfigured
+                      ? `Places Geo actif (${config.placesCacheEntries ?? 0} en cache)`
+                      : `Places Geo inactif — Fallback texte (${config.placesCacheEntries ?? 0} en cache)`}
+                  </span>
+                )}
                 {config.lastSnapshotId && (
                   <span className="font-mono text-zinc-600 dark:text-zinc-300">
                     Snapshot : {config.lastSnapshotId}
@@ -905,7 +1427,8 @@ export default function AdminScraperPage() {
                 )}
                 {config.lastPollFinishedAt && (
                   <span>
-                    Dernière synchro : {new Date(config.lastPollFinishedAt).toLocaleString('fr-FR')}
+                    Dernière synchro :{' '}
+                    {new Date(config.lastPollFinishedAt).toLocaleString('fr-FR')}
                   </span>
                 )}
               </div>
@@ -913,16 +1436,17 @@ export default function AdminScraperPage() {
               {runActive ? (
                 <OperationProgressCard
                   title={
-                    (config.lastPollStatus === 'importing_snapshot' ||
-                      (isLaunching && launchingMode === 'snapshot'))
-                      ? `Import Snapshot Bright Data${config.lastSnapshotId ? ` (${config.lastSnapshotId})` : ''}`
-                      : `Collecte Scraper Facebook${config.lastSnapshotId ? ` (${config.lastSnapshotId})` : ''}`
+                    config.lastPollStatus === 'importing_snapshot' ||
+                    launchingMode === 'snapshot'
+                      ? `Import Snapshot Bright Data${
+                          config.lastSnapshotId ? ` (${config.lastSnapshotId})` : ''
+                        }`
+                      : `Collecte Scraper Facebook${
+                          config.lastSnapshotId ? ` (${config.lastSnapshotId})` : ''
+                        }`
                   }
                   status="running"
-                  message={
-                    config.lastPollMessage ||
-                    (isLaunching ? 'Démarrage de la collecte sur le serveur...' : 'Traitement en cours...')
-                  }
+                  message={config.lastPollMessage || 'Traitement en cours...'}
                   detail={config.lastRunProgress?.detail || null}
                   percent={
                     config.lastRunProgress?.percent ??
@@ -930,9 +1454,7 @@ export default function AdminScraperPage() {
                       ? Math.round(
                           (config.lastRunProgress.current / config.lastRunProgress.total) * 100,
                         )
-                      : isLaunching
-                      ? 4
-                      : 8)
+                      : 6)
                   }
                   countLabel={
                     config.lastRunProgress?.unit === 'posts' &&
@@ -942,13 +1464,13 @@ export default function AdminScraperPage() {
                       ? `ID: ${config.lastSnapshotId}`
                       : null
                   }
-                  elapsedSec={elapsedSec}
+                  startedAt={config.lastPollStartedAt}
                   etaSeconds={config.lastRunProgress?.etaSeconds ?? null}
                   etaFallbackLabel={getScraperEtaFallback(config.lastPollPhase)}
                   steps={buildScraperPipelineSteps(
                     config.lastPollPhase,
                     config.lastPollStatus === 'importing_snapshot' ||
-                      (isLaunching && launchingMode === 'snapshot'),
+                      launchingMode === 'snapshot',
                   )}
                   pollWarning={runPollWarning}
                   isCancelling={isCancellingRun}
@@ -989,9 +1511,9 @@ export default function AdminScraperPage() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => updateConfigPatch({ lastError: null })}
+                    onClick={() => void updateConfigPatch({ lastError: null })}
                     title="Effacer cette alerte"
-                    className="p-1 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/40 shrink-0"
+                    className="p-1 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/40 shrink-0 cursor-pointer"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -1001,18 +1523,15 @@ export default function AdminScraperPage() {
           )}
         </section>
 
-        {/* Notifications / Last Run Summary */}
-        {banner && (
-          <div
-            className={`px-5 py-3.5 rounded-2xl text-xs font-semibold flex items-center justify-between ${
-              banner.kind === 'ok'
-                ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-900'
-                : 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-200 border border-red-200 dark:border-red-900'
-            }`}
-          >
-            <span>{banner.text}</span>
-            <button type="button" onClick={() => setBanner(null)}>
-              <X className="w-4 h-4" />
+        {loadError && !config && (
+          <div className="px-5 py-3.5 rounded-2xl text-xs font-semibold flex items-center justify-between bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-200 border border-red-200 dark:border-red-900">
+            <span>{loadError}</span>
+            <button
+              type="button"
+              onClick={() => void loadAll()}
+              className="px-3 py-1 rounded-full bg-red-700 text-white text-[11px] font-bold hover:opacity-90 cursor-pointer"
+            >
+              Réessayer
             </button>
           </div>
         )}
@@ -1026,7 +1545,8 @@ export default function AdminScraperPage() {
               +{displayedSummary.candidatesCreated} créés
             </span>
             <span className="px-2.5 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800">
-              {displayedSummary.duplicateSkipped} doublons ({displayedSummary.crossGroupOverlaps} inter-groupes)
+              {displayedSummary.duplicateSkipped} doublons ({displayedSummary.crossGroupOverlaps}{' '}
+              inter-groupes)
             </span>
             <span className="px-2.5 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800">
               {displayedSummary.landSkipped} terrains ignorés
@@ -1037,7 +1557,18 @@ export default function AdminScraperPage() {
             <span className="px-2.5 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800">
               {displayedSummary.spamSkipped} spams/recherches
             </span>
-            <span className="text-zinc-400">({displayedSummary.geminiCalls} appels Gemini)</span>
+            <span className="text-zinc-400">
+              ({displayedSummary.geminiCalls} appels Gemini
+              {(typeof displayedSummary.placesCacheHits === 'number' ||
+                typeof displayedSummary.placesApiCalls === 'number') && (
+                <>
+                  {' '}
+                  • {displayedSummary.placesCacheHits ?? 0} cache Geo •{' '}
+                  {displayedSummary.placesApiCalls ?? 0} API Places
+                </>
+              )}
+              )
+            </span>
           </div>
         )}
 
@@ -1045,8 +1576,8 @@ export default function AdminScraperPage() {
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => setActiveTab('queue')}
-            className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold transition ${
+            onClick={() => selectTab('queue')}
+            className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold transition cursor-pointer ${
               activeTab === 'queue'
                 ? 'bg-brand-green text-white shadow-sm'
                 : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-800'
@@ -1057,20 +1588,20 @@ export default function AdminScraperPage() {
 
           <button
             type="button"
-            onClick={() => setActiveTab('groups')}
-            className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold transition ${
+            onClick={() => selectTab('groups')}
+            className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold transition cursor-pointer ${
               activeTab === 'groups'
                 ? 'bg-brand-green text-white shadow-sm'
                 : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-800'
             }`}
           >
-            <Layers className="w-4 h-4" /> Groupes cibles & Fréquence ({groups.length})
+            <Layers className="w-4 h-4" /> Groupes cibles &amp; Fréquence ({groups.length})
           </button>
 
           <button
             type="button"
-            onClick={() => setActiveTab('matrix')}
-            className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold transition ${
+            onClick={() => selectTab('matrix')}
+            className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold transition cursor-pointer ${
               activeTab === 'matrix'
                 ? 'bg-brand-green text-white shadow-sm'
                 : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-800'
@@ -1081,8 +1612,8 @@ export default function AdminScraperPage() {
 
           <button
             type="button"
-            onClick={() => setActiveTab('origins')}
-            className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold transition ${
+            onClick={() => selectTab('origins')}
+            className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold transition cursor-pointer ${
               activeTab === 'origins'
                 ? 'bg-brand-green text-white shadow-sm'
                 : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-800'
@@ -1092,79 +1623,73 @@ export default function AdminScraperPage() {
           </button>
         </div>
 
-        {/* Tab Views */}
+        {/* Tab Views (Visited tabs stay mounted so switching is 0ms and preserves unsaved edits) */}
         {loading || !config ? (
           <div className="py-20 flex items-center justify-center gap-2 text-sm text-zinc-500">
             <Loader2 className="w-5 h-5 animate-spin text-brand-green" /> Chargement de la console...
           </div>
-        ) : activeTab === 'queue' ? (
-          <ValidationQueueTab
-            userId={userId}
-            groups={groups}
-            onRefreshAll={loadAll}
-            onNotify={(notice) =>
-              pushToast({
-                kind: notice.kind,
-                title: notice.kind === 'ok' ? 'Validation mise à jour' : 'Erreur validation',
-                text: notice.text,
-              })
-            }
-          />
-        ) : activeTab === 'groups' ? (
-          <GroupsManagerTab
-            userId={userId}
-            groups={groups}
-            config={config}
-            isAnyRunActive={runActive}
-            onRefresh={loadAll}
-            onCancelRun={() => void handleCancelRun()}
-            onRunStarted={async (msg) => {
-              setLaunchingMode('scrape');
-              setRunOutcomeCard(null);
-              setRunPollWarning(null);
-              setBanner({ kind: 'ok', text: msg });
-              pushToast({ kind: 'ok', title: 'Collecte démarrée', text: msg }, 5000);
-              try {
-                const cfg = await fbIngestionService.getConfig(userId);
-                setConfig(cfg);
-              } catch {
-                // Polling effect picks up active state
-              }
-            }}
-            onError={(msg) => {
-              setBanner({ kind: 'err', text: msg });
-              pushToast({ kind: 'err', title: 'Erreur groupe', text: msg });
-            }}
-          />
-        ) : activeTab === 'origins' ? (
-          <PublishedOriginsTab
-            userId={userId}
-            backfillJob={backfillJob}
-            backfillElapsedSec={backfillElapsedSec}
-            backfillPollWarning={backfillPollWarning}
-            isStartingBackfill={isStartingBackfill}
-            isCancellingBackfill={isCancellingBackfill}
-            showBackfillCard={showBackfillCard}
-            refreshNonce={originsRefreshNonce}
-            onStartBackfill={() => void handleStartBackfill()}
-            onCancelBackfill={() => void handleCancelBackfill()}
-            onRefreshBackfillStatus={() => void pollBackfillStatusNow()}
-            onDismissBackfillCard={() => setShowBackfillCard(false)}
-            onError={(msg) => {
-              setBanner({ kind: 'err', text: msg });
-              pushToast({ kind: 'err', title: 'Erreur Origines', text: msg });
-            }}
-          />
         ) : (
-          <OverlapMatrixTab
-            userId={userId}
-            matrix={matrix}
-            onRefresh={loadAll}
-            onError={(msg) => {
-              setBanner({ kind: 'err', text: msg });
-              pushToast({ kind: 'err', title: 'Erreur matrice', text: msg });
-            }}
-          />
+          <>
+            {visitedTabs.has('queue') && (
+              <div className={activeTab === 'queue' ? 'block' : 'hidden'}>
+                <ValidationQueueTab
+                  userId={userId}
+                  groups={groups}
+                  refreshNonce={queueRefreshNonce}
+                  onCandidateCountDelta={handleCandidateCountDelta}
+                  onPushToast={pushToast}
+                  onUpdateToast={updateToast}
+                />
+              </div>
+            )}
+
+            {visitedTabs.has('groups') && (
+              <div className={activeTab === 'groups' ? 'block' : 'hidden'}>
+                <GroupsManagerTab
+                  userId={userId}
+                  groups={groups}
+                  config={config}
+                  isAnyRunActive={runActive}
+                  syncingGroupIds={syncingGroupIds}
+                  onUpdateGroup={handleUpdateGroupOptimistic}
+                  onDeleteGroup={handleDeleteGroupOptimistic}
+                  onGroupAdded={handleGroupAdded}
+                  onStartSingleGroupRun={handleStartSingleGroupRun}
+                  onCancelRun={handleCancelRun}
+                  onError={handleGroupError}
+                />
+              </div>
+            )}
+
+            {visitedTabs.has('matrix') && (
+              <div className={activeTab === 'matrix' ? 'block' : 'hidden'}>
+                <OverlapMatrixTab
+                  matrix={matrix}
+                  syncingGroupIds={syncingGroupIds}
+                  onUpdateGroup={handleUpdateGroupOptimistic}
+                />
+              </div>
+            )}
+
+            {visitedTabs.has('origins') && (
+              <div className={activeTab === 'origins' ? 'block' : 'hidden'}>
+                <PublishedOriginsTab
+                  userId={userId}
+                  backfillJob={backfillJob}
+                  backfillPollWarning={backfillPollWarning}
+                  isStartingBackfill={false}
+                  isCancellingBackfill={isCancellingBackfill}
+                  showBackfillCard={showBackfillCard}
+                  refreshNonce={originsRefreshNonce}
+                  onStartBackfill={() => void handleStartBackfill()}
+                  onCancelBackfill={() => void handleCancelBackfill()}
+                  onRefreshBackfillStatus={() => void pollBackfillStatusNow()}
+                  onDismissBackfillCard={handleDismissBackfillCard}
+                  onError={handleOriginsError}
+                />
+              </div>
+            )}
+          </>
         )}
       </main>
 
@@ -1177,8 +1702,8 @@ export default function AdminScraperPage() {
                     ? 'Import Snapshot Bright Data'
                     : 'Collecte Scraper Facebook',
                 message: config.lastPollMessage || 'Traitement en cours...',
-                percent: config.lastRunProgress?.percent ?? (isLaunching ? 4 : 8),
-                elapsedSec,
+                percent: config.lastRunProgress?.percent ?? 6,
+                startedAt: config.lastPollStartedAt,
                 etaSeconds: config.lastRunProgress?.etaSeconds ?? null,
                 countLabel:
                   config.lastRunProgress?.unit === 'posts' &&
@@ -1186,22 +1711,17 @@ export default function AdminScraperPage() {
                     ? `${config.lastRunProgress.current}/${config.lastRunProgress.total} posts`
                     : null,
                 isCancelling: isCancellingRun,
-                onCancel: () => void handleCancelRun(),
-                onScrollToTop: () =>
-                  controlBarRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+                onCancel: handleCancelRun,
+                onScrollToTop: handleScrollToTop,
               }
             : null
         }
         activeBackfill={backfillJob}
-        backfillElapsedSec={backfillElapsedSec}
         isCancellingBackfill={isCancellingBackfill}
-        onCancelBackfill={() => void handleCancelBackfill()}
-        onFocusOriginsTab={() => {
-          setActiveTab('origins');
-          setShowBackfillCard(true);
-        }}
-        toast={hudToast}
-        onDismissToast={() => setHudToast(null)}
+        onCancelBackfill={handleCancelBackfill}
+        onFocusOriginsTab={handleFocusOriginsTab}
+        toasts={toasts}
+        onDismissToast={dismissToast}
       />
     </div>
   );

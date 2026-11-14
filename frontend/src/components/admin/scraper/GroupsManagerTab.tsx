@@ -3,28 +3,83 @@
 import React, { useState } from 'react';
 import {
   AlertCircle,
+  Check,
   CheckCircle2,
   ExternalLink,
   Loader2,
   Play,
   Plus,
   Trash2,
+  X,
 } from 'lucide-react';
 import {
   FbGroupTarget,
   FbIngestionConfig,
   fbIngestionService,
 } from '@/services/fbIngestion.service';
+import AsyncToggleSwitch from './AsyncToggleSwitch';
 
 interface Props {
   userId: string;
   groups: FbGroupTarget[];
   config: FbIngestionConfig;
   isAnyRunActive?: boolean;
-  onRefresh: () => Promise<void>;
-  onRunStarted?: (message: string) => void | Promise<void>;
+  syncingGroupIds?: ReadonlySet<string>;
+  onUpdateGroup: (
+    groupId: string,
+    patch: { name?: string; isActive?: boolean; scrapeLimitPer30Min?: number; fbActivityNote?: string },
+  ) => Promise<void>;
+  onDeleteGroup: (group: FbGroupTarget) => Promise<void>;
+  onGroupAdded: (created: FbGroupTarget) => void;
+  onStartSingleGroupRun: (group: FbGroupTarget) => Promise<void>;
   onCancelRun?: () => void;
   onError: (msg: string) => void;
+}
+
+function GroupLimitInput({
+  value,
+  onCommit,
+}: {
+  value: number;
+  onCommit: (nextVal: number) => void;
+}) {
+  const [editingValue, setEditingValue] = useState<string | null>(null);
+  const displayed = editingValue !== null ? editingValue : String(value);
+
+  const commit = () => {
+    if (editingValue === null) return;
+    const parsed = Number(editingValue);
+    setEditingValue(null);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      const clamped = Math.max(1, Math.min(200, Math.round(parsed)));
+      if (clamped !== value) {
+        onCommit(clamped);
+      }
+    }
+  };
+
+  return (
+    <input
+      type="number"
+      min={1}
+      max={200}
+      value={displayed}
+      onFocus={() => setEditingValue(String(value))}
+      onChange={(e) => setEditingValue(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          (e.currentTarget as HTMLInputElement).blur();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          setEditingValue(null);
+          (e.currentTarget as HTMLInputElement).blur();
+        }
+      }}
+      className="w-16 px-2.5 py-1 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 font-bold text-center focus:outline-none focus:ring-2 focus:ring-brand-green"
+    />
+  );
 }
 
 export default function GroupsManagerTab({
@@ -32,8 +87,11 @@ export default function GroupsManagerTab({
   groups,
   config,
   isAnyRunActive = false,
-  onRefresh,
-  onRunStarted,
+  syncingGroupIds,
+  onUpdateGroup,
+  onDeleteGroup,
+  onGroupAdded,
+  onStartSingleGroupRun,
   onCancelRun,
   onError,
 }: Props) {
@@ -41,7 +99,8 @@ export default function GroupsManagerTab({
   const [newName, setNewName] = useState('');
   const [newLimit, setNewLimit] = useState(5);
   const [adding, setAdding] = useState(false);
-  const [busyGroupId, setBusyGroupId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [launchingGroupId, setLaunchingGroupId] = useState<string | null>(null);
 
   const activeGroups = groups.filter((g) => g.isActive);
   const totalPostsPerPoll = activeGroups.reduce(
@@ -57,10 +116,10 @@ export default function GroupsManagerTab({
 
   const handleAddGroup = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newUrl.trim()) return;
+    if (!newUrl.trim() || adding) return;
     setAdding(true);
     try {
-      await fbIngestionService.addGroup(userId, {
+      const created = await fbIngestionService.addGroup(userId, {
         url: newUrl.trim(),
         name: newName.trim() || undefined,
         scrapeLimitPer30Min: newLimit,
@@ -68,7 +127,7 @@ export default function GroupsManagerTab({
       });
       setNewUrl('');
       setNewName('');
-      await onRefresh();
+      onGroupAdded(created);
     } catch (err) {
       onError((err as Error).message);
     } finally {
@@ -76,55 +135,13 @@ export default function GroupsManagerTab({
     }
   };
 
-  const handleToggleGroup = async (g: FbGroupTarget) => {
-    setBusyGroupId(g.groupId);
-    try {
-      await fbIngestionService.updateGroup(userId, g.groupId, { isActive: !g.isActive });
-      await onRefresh();
-    } catch (err) {
-      onError((err as Error).message);
-    } finally {
-      setBusyGroupId(null);
-    }
-  };
-
-  const handleLimitChange = async (g: FbGroupTarget, limit: number) => {
-    setBusyGroupId(g.groupId);
-    try {
-      await fbIngestionService.updateGroup(userId, g.groupId, {
-        scrapeLimitPer30Min: Math.max(1, Math.min(200, limit)),
-      });
-      await onRefresh();
-    } catch (err) {
-      onError((err as Error).message);
-    } finally {
-      setBusyGroupId(null);
-    }
-  };
-
-  const handleDeleteGroup = async (g: FbGroupTarget) => {
-    if (!window.confirm(`Supprimer le groupe "${g.name}" ?`)) return;
-    setBusyGroupId(g.groupId);
-    try {
-      await fbIngestionService.deleteGroup(userId, g.groupId);
-      await onRefresh();
-    } catch (err) {
-      onError((err as Error).message);
-    } finally {
-      setBusyGroupId(null);
-    }
-  };
-
   const handleRunSingleGroup = async (g: FbGroupTarget) => {
-    if (isAnyRunActive) return;
-    setBusyGroupId(g.groupId);
+    if (isAnyRunActive || launchingGroupId === g.groupId) return;
+    setLaunchingGroupId(g.groupId);
     try {
-      await fbIngestionService.startRunNow(userId, [g.groupId]);
-      await onRunStarted?.(`Collecte démarrée pour "${g.name}". Suivi en temps réel actif...`);
-    } catch (err) {
-      onError((err as Error).message);
+      await onStartSingleGroupRun(g);
     } finally {
-      setBusyGroupId(null);
+      setLaunchingGroupId(null);
     }
   };
 
@@ -164,11 +181,12 @@ export default function GroupsManagerTab({
           )}
         </div>
       )}
+
       {/* KPI Budget & Coverage Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white dark:bg-zinc-900 rounded-[1.5rem] p-5 border border-zinc-200/80 dark:border-zinc-800">
           <p className="text-xs font-semibold text-zinc-500">Groupes actifs</p>
-          <p className="text-2xl font-bold text-zinc-900 dark:text-white mt-1">
+          <p className="text-2xl font-bold text-zinc-900 dark:text-white mt-1 tabular-nums">
             {activeGroups.length}{' '}
             <span className="text-sm font-normal text-zinc-400">/ {groups.length}</span>
           </p>
@@ -178,7 +196,7 @@ export default function GroupsManagerTab({
           <p className="text-xs font-semibold text-zinc-500">
             Posts demandés / cycle ({config.pollIntervalMinutes} min)
           </p>
-          <p className="text-2xl font-bold text-zinc-900 dark:text-white mt-1">
+          <p className="text-2xl font-bold text-zinc-900 dark:text-white mt-1 tabular-nums">
             {totalPostsPerPoll}
           </p>
         </div>
@@ -187,7 +205,7 @@ export default function GroupsManagerTab({
           <p className="text-xs font-semibold text-zinc-500">
             Consommation Bright Data estimée / jour
           </p>
-          <p className="text-2xl font-bold text-brand-green mt-1">
+          <p className="text-2xl font-bold text-brand-green mt-1 tabular-nums">
             ~{estDailyBrightDataRecords.toLocaleString('fr-FR')} records
           </p>
           <p className="text-[11px] text-zinc-400 mt-0.5">
@@ -198,7 +216,7 @@ export default function GroupsManagerTab({
         <div className="bg-white dark:bg-zinc-900 rounded-[1.5rem] p-5 border border-zinc-200/80 dark:border-zinc-800">
           <p className="text-xs font-semibold text-zinc-500">Alertes fenêtre saturée</p>
           <p
-            className={`text-2xl font-bold mt-1 ${
+            className={`text-2xl font-bold mt-1 tabular-nums ${
               alertsCount > 0 ? 'text-amber-600' : 'text-emerald-600'
             }`}
           >
@@ -257,7 +275,7 @@ export default function GroupsManagerTab({
         <button
           type="submit"
           disabled={adding}
-          className="inline-flex items-center gap-1.5 px-5 py-2 rounded-full text-xs font-bold bg-brand-green text-white hover:opacity-95 transition disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 px-5 py-2 rounded-full text-xs font-bold bg-brand-green text-white hover:opacity-95 transition disabled:opacity-50 cursor-pointer"
         >
           {adding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-4 h-4" />}
           Ajouter groupe
@@ -281,23 +299,25 @@ export default function GroupsManagerTab({
             </thead>
             <tbody className="divide-y divide-zinc-200/60 dark:divide-zinc-800">
               {groups.map((g) => {
-                const isBusy = busyGroupId === g.groupId;
+                const isSyncing = syncingGroupIds?.has(g.groupId) ?? false;
+                const isConfirmingDelete = confirmDeleteId === g.groupId;
+                const isLaunchingThis = launchingGroupId === g.groupId;
                 return (
                   <tr
                     key={g.groupId}
-                    className={!g.isActive ? 'opacity-60 bg-zinc-50/40 dark:bg-zinc-950/30' : ''}
+                    className={`transition-opacity duration-150 ${
+                      !g.isActive ? 'opacity-60 bg-zinc-50/40 dark:bg-zinc-950/30' : ''
+                    }`}
                   >
                     <td className="px-4 py-3.5">
-                      <button
-                        type="button"
-                        disabled={isBusy}
-                        onClick={() => handleToggleGroup(g)}
-                        className={`w-11 h-6 rounded-full p-0.5 transition-colors flex items-center ${
-                          g.isActive ? 'bg-brand-green justify-end' : 'bg-zinc-300 dark:bg-zinc-700 justify-start'
-                        }`}
-                      >
-                        <span className="w-5 h-5 rounded-full bg-white shadow-sm" />
-                      </button>
+                      <AsyncToggleSwitch
+                        checked={g.isActive}
+                        syncing={isSyncing}
+                        label={`Activer ou mettre en pause le groupe ${g.name}`}
+                        onToggle={() =>
+                          void onUpdateGroup(g.groupId, { isActive: !g.isActive })
+                        }
+                      />
                     </td>
 
                     <td className="px-4 py-3.5 max-w-[260px]">
@@ -328,18 +348,11 @@ export default function GroupsManagerTab({
 
                     <td className="px-4 py-3.5">
                       <div className="flex items-center gap-1.5">
-                        <input
-                          type="number"
-                          min={1}
-                          max={200}
-                          defaultValue={g.scrapeLimitPer30Min}
-                          onBlur={(e) => {
-                            const nextVal = Number(e.target.value);
-                            if (nextVal > 0 && nextVal !== g.scrapeLimitPer30Min) {
-                              void handleLimitChange(g, nextVal);
-                            }
-                          }}
-                          className="w-16 px-2.5 py-1 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 font-bold text-center"
+                        <GroupLimitInput
+                          value={g.scrapeLimitPer30Min}
+                          onCommit={(nextVal) =>
+                            void onUpdateGroup(g.groupId, { scrapeLimitPer30Min: nextVal })
+                          }
                         />
                       </div>
                     </td>
@@ -352,8 +365,12 @@ export default function GroupsManagerTab({
                           </span>
                           <button
                             type="button"
-                            onClick={() => handleLimitChange(g, g.scrapeLimitPer30Min + 3)}
-                            className="block text-[11px] font-bold text-brand-green hover:underline"
+                            onClick={() =>
+                              void onUpdateGroup(g.groupId, {
+                                scrapeLimitPer30Min: Math.min(200, g.scrapeLimitPer30Min + 3),
+                              })
+                            }
+                            className="block text-[11px] font-bold text-brand-green hover:underline cursor-pointer"
                           >
                             +3 posts limite
                           </button>
@@ -382,28 +399,52 @@ export default function GroupsManagerTab({
 
                     <td className="px-4 py-3.5 text-right whitespace-nowrap">
                       <div className="inline-flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          title="Scraper uniquement ce groupe maintenant"
-                          disabled={isBusy || isAnyRunActive}
-                          onClick={() => handleRunSingleGroup(g)}
-                          className="p-2 rounded-full border border-zinc-200 dark:border-zinc-700 hover:border-brand-green text-zinc-700 dark:text-zinc-200 transition disabled:opacity-40"
-                        >
-                          {isBusy ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <Play className="w-3.5 h-3.5 text-brand-green" />
-                          )}
-                        </button>
-                        <button
-                          type="button"
-                          title="Supprimer ce groupe"
-                          disabled={isBusy}
-                          onClick={() => handleDeleteGroup(g)}
-                          className="p-2 rounded-full border border-zinc-200 dark:border-zinc-700 hover:border-red-500 text-red-500 transition disabled:opacity-40"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {isConfirmingDelete ? (
+                          <div className="inline-flex items-center gap-1 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 rounded-full px-2 py-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setConfirmDeleteId(null);
+                                void onDeleteGroup(g);
+                              }}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-600 text-white text-[11px] font-bold hover:bg-red-700 cursor-pointer"
+                            >
+                              <Check className="w-3 h-3" /> Supprimer
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteId(null)}
+                              aria-label="Annuler suppression"
+                              className="p-0.5 rounded-full text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 cursor-pointer"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              title="Scraper uniquement ce groupe maintenant"
+                              disabled={isAnyRunActive || isLaunchingThis}
+                              onClick={() => void handleRunSingleGroup(g)}
+                              className="p-2 rounded-full border border-zinc-200 dark:border-zinc-700 hover:border-brand-green text-zinc-700 dark:text-zinc-200 transition disabled:opacity-40 cursor-pointer"
+                            >
+                              {isLaunchingThis ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <Play className="w-3.5 h-3.5 text-brand-green" />
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              title="Supprimer ce groupe"
+                              onClick={() => setConfirmDeleteId(g.groupId)}
+                              className="p-2 rounded-full border border-zinc-200 dark:border-zinc-700 hover:border-red-500 text-red-500 transition cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -416,4 +457,3 @@ export default function GroupsManagerTab({
     </div>
   );
 }
-

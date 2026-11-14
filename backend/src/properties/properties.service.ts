@@ -146,6 +146,20 @@ export class PropertiesService {
       data[numericKey] = Number.isFinite(parsedNum) && parsedNum >= 0 ? parsedNum : 0;
     }
 
+    // 7. Preserve explicit creation timestamp when provided by trusted internal pipelines (e.g., FB post date)
+    if (data.created_at != null) {
+      const parsedCreatedAt =
+        data.created_at instanceof Date ? data.created_at : new Date(data.created_at);
+      if (!Number.isNaN(parsedCreatedAt.getTime())) {
+        data.created_at = parsedCreatedAt;
+        if (data.updated_at == null) {
+          data.updated_at = parsedCreatedAt;
+        }
+      } else {
+        delete data.created_at;
+      }
+    }
+
     const createdProperty = new this.propertyModel(data);
     const saved = await createdProperty.save();
 

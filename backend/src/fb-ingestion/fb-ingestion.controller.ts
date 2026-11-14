@@ -30,7 +30,15 @@ export class FbIngestionController {
 
   @Get('config')
   getConfig() {
-    return this.fbIngestionService.getConfig();
+    return this.fbIngestionService.getConfigWithDiagnostics();
+  }
+
+  @Get('resolve-location')
+  resolveLocation(
+    @Query('q') q?: string,
+    @Query('groupName') groupName?: string,
+  ) {
+    return this.fbIngestionService.resolveAdminLocationQuery(q || '', groupName || '');
   }
 
   @Patch('config')

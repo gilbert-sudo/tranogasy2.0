@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   AlertTriangle,
   Ban,
@@ -32,6 +32,7 @@ export interface OperationProgressCardProps {
   percent: number;
   countLabel?: string | null;
   elapsedSec?: number;
+  startedAt?: string | null;
   etaSeconds?: number | null;
   etaFallbackLabel?: string | null;
   steps?: PipelineStep[];
@@ -42,6 +43,30 @@ export interface OperationProgressCardProps {
   onRetry?: () => void;
   onRefreshNow?: () => void;
   onDismiss?: () => void;
+}
+
+export function useLiveElapsedSeconds(
+  startedAt: string | null | undefined,
+  active: boolean,
+): number {
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!active || !startedAt) return;
+    const kickId = setTimeout(() => setNowMs(Date.now()), 0);
+    const intervalId = setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+    return () => {
+      clearTimeout(kickId);
+      clearInterval(intervalId);
+    };
+  }, [active, startedAt]);
+
+  if (!active || !startedAt) return 0;
+  const startedMs = new Date(startedAt).getTime();
+  if (!Number.isFinite(startedMs)) return 0;
+  return Math.max(0, Math.round((nowMs - startedMs) / 1000));
 }
 
 export function formatDurationFr(totalSec?: number | null): string {
@@ -110,6 +135,7 @@ export default function OperationProgressCard({
   percent,
   countLabel,
   elapsedSec,
+  startedAt,
   etaSeconds,
   etaFallbackLabel,
   steps,
@@ -123,6 +149,12 @@ export default function OperationProgressCard({
 }: OperationProgressCardProps) {
   const palette = TONE_MAP[status];
   const clampedPercent = Math.max(0, Math.min(100, Math.round(percent)));
+  const liveElapsedSec = useLiveElapsedSeconds(
+    startedAt,
+    status === 'running' && elapsedSec === undefined,
+  );
+  const resolvedElapsedSec =
+    elapsedSec !== undefined ? elapsedSec : startedAt ? liveElapsedSec : undefined;
 
   return (
     <div
@@ -172,10 +204,10 @@ export default function OperationProgressCard({
         </div>
 
         <div className="flex flex-wrap items-center gap-2 shrink-0">
-          {elapsedSec !== undefined && (
+          {resolvedElapsedSec !== undefined && (
             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/75 dark:bg-zinc-900/60 text-[11px] font-mono text-zinc-700 dark:text-zinc-200">
               <Clock className="w-3 h-3" />
-              {formatDurationFr(elapsedSec)} écoulées
+              {formatDurationFr(resolvedElapsedSec)} écoulées
             </span>
           )}
 

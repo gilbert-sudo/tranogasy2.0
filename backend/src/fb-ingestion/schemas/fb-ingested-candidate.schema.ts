@@ -55,7 +55,32 @@ export class FbIngestedCandidate {
   matchedCityLabel: string | null;
 
   @Prop({ type: [Object], default: [] })
-  cityCandidates: Array<{ _id: string; label: string; score: number }>;
+  cityCandidates: Array<{
+    _id: string;
+    label: string;
+    score: number;
+    distanceMeters?: number | null;
+    coords?: { lat: number; lng: number };
+  }>;
+
+  @Prop({ type: { lat: Number, lng: Number }, default: null })
+  resolvedCoords?: { lat: number; lng: number } | null;
+
+  @Prop({ type: String, default: null })
+  resolvedPlaceName?: string | null;
+
+  @Prop({ type: String, default: null })
+  resolvedAddress?: string | null;
+
+  @Prop({
+    type: String,
+    enum: ['google_places_cache', 'google_places_api', 'text_fallback'],
+    default: null,
+  })
+  resolutionSource?: 'google_places_cache' | 'google_places_api' | 'text_fallback' | null;
+
+  @Prop({ type: Boolean, default: false })
+  manualCityOverride?: boolean;
 
   @Prop({ type: [String], default: [] })
   missingFields: string[];

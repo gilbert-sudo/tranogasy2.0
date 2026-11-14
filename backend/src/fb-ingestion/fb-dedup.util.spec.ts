@@ -1,6 +1,7 @@
 import {
   extractFbUserId,
   normalizeFbProfileUrl,
+  parseBrightDataDate,
   unwrapBrightDataPost,
 } from './fb-dedup.util';
 
@@ -103,5 +104,41 @@ describe('fb-dedup.util', () => {
     expect(anon!.authorName).toBe('Membre TranoGasy');
     expect(anon!.authorFbId).toBeNull();
     expect(anon!.authorAvatar).toBeNull();
+  });
+
+  it('preserves exact Facebook creation timestamps from ISO strings and unix epochs', () => {
+    const iso = '2026-11-10T06:42:19.000Z';
+    expect(parseBrightDataDate(iso)?.toISOString()).toBe(iso);
+    expect(parseBrightDataDate(1794292939)?.toISOString()).toBe('2026-11-10T06:42:19.000Z');
+    expect(parseBrightDataDate(1794292939000)?.toISOString()).toBe('2026-11-10T06:42:19.000Z');
+    expect(parseBrightDataDate('not-a-date')).toBeNull();
+
+    const reshared = unwrapBrightDataPost({
+      post_id: 'share_999',
+      group_id: '555666',
+      date_posted: '2026-11-14T18:00:00.000Z',
+      original_post: {
+        post_id: 'orig_999',
+        date_posted: '2026-11-11T09:15:30.000Z',
+        user_name: 'Original Poster',
+        content: 'Appartement T3 Ivandry 034 11 222 33',
+      },
+      attachments: [{ type: 'Photo', url: 'https://scontent.xx/img.jpg' }],
+    });
+
+    expect(reshared).not.toBeNull();
+    expect(reshared!.datePosted.toISOString()).toBe('2026-11-11T09:15:30.000Z');
+
+    const directPost = unwrapBrightDataPost({
+      post_id: 'direct_111',
+      group_id: '555666',
+      timestamp: 1794292939,
+      user_username_raw: 'Direct Poster',
+      content: 'Villa Ambatobe 034 11 222 33',
+      attachments: [{ type: 'Photo', url: 'https://scontent.xx/img2.jpg' }],
+    } as any);
+
+    expect(directPost).not.toBeNull();
+    expect(directPost!.datePosted.toISOString()).toBe('2026-11-10T06:42:19.000Z');
   });
 });

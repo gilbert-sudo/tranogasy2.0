@@ -132,7 +132,7 @@ export class FbGeminiService {
       '- bathrooms: douche / salle de bain / SDB count (null if not mentioned, or for commercial "tsena"/"bureau" without shower).',
       '- area: integer m² if mentioned, otherwise null.',
       '- floor: string such as "RDC", "Rez-de-chaussée", "1er étage", "Villa basse", etc., or null.',
-      '- locationHints: neighborhoods/fokontany/communes mentioned (e.g. ["Ivandry", "Alarobia", "Ambatobe", "Itaosy", "67ha"]).',
+      '- locationHints: neighborhoods/quartiers/fokontany/landmarks/communes mentioned in the post, ordered strictly from MOST SPECIFIC quartier or landmark first to broadest city last (e.g. ["Cité Analamahitsy", "Analamahitsy", "Antananarivo"] or ["67ha Sud", "Antananarivo"]). Exclude generic non-place descriptions like "bord de route" or "quartier calme".',
       '- features: carefully scan EVERY line in French, Malagasy, and English and set booleans ONLY when mentioned or clearly implied (never ignore Malagasy or FR synonyms; respect negations like "tsy miditra fiara" / "sans parking" / "tsisy"):',
       '  * "acces moto" / "moto miditra" / "tafiditra moto" / "2 roues" -> motoAccess=true',
       '  * "acces voiture" / "fiara miditra" / "tafiditra fiara" / "bord de route" / "bord de goudron" / "amoron-dalana" -> carAccess=true AND motoAccess=true (unless "moto ihany" / "sans acces voiture" -> carAccess=false)',
