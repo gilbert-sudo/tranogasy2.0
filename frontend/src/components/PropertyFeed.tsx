@@ -5,6 +5,7 @@ import PropertyCard from '@/components/PropertyCard';
 import PropertyCardSkeleton from '@/components/PropertyCardSkeleton';
 import { Loader2, RefreshCw, ServerCrash, Sparkles, CheckCircle2 } from 'lucide-react';
 import { usePropertyStore } from '@/store/propertyStore';
+import { getApiBaseUrl } from '@/services/api';
 
 interface PropertyFeedProps {
   initialProperties?: any[];
@@ -27,8 +28,7 @@ function buildApiUrl(
   filterType: 'location' | 'vente' = 'location',
   sortBy: string = 'Trier par'
 ): string {
-  const rawUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
-  const apiUrl = rawUrl.replace(/\/$/, '');
+  const apiUrl = getApiBaseUrl();
   const params = new URLSearchParams();
   params.set('page', String(pageNum));
   params.set('limit', String(limit));
@@ -104,9 +104,20 @@ export default function PropertyFeed({
 
   const observerRef = useRef<HTMLDivElement | null>(null);
   const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const fetchAbortControllerRef = useRef<AbortController | null>(null);
+  const isMountedRef = useRef<boolean>(true);
+  const retryAttemptRef = useRef<number>(0);
   const isFetchingRef = useRef<boolean>(false);
   const isFirstMountRef = useRef<boolean>(true);
   const activeReqIdRef = useRef<number>(0);
+  const fetchPageRef = useRef<(pageNum: number, type: 'location' | 'vente', sort: string, isAutoRetry?: boolean) => Promise<void>>(async () => {});
+
+  const clearPendingRetry = useCallback(() => {
+    if (retryTimeoutRef.current) {
+      clearTimeout(retryTimeoutRef.current);
+      retryTimeoutRef.current = null;
+    }
+  }, []);
 
   // Ahead-of-time prefetch buffer & in-flight tracker
   const prefetchedBatchRef = useRef<PrefetchedBatch | null>(null);
@@ -222,26 +233,38 @@ export default function PropertyFeed({
       sort: string,
       isAutoRetry = false
     ) => {
+      clearPendingRetry();
+      if (fetchAbortControllerRef.current) {
+        fetchAbortControllerRef.current.abort();
+      }
+
       const currentCacheKey = `${type}_${sort}`;
       const reqId = ++activeReqIdRef.current;
       const isInitial = pageNum === 1;
+      const url = buildApiUrl(pageNum, PAGE_LIMIT, type, sort);
+      const controller = new AbortController();
+      fetchAbortControllerRef.current = controller;
+      let timedOut = false;
+
+      const timeoutId = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, 20000);
 
       try {
         if (!isAutoRetry) {
+          retryAttemptRef.current = 0;
+          setRetryCount(0);
           if (isInitial) {
             setIsFilterLoading(true);
           }
           setHasFailed(false);
         }
 
-        const url = buildApiUrl(pageNum, PAGE_LIMIT, type, sort);
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 12000);
-
         const res = await fetch(url, {
           cache: 'no-store',
           signal: controller.signal,
-        }).finally(() => clearTimeout(timeoutId));
+        });
 
         if (!res.ok) {
           throw new Error(`API responded with status: ${res.status}`);
@@ -249,8 +272,8 @@ export default function PropertyFeed({
 
         const data = await res.json();
 
-        // Discard stale responses if user switched filter rapidly
-        if (reqId !== activeReqIdRef.current) {
+        // Discard stale responses if component unmounted or user switched filter rapidly
+        if (!isMountedRef.current || reqId !== activeReqIdRef.current) {
           return;
         }
 
@@ -260,7 +283,7 @@ export default function PropertyFeed({
           : fetched.length < PAGE_LIMIT;
         const newHasMore = fetched.length === PAGE_LIMIT && !reachedEnd;
 
-        // Persist to Zustand store so on second renter it will be taken from Zustand!
+        // Persist to Zustand store so on second render it will be taken from Zustand
         setTopPropertiesData(currentCacheKey, {
           properties: fetched,
           page: 1,
@@ -268,6 +291,7 @@ export default function PropertyFeed({
         });
         addPropertiesToGlobalStore(fetched);
 
+        retryAttemptRef.current = 0;
         setProperties(fetched);
         setPage(1);
         setHasMore(newHasMore);
@@ -277,33 +301,52 @@ export default function PropertyFeed({
         setRetryCount(0);
         setHasFailed(false);
 
-        // Preload head of 10 properties right away even though user hasn't scrolled!
+        // Preload head of 10 properties right away even though user hasn't scrolled
         if (newHasMore) {
           prefetchNextPage(2, type, sort);
         }
-      } catch (error) {
-        if (reqId !== activeReqIdRef.current) return;
-        console.warn('Backend request error:', error);
-        setIsWakingUp(true);
+      } catch (error: unknown) {
+        if (!isMountedRef.current || reqId !== activeReqIdRef.current) {
+          return;
+        }
+        // Ignore intentional aborts caused by filter switches or React Strict Mode remounts
+        if (error instanceof DOMException && error.name === 'AbortError' && !timedOut) {
+          return;
+        }
 
-        setRetryCount((prev) => {
-          const next = prev + 1;
-          if (next < 8) {
-            retryTimeoutRef.current = setTimeout(() => {
-              fetchPage(pageNum, type, sort, true);
-            }, 3000);
-          } else {
-            setIsLoadingInitial(false);
-            setIsFilterLoading(false);
-            setIsWakingUp(false);
-            setHasFailed(true);
-          }
-          return next;
-        });
+        const nextAttempt = retryAttemptRef.current + 1;
+        retryAttemptRef.current = nextAttempt;
+        setRetryCount(nextAttempt);
+
+        if (nextAttempt < 8) {
+          setIsWakingUp(true);
+          const delayMs = Math.min(2000 + nextAttempt * 1000, 5000);
+          retryTimeoutRef.current = setTimeout(() => {
+            if (isMountedRef.current && reqId === activeReqIdRef.current) {
+              void fetchPageRef.current(pageNum, type, sort, true);
+            }
+          }, delayMs);
+        } else {
+          const reason = error instanceof Error ? error.message : String(error);
+          console.warn(`[PropertyFeed] Serveur API inaccessible (${url}) : ${reason}`);
+          setIsLoadingInitial(false);
+          setIsFilterLoading(false);
+          setIsWakingUp(false);
+          setHasFailed(true);
+        }
+      } finally {
+        clearTimeout(timeoutId);
+        if (fetchAbortControllerRef.current === controller) {
+          fetchAbortControllerRef.current = null;
+        }
       }
     },
-    [setTopPropertiesData, addPropertiesToGlobalStore, prefetchNextPage]
+    [clearPendingRetry, setTopPropertiesData, addPropertiesToGlobalStore, prefetchNextPage]
   );
+
+  useEffect(() => {
+    fetchPageRef.current = fetchPage;
+  }, [fetchPage]);
 
   // Invalidate prefetch buffer when filterType or sortBy changes
   useEffect(() => {
@@ -373,11 +416,20 @@ export default function PropertyFeed({
 
     // Not yet cached for this filter combination: fetch it once
     fetchPage(1, filterType, sortBy);
+
+    return () => {
+      activeReqIdRef.current += 1;
+      clearPendingRetry();
+      if (fetchAbortControllerRef.current) {
+        fetchAbortControllerRef.current.abort();
+      }
+    };
   }, [
     cacheKey,
     filterType,
     sortBy,
     fetchPage,
+    clearPendingRetry,
     setTopPropertiesData,
     addPropertiesToGlobalStore,
     initialProperties,
@@ -563,17 +615,21 @@ export default function PropertyFeed({
     prefetchNextPage,
   ]);
 
-  // Clean up timeouts and abort controllers
+  // Track mount status & clean up timeouts and abort controllers
   useEffect(() => {
+    isMountedRef.current = true;
     return () => {
-      if (retryTimeoutRef.current) {
-        clearTimeout(retryTimeoutRef.current);
+      isMountedRef.current = false;
+      activeReqIdRef.current += 1;
+      clearPendingRetry();
+      if (fetchAbortControllerRef.current) {
+        fetchAbortControllerRef.current.abort();
       }
       if (prefetchAbortControllerRef.current) {
         prefetchAbortControllerRef.current.abort();
       }
     };
-  }, []);
+  }, [clearPendingRetry]);
 
   // IntersectionObserver for infinite scrolling
   useEffect(() => {

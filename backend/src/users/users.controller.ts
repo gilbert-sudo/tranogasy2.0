@@ -26,6 +26,22 @@ export class UsersController {
     return res.status(HttpStatus.NOT_FOUND).json({ exists: false });
   }
 
+  @Post('otp/request')
+  async requestOtp(@Body() body: { phone?: string }) {
+    if (!body?.phone) {
+      throw new BadRequestException('Le numéro de téléphone est requis');
+    }
+    return this.usersService.requestPhoneOtp(body.phone);
+  }
+
+  @Post('otp/verify')
+  async verifyOtp(@Body() body: { phone?: string; code?: string }) {
+    if (!body?.phone || !body?.code) {
+      throw new BadRequestException('Téléphone et code de vérification requis');
+    }
+    return this.usersService.verifyPhoneOtp(body.phone, body.code);
+  }
+
   @Post('phone-login')
   async phoneLogin(@Body() body: any) {
     const { phone, username } = body;

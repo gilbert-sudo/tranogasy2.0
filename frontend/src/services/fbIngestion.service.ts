@@ -1,4 +1,40 @@
-import { apiFetch } from './api';
+import { apiFetch, type FetchOptions } from './api';
+
+export interface FbRunProgress {
+  current: number;
+  total: number;
+  percent?: number;
+  etaSeconds?: number | null;
+  unit?: 'percent' | 'posts';
+  detail?: string | null;
+}
+
+export interface BackfillJobState {
+  status: 'idle' | 'running' | 'completed' | 'cancelled' | 'error';
+  phase: string;
+  message: string | null;
+  current: number;
+  total: number;
+  percent: number;
+  etaSeconds: number | null;
+  currentItemTitle?: string | null;
+  scanned: number;
+  migratedScraped: number;
+  markedOrganic: number;
+  markedAdminManual: number;
+  avatarsPersisted: number;
+  errorCount: number;
+  lastError: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface StartBackfillResponse {
+  started: boolean;
+  alreadyRunning?: boolean;
+  job: BackfillJobState;
+}
 
 export interface FbIngestionConfig {
   key: string;
@@ -11,8 +47,9 @@ export interface FbIngestionConfig {
   lastPollStatus: string;
   lastPollPhase: string | null;
   lastPollMessage: string | null;
-  lastRunProgress: { current: number; total: number } | null;
+  lastRunProgress: FbRunProgress | null;
   lastRunSummary: RunSummary | null;
+  backfillJob?: BackfillJobState | null;
   lastPollStartedAt: string | null;
   lastPollFinishedAt: string | null;
   lastSnapshotId: string | null;
@@ -87,6 +124,8 @@ export interface FbIngestedCandidate {
   postUrl: string;
   authorName: string;
   authorAvatarUrl: string | null;
+  authorFbId?: string | null;
+  authorUrl?: string | null;
   datePosted: string;
   rawContent: string;
   gcsImages: string[];
@@ -156,7 +195,78 @@ export interface CandidateListResponse {
   };
 }
 
-function withAdminHeaders(userId: string, options: RequestInit = {}): RequestInit {
+export interface AdminOriginProperty {
+  _id: string;
+  title: string;
+  type: 'sale' | 'rent' | 'colocation' | string;
+  price?: number | null;
+  rent?: number | null;
+  city?: {
+    fokontany?: string;
+    commune?: string;
+    district?: string;
+    region?: string;
+  } | null;
+  images?: Array<{ src?: string; alt?: string } | string>;
+  origin: 'user' | 'admin_manual' | 'facebook_scraper' | string;
+  claimStatus: 'not_applicable' | 'unclaimed' | 'claimed' | string;
+  claimedAt?: string | null;
+  phone1?: string | null;
+  phone2?: string | null;
+  phone3?: string | null;
+  created_at?: string;
+  owner?: {
+    _id: string;
+    username: string;
+    avatar?: string | null;
+    phone?: string | null;
+    role?: string;
+    origin?: string;
+    isShadowAccount?: boolean;
+    fbUserId?: string | null;
+    fbProfileUrl?: string | null;
+  } | null;
+  claimedBy?: {
+    _id: string;
+    username: string;
+    avatar?: string | null;
+    phone?: string | null;
+  } | null;
+  sources?: {
+    fbUserId?: string | null;
+    username?: string | null;
+    avatar?: string | null;
+    link?: string | null;
+    postId?: string | null;
+    postUrl?: string | null;
+    groupId?: string | null;
+  } | null;
+}
+
+export interface AdminOriginPropertyListResponse {
+  items: AdminOriginProperty[];
+  total: number;
+  page: number;
+  totalPages: number;
+  counts: {
+    all: number;
+    facebook_scraper: number;
+    user: number;
+    admin_manual: number;
+    unclaimed: number;
+    claimed: number;
+  };
+}
+
+export interface BackfillShadowOwnersResponse {
+  scanned: number;
+  migratedScraped: number;
+  markedOrganic: number;
+  markedAdminManual: number;
+  avatarsPersisted: number;
+}
+
+function withAdminHeaders(userId: string, options: FetchOptions = {}): FetchOptions {
   return {
     ...options,
     headers: {
@@ -257,6 +367,12 @@ export const fbIngestionService = {
       }),
     ),
 
+  cancelRun: (userId: string) =>
+    apiFetch<FbIngestionConfig>(
+      '/fb-ingestion/run/cancel',
+      withAdminHeaders(userId, { method: 'POST' }),
+    ),
+
   importSnapshot: (userId: string, snapshotId: string) =>
     apiFetch<RunSummary>(
       '/fb-ingestion/import-snapshot',
@@ -313,5 +429,56 @@ export const fbIngestionService = {
     apiFetch<{ rejected: boolean; id: string; deletedGcsImages: number }>(
       `/fb-ingestion/candidates/${encodeURIComponent(id)}`,
       withAdminHeaders(userId, { method: 'DELETE' }),
+    ),
+
+  listAdminProperties: (
+    userId: string,
+    params: {
+      origin?: 'facebook_scraper' | 'user' | 'admin_manual' | 'all';
+      claimStatus?: 'unclaimed' | 'claimed' | 'not_applicable' | 'all';
+      q?: string;
+      page?: number;
+      limit?: number;
+    } = {},
+  ) => {
+    const query = new URLSearchParams();
+    if (params.origin && params.origin !== 'all') query.set('origin', params.origin);
+    if (params.claimStatus && params.claimStatus !== 'all') {
+      query.set('claimStatus', params.claimStatus);
+    }
+    if (params.q?.trim()) query.set('q', params.q.trim());
+    if (params.page) query.set('page', String(params.page));
+    if (params.limit) query.set('limit', String(params.limit));
+    return apiFetch<AdminOriginPropertyListResponse>(
+      `/fb-ingestion/properties?${query.toString()}`,
+      withAdminHeaders(userId),
+    );
+  },
+
+  backfillShadowOwners: (userId: string) =>
+    apiFetch<BackfillShadowOwnersResponse>(
+      '/fb-ingestion/properties/backfill-shadow-owners',
+      withAdminHeaders(userId, { method: 'POST', timeoutMs: 120000 }),
+    ),
+
+  startBackfillShadowOwners: (userId: string) =>
+    apiFetch<StartBackfillResponse>(
+      '/fb-ingestion/properties/backfill-shadow-owners',
+      withAdminHeaders(userId, {
+        method: 'POST',
+        body: JSON.stringify({ async: true }),
+      }),
+    ),
+
+  getBackfillStatus: (userId: string) =>
+    apiFetch<BackfillJobState>(
+      '/fb-ingestion/properties/backfill-shadow-owners/status',
+      withAdminHeaders(userId),
+    ),
+
+  cancelBackfill: (userId: string) =>
+    apiFetch<BackfillJobState>(
+      '/fb-ingestion/properties/backfill-shadow-owners/cancel',
+      withAdminHeaders(userId, { method: 'POST' }),
     ),
 };

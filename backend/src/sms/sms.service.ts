@@ -1,5 +1,18 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { InjectModel } from '@nestjs/mongoose';
+import * as crypto from 'crypto';
+import { Model } from 'mongoose';
+import { normalizeMalagasyPhone, resolveAuthSecret } from '../common/phone.util';
+import {
+  OtpVerification,
+  OtpVerificationDocument,
+} from './schemas/otp-verification.schema';
 
 @Injectable()
 export class SmsService {
@@ -7,7 +20,116 @@ export class SmsService {
   private cachedToken: string | null = null;
   private tokenExpiry = 0;
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    @InjectModel(OtpVerification.name)
+    private readonly otpModel: Model<OtpVerificationDocument>,
+  ) {}
+
+  private hashOtp(phone: string, code: string): string {
+    const secret = resolveAuthSecret(
+      this.configService.get<string>('AUTH_TOKEN_SECRET') ||
+        this.configService.get<string>('JWT_SECRET'),
+      this.configService.get<string>('DATABASE_URI'),
+    );
+    return crypto.createHmac('sha256', secret).update(`${phone}:${code}`).digest('hex');
+  }
+
+  /**
+   * Generates a 5-digit OTP, stores its salted hash for 10 minutes, and dispatches SMS.
+   */
+  async requestAuthOtp(rawPhone: string): Promise<{
+    success: boolean;
+    phone: string;
+    provider: string;
+  }> {
+    const standardPhone = normalizeMalagasyPhone(rawPhone);
+    if (!standardPhone || !/^03[2-9]\d{7}$/.test(standardPhone)) {
+      throw new BadRequestException(
+        'Veuillez saisir un numéro Malagasy valide (ex: 034 XX XXX XX).',
+      );
+    }
+
+    const code = String(crypto.randomInt(10000, 100000));
+    const codeHash = this.hashOtp(standardPhone, code);
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+    await this.otpModel.findOneAndUpdate(
+      { phone: standardPhone },
+      {
+        $set: {
+          phone: standardPhone,
+          codeHash,
+          attempts: 0,
+          expiresAt,
+          verifiedAt: null,
+        },
+      },
+      { upsert: true, new: true },
+    );
+
+    try {
+      const result = await this.sendSMS(
+        standardPhone,
+        `Votre code de confirmation TranoGasy est le : ${code}`,
+      );
+      return {
+        success: true,
+        phone: standardPhone,
+        provider: result.provider,
+      };
+    } catch (error) {
+      // Remove undelivered OTP challenge so user isn't locked behind an unsent code
+      await this.otpModel.deleteOne({ phone: standardPhone }).catch(() => {});
+      throw new BadRequestException(
+        "Impossible d'envoyer le code de vérification par SMS. Veuillez réessayer.",
+      );
+    }
+  }
+
+  /**
+   * Verifies a 5-digit OTP server-side and consumes the challenge upon success.
+   */
+  async verifyAuthOtp(rawPhone: string, rawCode: string): Promise<string> {
+    const standardPhone = normalizeMalagasyPhone(rawPhone);
+    if (!standardPhone) {
+      throw new BadRequestException('Numéro de téléphone invalide.');
+    }
+
+    const cleanCode = String(rawCode || '').replace(/\D/g, '');
+    if (cleanCode.length !== 5) {
+      throw new BadRequestException('Veuillez saisir les 5 chiffres du code de vérification.');
+    }
+
+    const record = await this.otpModel.findOne({ phone: standardPhone });
+    if (!record || record.verifiedAt || record.expiresAt.getTime() < Date.now()) {
+      throw new UnauthorizedException(
+        'Code expiré ou introuvable. Veuillez demander un nouveau code par SMS.',
+      );
+    }
+
+    if ((record.attempts || 0) >= 5) {
+      throw new UnauthorizedException(
+        'Trop de tentatives incorrectes. Veuillez demander un nouveau code.',
+      );
+    }
+
+    const expectedHash = this.hashOtp(standardPhone, cleanCode);
+    const actualBuf = Buffer.from(record.codeHash, 'utf8');
+    const expectedBuf = Buffer.from(expectedHash, 'utf8');
+    const isMatch =
+      actualBuf.length === expectedBuf.length && crypto.timingSafeEqual(actualBuf, expectedBuf);
+
+    if (!isMatch) {
+      await this.otpModel.updateOne({ _id: record._id }, { $inc: { attempts: 1 } });
+      throw new UnauthorizedException(
+        'Code de vérification incorrect. Veuillez vérifier le code reçu par SMS.',
+      );
+    }
+
+    await this.otpModel.deleteOne({ _id: record._id });
+    return standardPhone;
+  }
 
   private getBefianaApiKey(): string {
     return (

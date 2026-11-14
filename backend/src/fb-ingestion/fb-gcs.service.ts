@@ -150,6 +150,86 @@ export class FbGcsService implements OnModuleInit {
     };
   }
 
+  isPermanentGcsUrl(url?: string | null): boolean {
+    if (!url || typeof url !== 'string') return false;
+    return url.startsWith(`https://storage.googleapis.com/${this.bucketName}/`);
+  }
+
+  /**
+   * Downloads a temporary Facebook profile avatar and persists it permanently in GCS
+   * under `fb-avatars/` (kept separate from `fb-ingested/` so rejecting one candidate
+   * never deletes a shared publisher avatar used by other listings).
+   */
+  async reuploadFbAvatar(
+    avatarUrl?: string | null,
+    authorKey?: string | null,
+  ): Promise<string | null> {
+    if (!avatarUrl || !/^https?:\/\//i.test(avatarUrl)) return null;
+    if (this.isPermanentGcsUrl(avatarUrl)) return avatarUrl;
+    if (!this.bucket) return null;
+
+    const safeKey =
+      (authorKey || `avatar_${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80) ||
+      `avatar_${Date.now()}`;
+
+    try {
+      // Reuse already cached GCS avatar if we previously uploaded it for this FB user ID
+      if (authorKey) {
+        const [existingFiles] = await this.bucket.getFiles({
+          prefix: `fb-avatars/${safeKey}.`,
+          maxResults: 1,
+        });
+        if (existingFiles && existingFiles.length > 0) {
+          return `https://storage.googleapis.com/${this.bucketName}/${existingFiles[0].name}`;
+        }
+      }
+
+      const res = await fetch(avatarUrl, {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+          Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+        },
+        signal: AbortSignal.timeout(12000),
+      });
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status} downloading FB avatar`);
+      }
+
+      const contentType = res.headers.get('content-type') || 'image/jpeg';
+      if (!contentType.toLowerCase().startsWith('image/')) {
+        throw new Error(`Unexpected avatar content-type: ${contentType}`);
+      }
+
+      const buffer = Buffer.from(await res.arrayBuffer());
+      if (buffer.length < 300) {
+        throw new Error(`Downloaded avatar too small (${buffer.length} bytes)`);
+      }
+
+      const ext = this.getExtFromContentType(contentType, avatarUrl);
+      const objectPath = `fb-avatars/${safeKey}.${ext}`;
+      const file = this.bucket.file(objectPath);
+
+      await file.save(buffer, {
+        contentType,
+        resumable: false,
+        metadata: {
+          cacheControl: 'public, max-age=31536000',
+          metadata: {
+            source: 'fb-avatar',
+            authorKey: safeKey,
+          },
+        },
+      });
+
+      return `https://storage.googleapis.com/${this.bucketName}/${objectPath}`;
+    } catch (err) {
+      this.logger.warn(`Failed avatar re-upload for ${safeKey}: ${(err as Error).message}`);
+      return null;
+    }
+  }
+
   /**
    * Deletes rejected or removed ingested images from GCS so orphaned files never accumulate.
    */

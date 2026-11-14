@@ -1,9 +1,14 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { authService } from '../services/auth.service';
+import {
+  authService,
+  type ClaimableListingPreview,
+  type SuggestedFbProfile,
+} from '../services/auth.service';
 import { userService } from '../services/user.service';
-import { smsService } from '../services/sms.service';
+import { propertyService } from '../services/property.service';
 import { useUserStore } from '../store/userStore';
+import { usePropertyStore } from '../store/propertyStore';
 
 const KNOWN_ACCOUNTS_STORAGE_KEY = 'tranogasy_phone_accounts';
 
@@ -44,15 +49,10 @@ function saveLocalAccountToRegistry(phone: string, account: StoredPhoneAccount):
   }
 }
 
-function generateFiveDigitCode(): string {
-  return Math.floor(10000 + Math.random() * 90000).toString();
-}
-
 export function useAuth() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [verifiedPhone, setVerifiedPhone] = useState<string>('');
-  const expectedCodeRef = useRef<string | null>(null);
 
   const router = useRouter();
   const currentUserSession = useUserStore((state) => state.user);
@@ -111,6 +111,7 @@ export function useAuth() {
           const syncedSession = {
             message: 'Session synchronisée',
             user: checkRes.user,
+            ...(currentUserSession?.authToken ? { authToken: currentUserSession.authToken } : {}),
           };
           setUser(syncedSession);
           if (typeof window !== 'undefined') {
@@ -137,7 +138,7 @@ export function useAuth() {
   }, [currentUserSession, refreshUserSession]);
 
   /**
-   * Step 1: Validate phone number, generate 5-digit SMS verification code, and send real SMS to the user.
+   * Step 1: Validate phone number and ask backend to generate + send a 5-digit OTP SMS.
    */
   const requestSmsVerification = useCallback(
     async (rawPhone: string): Promise<{ success: boolean; formattedPhone: string }> => {
@@ -151,18 +152,18 @@ export function useAuth() {
       setIsLoading(true);
       try {
         const formattedPhone = formatPhoneNumber(rawPhone);
-        const code = generateFiveDigitCode();
-        expectedCodeRef.current = code;
-        setVerifiedPhone(formattedPhone);
+        const res = await authService.requestOtp(formattedPhone);
+        const resolvedPhone = res?.phone || formattedPhone;
+        setVerifiedPhone(resolvedPhone);
 
-        // Send real SMS to user's phone
-        const message = `Votre code de confirmation TranoGasy est le : ${code}`;
-        await smsService.sendSMS(formattedPhone, message);
-
-        return { success: true, formattedPhone };
-      } catch (err: any) {
-        console.error('❌ Erreur lors de l\'envoi du SMS de vérification:', err.message || err);
-        setError(err.message || "Impossible d'envoyer le code de vérification par SMS.");
+        return { success: true, formattedPhone: resolvedPhone };
+      } catch (err: unknown) {
+        const msg =
+          err instanceof Error
+            ? err.message
+            : "Impossible d'envoyer le code de vérification par SMS.";
+        console.error('❌ Erreur lors de l\'envoi du SMS de vérification:', msg);
+        setError(msg);
         return { success: false, formattedPhone: '' };
       } finally {
         setIsLoading(false);
@@ -172,7 +173,7 @@ export function useAuth() {
   );
 
   /**
-   * Resend a fresh 5-digit SMS verification code to the current phone number by SMS.
+   * Resend a fresh 5-digit OTP SMS from the backend.
    */
   const resendSmsVerification = useCallback(
     async (phoneOverride?: string): Promise<{ success: boolean }> => {
@@ -185,17 +186,16 @@ export function useAuth() {
 
       setIsLoading(true);
       try {
-        const code = generateFiveDigitCode();
-        expectedCodeRef.current = code;
-
-        // Send real SMS to user's phone
-        const message = `Votre code de confirmation TranoGasy est le : ${code}`;
-        await smsService.sendSMS(targetPhone, message);
-
+        const res = await authService.requestOtp(targetPhone);
+        if (res?.phone) {
+          setVerifiedPhone(res.phone);
+        }
         return { success: true };
-      } catch (err: any) {
-        console.error('❌ Erreur lors du renvoi du SMS de vérification:', err.message || err);
-        setError(err.message || "Impossible de renvoyer le code par SMS.");
+      } catch (err: unknown) {
+        const msg =
+          err instanceof Error ? err.message : 'Impossible de renvoyer le code par SMS.';
+        console.error('❌ Erreur lors du renvoi du SMS de vérification:', msg);
+        setError(msg);
         return { success: false };
       } finally {
         setIsLoading(false);
@@ -205,25 +205,29 @@ export function useAuth() {
   );
 
   /**
-   * Step 2: Verify the 5-digit SMS code.
-   * - If the user already has an account in the database -> logs them in with their real DB info (`isNewAccount: false`).
-   * - If the user does not have an account -> creates their account, logs them in, and returns `isNewAccount: true` so Step 3 ("Account created") is shown.
+   * Step 2: Verify the 5-digit SMS OTP server-side, authenticate, and detect claimable listings.
    */
   const verifySmsCodeAndAuthenticate = useCallback(
     async (
       enteredCode: string,
       phoneOverride?: string
-    ): Promise<{ success: boolean; isNewAccount: boolean; user?: any }> => {
+    ): Promise<{
+      success: boolean;
+      isNewAccount: boolean;
+      user?: {
+        message: string;
+        user: Record<string, unknown>;
+        authToken: string;
+      };
+      authToken?: string;
+      claimableListings?: ClaimableListingPreview[];
+      suggestedProfile?: SuggestedFbProfile | null;
+    }> => {
       setError(null);
       const cleanCode = enteredCode.replace(/\D/g, '');
 
       if (cleanCode.length !== 5) {
         setError('Veuillez saisir les 5 chiffres du code de vérification.');
-        return { success: false, isNewAccount: false };
-      }
-
-      if (!expectedCodeRef.current || cleanCode !== expectedCodeRef.current) {
-        setError('Code de vérification incorrect. Veuillez vérifier le code reçu par SMS.');
         return { success: false, isNewAccount: false };
       }
 
@@ -235,78 +239,28 @@ export function useAuth() {
 
       setIsLoading(true);
       try {
-        let authenticatedData: any = null;
-        let isNewAccount = false;
-
-        // 1. Primary: Use backend passwordless phone login API to get real DB document
-        try {
-          const res = await authService.phoneLogin(targetPhone);
-          if (res?.user) {
-            authenticatedData = {
-              message: res.message || 'Connexion réussie',
-              user: res.user,
-            };
-            isNewAccount = Boolean(res.isNew);
-          }
-        } catch {
-          // Fallback to checkUserExists if phoneLogin route had network error
+        const res = await authService.verifyOtp(targetPhone, cleanCode);
+        if (!res?.user) {
+          setError('Réponse de vérification invalide.');
+          return { success: false, isNewAccount: false };
         }
 
-        // 2. Secondary backend check: GET /users/exist/:phone
-        if (!authenticatedData) {
-          try {
-            const checkRes = await authService.checkUserExists(targetPhone);
-            if (checkRes.exists && checkRes.user) {
-              authenticatedData = {
-                message: 'Connexion réussie',
-                user: checkRes.user,
-              };
-              isNewAccount = false;
-            }
-          } catch {
-            // Ignore
-          }
-        }
+        const isNewAccount = Boolean(res.isNew);
+        const authenticatedData = {
+          message: res.message || 'Connexion réussie',
+          user: res.user,
+          authToken: res.authToken,
+        };
 
-        // 3. Fallback: Only if completely offline or backend unavailable
-        if (!authenticatedData) {
-          const localRegistry = getLocalAccountsRegistry();
-          const existingLocal = localRegistry[targetPhone];
-          const nowIso = new Date().toISOString();
-
-          if (existingLocal) {
-            authenticatedData = {
-              message: 'Connexion réussie',
-              user: existingLocal,
-            };
-            isNewAccount = false;
-          } else {
-            const defaultUsername = `Membre ${targetPhone.slice(-4)}`;
-            const newLocalUser: StoredPhoneAccount = {
-              _id: `tg_${targetPhone}_${Date.now().toString(36)}`,
-              username: defaultUsername,
-              phone: targetPhone,
-              role: 'user',
-              created_at: nowIso,
-              lastConnectedAt: nowIso,
-            };
-            authenticatedData = {
-              message: 'Compte créé avec succès',
-              user: newLocalUser,
-            };
-            isNewAccount = true;
-          }
-        }
-
-        const realUser = authenticatedData.user;
-        saveLocalAccountToRegistry(targetPhone, realUser);
+        const storedProfile = res.user as unknown as StoredPhoneAccount;
+        saveLocalAccountToRegistry(targetPhone, storedProfile);
         setUser(authenticatedData);
         if (typeof window !== 'undefined') {
           localStorage.setItem('user', JSON.stringify(authenticatedData));
         }
 
         console.log(
-          `%c[TranoGasy Auth] ${isNewAccount ? 'Nouveau compte créé' : 'Connexion réussie'} : ${realUser.username || targetPhone} (${targetPhone}) [Rôle: ${realUser.role || 'user'}]`,
+          `%c[TranoGasy Auth] ${isNewAccount ? 'Nouveau compte créé' : 'Connexion réussie'} : ${storedProfile.username || targetPhone} (${targetPhone}) [Rôle: ${storedProfile.role || 'user'}]`,
           'color: #7cbd1e; font-weight: bold;'
         );
 
@@ -314,15 +268,90 @@ export function useAuth() {
           success: true,
           isNewAccount,
           user: authenticatedData,
+          authToken: res.authToken,
+          claimableListings: res.claimableListings || [],
+          suggestedProfile: res.suggestedProfile || null,
         };
-      } catch (err: any) {
-        setError(err.message || "Une erreur s'est produite lors de la vérification.");
+      } catch (err: unknown) {
+        setError(
+          err instanceof Error ? err.message : 'Code de vérification incorrect ou expiré.',
+        );
         return { success: false, isNewAccount: false };
       } finally {
         setIsLoading(false);
       }
     },
     [verifiedPhone, formatPhoneNumber, setUser]
+  );
+
+  /**
+   * Claim pre-existing listings matched by verified phone number.
+   */
+  const claimMatchedListings = useCallback(
+    async (payload: {
+      propertyIds: string[];
+      adoptUsername?: boolean;
+      adoptAvatar?: boolean;
+      authTokenOverride?: string;
+    }): Promise<{ success: boolean; claimedCount: number; user?: Record<string, unknown> }> => {
+      setError(null);
+      const token = payload.authTokenOverride || currentUserSession?.authToken;
+      if (!token) {
+        setError('Session de vérification expirée. Veuillez vous reconnecter par SMS.');
+        return { success: false, claimedCount: 0 };
+      }
+
+      if (!payload.propertyIds.length) {
+        return { success: true, claimedCount: 0 };
+      }
+
+      setIsLoading(true);
+      try {
+        const res = await propertyService.claimProperties(
+          {
+            propertyIds: payload.propertyIds,
+            adoptUsername: payload.adoptUsername,
+            adoptAvatar: payload.adoptAvatar,
+          },
+          token
+        );
+
+        if (res?.user) {
+          const updatedSession = {
+            ...(typeof currentUserSession === 'object' && currentUserSession !== null
+              ? currentUserSession
+              : {}),
+            message: 'Annonces rattachées avec succès',
+            user: res.user,
+            authToken: token,
+          };
+          const claimedProfile = res.user as unknown as StoredPhoneAccount;
+          setUser(updatedSession);
+          if (claimedProfile.phone) {
+            saveLocalAccountToRegistry(claimedProfile.phone, claimedProfile);
+          }
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('user', JSON.stringify(updatedSession));
+          }
+        }
+
+        usePropertyStore.getState().clearUserProperties();
+
+        return {
+          success: true,
+          claimedCount: res?.claimedCount ?? payload.propertyIds.length,
+          user: res?.user,
+        };
+      } catch (err: unknown) {
+        setError(
+          err instanceof Error ? err.message : 'Impossible de rattacher ces annonces.',
+        );
+        return { success: false, claimedCount: 0 };
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [currentUserSession, setUser]
   );
 
   /**
@@ -374,6 +403,7 @@ export function useAuth() {
         const updatedSession = {
           message: 'Profil mis à jour',
           user: updatedUserObj,
+          ...(currentUserSession?.authToken ? { authToken: currentUserSession.authToken } : {}),
         };
 
         setUser(updatedSession);
@@ -406,6 +436,7 @@ export function useAuth() {
     requestSmsVerification,
     resendSmsVerification,
     verifySmsCodeAndAuthenticate,
+    claimMatchedListings,
     saveNewAccountUsername,
     refreshUserSession,
     formatPhoneNumber,

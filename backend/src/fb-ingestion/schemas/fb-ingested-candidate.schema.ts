@@ -28,6 +28,12 @@ export class FbIngestedCandidate {
   authorName: string;
 
   @Prop({ type: String, default: null })
+  authorFbId: string | null;
+
+  @Prop({ type: String, default: null })
+  authorUrl: string | null;
+
+  @Prop({ type: String, default: null })
   authorAvatarUrl: string | null;
 
   @Prop({ type: Date, default: Date.now })

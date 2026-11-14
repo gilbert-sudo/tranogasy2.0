@@ -6,6 +6,7 @@ import { Property, PropertySchema } from './schemas/property.schema';
 import { Counter, CounterSchema } from './schemas/property-counter.schema';
 import { City, CitySchema } from '../cities/schemas/city.schema';
 import { Feature, FeatureSchema } from '../features/schemas/feature.schema';
+import { User, UserSchema } from '../users/schemas/user.schema';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { Feature, FeatureSchema } from '../features/schemas/feature.schema';
       { name: Counter.name, schema: CounterSchema },
       { name: City.name, schema: CitySchema },
       { name: Feature.name, schema: FeatureSchema },
+      { name: User.name, schema: UserSchema },
     ]),
   ],
   controllers: [PropertiesController],

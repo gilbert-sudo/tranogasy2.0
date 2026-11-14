@@ -22,7 +22,6 @@ import {
   SlidersHorizontal,
   Upload,
   Loader2,
-  ExternalLink,
   Settings,
 } from 'lucide-react';
 import Header from '@/components/Header';
@@ -545,18 +544,6 @@ export default function UserProfileView({
                       <Copy className="w-3 h-3 opacity-60" />
                     )}
                   </button>
-                )}
-
-                {profileUser?.sourceLink && (
-                  <a
-                    href={profileUser.sourceLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-zinc-100/90 dark:bg-zinc-800/80 hover:text-brand-green text-xs font-light text-zinc-600 dark:text-zinc-300 transition-colors"
-                  >
-                    <span>Source externe</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
                 )}
               </div>
             </div>

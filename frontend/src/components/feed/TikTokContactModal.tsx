@@ -110,8 +110,8 @@ export default function TikTokContactModal({ property, onClose }: TikTokContactM
               </span>
               <span className="text-sm font-bold text-zinc-800 dark:text-zinc-200 group-hover:text-brand-green transition-colors truncate block">
                 {property.owner?.role === 'admin'
-                  ? property.sources?.username || 'TranoGasy Officiel'
-                  : property.owner?.username || 'Utilisateur'}
+                  ? property.sources?.username || 'TranoGasy'
+                  : property.owner?.username || 'Membre TranoGasy'}
               </span>
             </div>
           </div>

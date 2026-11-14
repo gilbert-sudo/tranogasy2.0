@@ -75,4 +75,57 @@ export const propertyService = {
       method: 'DELETE',
     });
   },
+
+  getClaimableProperties: (authToken: string) => {
+    return apiFetch<{
+      claimableListings: Array<{
+        _id: string;
+        title: string;
+        type: 'sale' | 'rent' | 'colocation' | string;
+        price?: number | null;
+        rent?: number | null;
+        city?: {
+          fokontany?: string;
+          commune?: string;
+          district?: string;
+          region?: string;
+        } | null;
+        thumbnail?: string | null;
+        matchedPhone?: string | null;
+        sources?: {
+          username?: string | null;
+          avatar?: string | null;
+        } | null;
+      }>;
+      suggestedProfile: {
+        username: string | null;
+        avatar: string | null;
+      } | null;
+    }>('/properties/claimable', {
+      headers: {
+        'x-auth-token': authToken,
+      },
+    });
+  },
+
+  claimProperties: (
+    payload: {
+      propertyIds: string[];
+      adoptUsername?: boolean;
+      adoptAvatar?: boolean;
+    },
+    authToken: string
+  ) => {
+    return apiFetch<{
+      claimedCount: number;
+      claimedIds: string[];
+      user: Record<string, unknown>;
+    }>('/properties/claim', {
+      method: 'POST',
+      headers: {
+        'x-auth-token': authToken,
+      },
+      body: JSON.stringify(payload),
+    });
+  },
 };

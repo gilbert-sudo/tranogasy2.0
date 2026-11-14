@@ -1,4 +1,5 @@
 import * as crypto from 'crypto';
+import { extractAllMalagasyPhones } from '../common/phone.util';
 
 export interface BrightDataAttachment {
   id?: string;
@@ -20,7 +21,13 @@ export interface BrightDataPostRecord {
   group_id?: string;
   group_url?: string;
   user_name?: string;
+  user_username_raw?: string | null;
+  group_user_name?: string | null;
   user_url?: string;
+  profile_id?: string | null;
+  publisher_image_url?: string | null;
+  avatar_image_url?: string | null;
+  header_image?: string | null;
   date_posted?: string;
   content?: string | null;
   post_id?: string;
@@ -30,12 +37,13 @@ export interface BrightDataPostRecord {
     post_id?: string;
     post_url?: string;
     date_posted?: string;
+    user_id?: string | null;
     user_name?: string;
     user_url?: string;
+    avatar_image_url?: string | null;
     content?: string | null;
     attachments?: BrightDataAttachment[];
   };
-  avatar_image_url?: string;
   error?: string;
   error_code?: string;
 }
@@ -48,6 +56,7 @@ export interface UnwrappedFbPost {
   canonicalPostId: string;
   postUrl: string;
   authorName: string;
+  authorFbId: string | null;
   authorUrl: string | null;
   authorAvatar: string | null;
   datePosted: Date;
@@ -84,22 +93,97 @@ export function sha256Text(text: string): string {
  * Extracts normalized Malagasy mobile phone numbers (032/033/034/037/038/039 + 7 digits).
  */
 export function extractMalagasyPhones(text: string): string[] {
-  if (!text) return [];
-  const cleaned = text.replace(/\+261\s*/g, '0');
-  const matches = cleaned.match(/0?3[2-9][\s.-]?\d{2}[\s.-]?\d{3}[\s.-]?\d{2}/g) || [];
-  const unique = new Set<string>();
+  return extractAllMalagasyPhones(text);
+}
 
-  for (const raw of matches) {
-    let digits = raw.replace(/\D/g, '');
-    if (digits.length === 9 && digits.startsWith('3')) {
-      digits = `0${digits}`;
+/**
+ * Strips volatile Facebook tracking query parameters from profile links while
+ * preserving `profile.php?id=...`.
+ */
+export function normalizeFbProfileUrl(url?: string | null): string | null {
+  if (!url || typeof url !== 'string') return null;
+  const trimmed = url.trim();
+  if (!/^https?:\/\//i.test(trimmed)) return null;
+
+  try {
+    const parsed = new URL(trimmed);
+    const idParam = parsed.searchParams.get('id');
+    if (parsed.pathname.toLowerCase().includes('profile.php') && idParam) {
+      return `https://www.facebook.com/profile.php?id=${idParam}`;
     }
-    if (/^03[2-9]\d{7}$/.test(digits)) {
-      unique.add(digits);
+    const cleanPath = parsed.pathname.replace(/\/+$/, '');
+    if (!cleanPath || cleanPath === '/') return null;
+    return `https://www.facebook.com${cleanPath}`;
+  } catch {
+    return trimmed.split('&__')[0] || trimmed;
+  }
+}
+
+/**
+ * Extracts a canonical Facebook user/profile ID from Bright Data raw IDs or URLs.
+ * Prefers stable numeric IDs (`1000...` / `615...`) over transient `pfbid` tokens.
+ */
+export function extractFbUserId(candidates: Array<string | null | undefined>): string | null {
+  let pfbidFallback: string | null = null;
+  let slugFallback: string | null = null;
+
+  for (const raw of candidates) {
+    if (!raw || typeof raw !== 'string') continue;
+    const val = raw.trim();
+    if (!val) continue;
+
+    if (/^\d{5,}$/.test(val)) {
+      return val;
+    }
+
+    const urlNumericMatch =
+      val.match(/[?&]id=(\d{5,})/i) ||
+      val.match(/facebook\.com\/people\/[^/]+\/(\d{5,})/i) ||
+      val.match(/facebook\.com\/(?:groups\/\d+\/)?user\/(\d{5,})/i) ||
+      val.match(/facebook\.com\/(\d{5,})(?:\/|$|\?)/i);
+
+    if (urlNumericMatch?.[1]) {
+      return urlNumericMatch[1];
+    }
+
+    if (!pfbidFallback) {
+      if (/^pfbid[0-9a-z]+$/i.test(val)) {
+        pfbidFallback = val;
+      } else {
+        const pfbMatch = val.match(/(pfbid[0-9a-z]+)/i);
+        if (pfbMatch?.[1]) {
+          pfbidFallback = pfbMatch[1];
+        }
+      }
+    }
+
+    if (!slugFallback && /^https?:\/\/(?:www\.|m\.)?facebook\.com\//i.test(val)) {
+      try {
+        const parsed = new URL(val);
+        const parts = parsed.pathname.split('/').filter(Boolean);
+        if (
+          parts.length === 1 &&
+          !['profile.php', 'people', 'groups', 'pages', 'permalink.php'].includes(
+            parts[0].toLowerCase(),
+          )
+        ) {
+          slugFallback = parts[0];
+        }
+      } catch {
+        // Ignore invalid URL syntax
+      }
     }
   }
 
-  return Array.from(unique);
+  return pfbidFallback || slugFallback || null;
+}
+
+function isUsableFbAvatarUrl(raw: BrightDataPostRecord, candidateUrl?: string | null): boolean {
+  if (!candidateUrl || !/^https?:\/\//i.test(candidateUrl)) return false;
+  // Bright Data sometimes populates avatar_image_url with the group header image or default FB silhouette
+  if (raw.header_image && candidateUrl === raw.header_image) return false;
+  if (candidateUrl.includes('116687302_959241714549285')) return false;
+  return true;
 }
 
 /**
@@ -170,6 +254,49 @@ export function unwrapBrightDataPost(raw: BrightDataPostRecord): UnwrappedFbPost
   const textHash = sha256Text(normalizedText || canonicalPostId);
   const phones = extractMalagasyPhones(content);
 
+  const rawAuthorName = (
+    raw.user_username_raw ||
+    raw.user_name ||
+    raw.group_user_name ||
+    ''
+  ).trim();
+  const origAuthorName = (orig?.user_name || '').trim();
+  const normalizedRawUrl = normalizeFbProfileUrl(raw.user_url);
+  const normalizedOrigUrl = normalizeFbProfileUrl(orig?.user_url);
+
+  const sameAuthorAsOrig =
+    !orig ||
+    !origAuthorName ||
+    Boolean(raw.profile_id && orig.user_id && raw.profile_id === orig.user_id) ||
+    Boolean(normalizedRawUrl && normalizedOrigUrl && normalizedRawUrl === normalizedOrigUrl) ||
+    Boolean(
+      rawAuthorName &&
+        origAuthorName &&
+        rawAuthorName.toLowerCase() === origAuthorName.toLowerCase(),
+    );
+
+  const authorName = origAuthorName || rawAuthorName || 'Membre TranoGasy';
+  const authorUrl = sameAuthorAsOrig
+    ? normalizedOrigUrl || normalizedRawUrl
+    : normalizedOrigUrl;
+
+  const authorFbId = sameAuthorAsOrig
+    ? extractFbUserId([raw.profile_id, orig?.user_id, orig?.user_url, raw.user_url])
+    : extractFbUserId([orig?.user_id, orig?.user_url]);
+
+  let authorAvatar: string | null = null;
+  if (sameAuthorAsOrig) {
+    if (isUsableFbAvatarUrl(raw, raw.publisher_image_url)) {
+      authorAvatar = raw.publisher_image_url!.trim();
+    } else if (isUsableFbAvatarUrl(raw, orig?.avatar_image_url)) {
+      authorAvatar = orig!.avatar_image_url!.trim();
+    } else if (isUsableFbAvatarUrl(raw, raw.avatar_image_url)) {
+      authorAvatar = raw.avatar_image_url!.trim();
+    }
+  } else if (isUsableFbAvatarUrl(raw, orig?.avatar_image_url)) {
+    authorAvatar = orig!.avatar_image_url!.trim();
+  }
+
   return {
     groupId,
     groupName: raw.group_name || `Group ${groupId}`,
@@ -177,9 +304,10 @@ export function unwrapBrightDataPost(raw: BrightDataPostRecord): UnwrappedFbPost
     outerPostId: raw.post_id,
     canonicalPostId,
     postUrl: raw.url || orig?.post_url || `https://www.facebook.com/groups/${groupId}/posts/${raw.post_id}/`,
-    authorName: orig?.user_name || raw.user_name || 'Facebook User',
-    authorUrl: orig?.user_url || raw.user_url || null,
-    authorAvatar: raw.avatar_image_url || null,
+    authorName,
+    authorFbId,
+    authorUrl,
+    authorAvatar,
     datePosted,
     content,
     photoUrls,

@@ -45,6 +45,60 @@ export class FbBrightDataService {
     };
   }
 
+  private createRequestSignal(timeoutMs: number, externalSignal?: AbortSignal): {
+    signal: AbortSignal;
+    cleanup: () => void;
+  } {
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      controller.abort(new Error(`Request timed out after ${Math.round(timeoutMs / 1000)}s`));
+    }, timeoutMs);
+
+    const onExternalAbort = () => {
+      controller.abort(externalSignal?.reason ?? new Error('Operation cancelled by user'));
+    };
+
+    if (externalSignal) {
+      if (externalSignal.aborted) {
+        clearTimeout(timer);
+        controller.abort(externalSignal.reason ?? new Error('Operation cancelled by user'));
+      } else {
+        externalSignal.addEventListener('abort', onExternalAbort, { once: true });
+      }
+    }
+
+    return {
+      signal: controller.signal,
+      cleanup: () => {
+        clearTimeout(timer);
+        externalSignal?.removeEventListener('abort', onExternalAbort);
+      },
+    };
+  }
+
+  private async sleepWithSignal(ms: number, externalSignal?: AbortSignal): Promise<void> {
+    if (externalSignal?.aborted) {
+      throw externalSignal.reason instanceof Error
+        ? externalSignal.reason
+        : new Error('Operation cancelled by user');
+    }
+    await new Promise<void>((resolve, reject) => {
+      const onAbort = () => {
+        clearTimeout(timer);
+        reject(
+          externalSignal?.reason instanceof Error
+            ? externalSignal.reason
+            : new Error('Operation cancelled by user'),
+        );
+      };
+      const timer = setTimeout(() => {
+        externalSignal?.removeEventListener('abort', onAbort);
+        resolve();
+      }, ms);
+      externalSignal?.addEventListener('abort', onAbort, { once: true });
+    });
+  }
+
   /**
    * Lists existing Bright Data snapshots for this dataset so admins can inspect or re-import them.
    */
@@ -65,7 +119,10 @@ export class FbBrightDataService {
   /**
    * Triggers an asynchronous Bright Data collection batch across active groups.
    */
-  async triggerCollection(targets: BrightDataTriggerTarget[]): Promise<string> {
+  async triggerCollection(
+    targets: BrightDataTriggerTarget[],
+    externalSignal?: AbortSignal,
+  ): Promise<string> {
     if (targets.length === 0) {
       throw new Error('No active target groups to scrape');
     }
@@ -79,15 +136,21 @@ export class FbBrightDataService {
         : {}),
     }));
 
-    const res = await fetch(
-      `${this.baseUrl}/trigger?dataset_id=${encodeURIComponent(datasetId)}&include_errors=true`,
-      {
-        method: 'POST',
-        headers: this.getHeaders(),
-        body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(30000),
-      },
-    );
+    const { signal, cleanup } = this.createRequestSignal(30000, externalSignal);
+    let res: Response;
+    try {
+      res = await fetch(
+        `${this.baseUrl}/trigger?dataset_id=${encodeURIComponent(datasetId)}&include_errors=true`,
+        {
+          method: 'POST',
+          headers: this.getHeaders(),
+          body: JSON.stringify(payload),
+          signal,
+        },
+      );
+    } finally {
+      cleanup();
+    }
 
     if (!res.ok) {
       const txt = await res.text();
@@ -109,32 +172,61 @@ export class FbBrightDataService {
   async waitForSnapshot(
     snapshotId: string,
     maxWaitMs = 600000,
-    onProgress?: (info: { elapsedSec: number; status: string }) => Promise<void> | void,
+    onProgress?: (info: {
+      elapsedSec: number;
+      status: string;
+      records?: number;
+    }) => Promise<void> | void,
+    externalSignal?: AbortSignal,
   ): Promise<void> {
     const startedAt = Date.now();
     const deadline = startedAt + maxWaitMs;
     let consecutiveCheckErrors = 0;
 
     while (Date.now() < deadline) {
+      if (externalSignal?.aborted) {
+        throw externalSignal.reason instanceof Error
+          ? externalSignal.reason
+          : new Error('Operation cancelled by user');
+      }
+
       try {
-        const res = await fetch(`${this.baseUrl}/progress/${encodeURIComponent(snapshotId)}`, {
-          headers: this.getHeaders(),
-          signal: AbortSignal.timeout(15000),
-        });
+        const { signal, cleanup } = this.createRequestSignal(15000, externalSignal);
+        let res: Response;
+        try {
+          res = await fetch(`${this.baseUrl}/progress/${encodeURIComponent(snapshotId)}`, {
+            headers: this.getHeaders(),
+            signal,
+          });
+        } finally {
+          cleanup();
+        }
         if (!res.ok) {
           const txt = await res.text();
           throw new Error(`Bright Data progress check failed (${res.status}): ${txt}`);
         }
         consecutiveCheckErrors = 0;
 
-        const statusData = (await res.json()) as { status?: string; errors?: number };
+        const statusData = (await res.json()) as {
+          status?: string;
+          errors?: number;
+          records?: number;
+          dataset_size?: number;
+        };
         const status = (statusData.status || '').toLowerCase();
+        const recordsCount =
+          typeof statusData.records === 'number'
+            ? statusData.records
+            : typeof statusData.dataset_size === 'number'
+            ? statusData.dataset_size
+            : undefined;
 
         if (status === 'ready') {
           if (onProgress) {
             await onProgress({
               elapsedSec: Math.round((Date.now() - startedAt) / 1000),
               status: 'ready',
+              records: recordsCount,
             });
           }
           return;
@@ -147,9 +239,13 @@ export class FbBrightDataService {
           await onProgress({
             elapsedSec: Math.round((Date.now() - startedAt) / 1000),
             status: status || 'running',
+            records: recordsCount,
           });
         }
       } catch (err) {
+        if (externalSignal?.aborted) {
+          throw err;
+        }
         const msg = (err as Error).message;
         // Re-throw terminal snapshot status failures immediately; tolerate up to 3 transient network glitches.
         if (msg.includes('ended with status:')) {
@@ -164,7 +260,7 @@ export class FbBrightDataService {
         }
       }
 
-      await new Promise((resolve) => setTimeout(resolve, 6000));
+      await this.sleepWithSignal(4000, externalSignal);
     }
 
     throw new Error(`Timed out waiting for Bright Data snapshot ${snapshotId} after ${Math.round(maxWaitMs / 1000)}s`);
@@ -173,14 +269,23 @@ export class FbBrightDataService {
   /**
    * Downloads JSON records from a ready Bright Data snapshot.
    */
-  async downloadSnapshot(snapshotId: string): Promise<BrightDataPostRecord[]> {
-    const res = await fetch(
-      `${this.baseUrl}/snapshot/${encodeURIComponent(snapshotId)}?format=json`,
-      {
-        headers: this.getHeaders(),
-        signal: AbortSignal.timeout(60000),
-      },
-    );
+  async downloadSnapshot(
+    snapshotId: string,
+    externalSignal?: AbortSignal,
+  ): Promise<BrightDataPostRecord[]> {
+    const { signal, cleanup } = this.createRequestSignal(60000, externalSignal);
+    let res: Response;
+    try {
+      res = await fetch(
+        `${this.baseUrl}/snapshot/${encodeURIComponent(snapshotId)}?format=json`,
+        {
+          headers: this.getHeaders(),
+          signal,
+        },
+      );
+    } finally {
+      cleanup();
+    }
     if (!res.ok) {
       const txt = await res.text();
       throw new Error(`Bright Data snapshot download failed (${res.status}): ${txt}`);

@@ -11,6 +11,7 @@ import TikTokMapModal from './TikTokMapModal';
 import TikTokCommentsDrawer from './TikTokCommentsDrawer';
 import TikTokSkeleton from './TikTokSkeleton';
 import { usePropertyStore } from '@/store/propertyStore';
+import { getApiBaseUrl } from '@/services/api';
 import { usePropertyDetailModalStore } from '@/store/propertyDetailModalStore';
 
 interface TranogasyFeedProps {
@@ -58,15 +59,21 @@ export default function TranogasyFeed({
   // Fetch initial properties with retry on cold start
   useEffect(() => {
     let retryTimer: NodeJS.Timeout | null = null;
+    let isCancelled = false;
+    const controller = new AbortController();
     let attempts = 0;
 
     const fetchInitial = async () => {
+      if (isCancelled) return;
       setIsLoading(true);
       try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
-        const res = await fetch(`${apiUrl}/properties?page=1&limit=10`);
+        const apiUrl = getApiBaseUrl();
+        const res = await fetch(`${apiUrl}/properties?page=1&limit=10`, {
+          signal: controller.signal,
+        });
         if (res.ok) {
           const data = await res.json();
+          if (isCancelled) return;
           const fetched = data.properties || [];
           setProperties(fetched);
           addProperties(fetched);
@@ -74,13 +81,14 @@ export default function TranogasyFeed({
           setIsLoading(false);
           return;
         }
-        throw new Error('Response not OK');
-      } catch (e) {
-        console.warn('Backend cold start in explore feed, retrying...', e);
+        throw new Error(`HTTP ${res.status}`);
+      } catch (e: unknown) {
+        if (isCancelled || (e instanceof DOMException && e.name === 'AbortError')) return;
         attempts++;
         if (attempts < 10) {
           retryTimer = setTimeout(fetchInitial, 3500);
         } else {
+          console.warn('[TranogasyFeed] Serveur API temporairement inaccessible.');
           setIsLoading(false);
         }
       }
@@ -93,6 +101,8 @@ export default function TranogasyFeed({
     }
 
     return () => {
+      isCancelled = true;
+      controller.abort();
       if (retryTimer) clearTimeout(retryTimer);
     };
   }, [initialProperties, addProperties]);
@@ -103,7 +113,7 @@ export default function TranogasyFeed({
     setIsLoadingMore(true);
     try {
       const nextPage = page + 1;
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+      const apiUrl = getApiBaseUrl();
       const res = await fetch(`${apiUrl}/properties?page=${nextPage}&limit=10`);
       if (res.ok) {
         const data = await res.json();

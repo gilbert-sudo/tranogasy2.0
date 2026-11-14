@@ -6,6 +6,7 @@ import {
   Activity,
   AlertTriangle,
   ArrowLeft,
+  Ban,
   CheckSquare,
   Download,
   GitCompare,
@@ -17,12 +18,14 @@ import {
   Power,
   RefreshCw,
   ShieldAlert,
+  ShieldCheck,
   Sparkles,
   X,
 } from 'lucide-react';
 import Header from '@/components/Header';
 import { useUserStore } from '@/store/userStore';
 import {
+  type BackfillJobState,
   BrightDataSnapshotMeta,
   FbGroupTarget,
   FbIngestionConfig,
@@ -33,6 +36,54 @@ import {
 import ValidationQueueTab from '@/components/admin/scraper/ValidationQueueTab';
 import GroupsManagerTab from '@/components/admin/scraper/GroupsManagerTab';
 import OverlapMatrixTab from '@/components/admin/scraper/OverlapMatrixTab';
+import PublishedOriginsTab from '@/components/admin/scraper/PublishedOriginsTab';
+import OperationProgressCard, {
+  type PipelineStep,
+} from '@/components/admin/scraper/OperationProgressCard';
+import FloatingOperationHud, {
+  type HudToast,
+} from '@/components/admin/scraper/FloatingOperationHud';
+
+function buildScraperPipelineSteps(
+  phase: string | null | undefined,
+  isSnapshotImport: boolean,
+): PipelineStep[] {
+  const specs = isSnapshotImport
+    ? [
+        { id: 'downloading_snapshot', label: 'Téléchargement Snapshot' },
+        { id: 'filtering_ai_gcs', label: 'Filtrage IA & Upload GCS' },
+      ]
+    : [
+        { id: 'triggering_brightdata', label: 'Déclenchement Bright Data' },
+        { id: 'waiting_brightdata', label: 'Collecte Facebook' },
+        { id: 'downloading_snapshot', label: 'Téléchargement Snapshot' },
+        { id: 'filtering_ai_gcs', label: 'Filtrage IA & Upload GCS' },
+      ];
+
+  const currentIdx = specs.findIndex((s) => s.id === phase);
+  const resolvedIdx = currentIdx >= 0 ? currentIdx : 0;
+
+  return specs.map((spec, idx) => ({
+    id: spec.id,
+    label: spec.label,
+    state: idx < resolvedIdx ? 'done' : idx === resolvedIdx ? 'active' : 'pending',
+  }));
+}
+
+function getScraperEtaFallback(phase: string | null | undefined): string | null {
+  switch (phase) {
+    case 'triggering_brightdata':
+      return 'Initialisation (quelques secondes)...';
+    case 'waiting_brightdata':
+      return 'Bright Data prend souvent 1–3 min (max 10 min)';
+    case 'downloading_snapshot':
+      return 'Récupération des posts...';
+    case 'filtering_ai_gcs':
+      return 'Calcul du temps restant...';
+    default:
+      return null;
+  }
+}
 
 const GEMINI_MODELS = [
   { value: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite (Recommandé — Rapide & Quotas élevés)' },
@@ -55,7 +106,7 @@ export default function AdminScraperPage() {
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
 
-  const [activeTab, setActiveTab] = useState<'queue' | 'groups' | 'matrix'>('queue');
+  const [activeTab, setActiveTab] = useState<'queue' | 'groups' | 'matrix' | 'origins'>('queue');
   const [config, setConfig] = useState<FbIngestionConfig | null>(null);
   const [groups, setGroups] = useState<FbGroupTarget[]>([]);
   const [matrix, setMatrix] = useState<FbOverlapMatrixRow[]>([]);
@@ -63,19 +114,70 @@ export default function AdminScraperPage() {
   const [snapshotInput, setSnapshotInput] = useState('sd_mwewhh3hvi9vt8yqk');
   const [loading, setLoading] = useState(true);
   const [isLaunching, setIsLaunching] = useState(false);
+  const [launchingMode, setLaunchingMode] = useState<'scrape' | 'snapshot'>('scrape');
+  const [isCancellingRun, setIsCancellingRun] = useState(false);
+  const [runPollWarning, setRunPollWarning] = useState<string | null>(null);
+  const [runOutcomeCard, setRunOutcomeCard] = useState<{
+    status: 'completed' | 'cancelled' | 'error';
+    message: string;
+    elapsedSec?: number;
+  } | null>(null);
+
+  const [backfillJob, setBackfillJob] = useState<BackfillJobState | null>(null);
+  const [isStartingBackfill, setIsStartingBackfill] = useState(false);
+  const [isCancellingBackfill, setIsCancellingBackfill] = useState(false);
+  const [backfillPollWarning, setBackfillPollWarning] = useState<string | null>(null);
+  const [showBackfillCard, setShowBackfillCard] = useState(false);
+  const [originsRefreshNonce, setOriginsRefreshNonce] = useState(0);
+
   const [banner, setBanner] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const [hudToast, setHudToast] = useState<HudToast | null>(null);
   const [lastSummary, setLastSummary] = useState<RunSummary | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
+
   const isPollingCompletionRef = useRef(false);
+  const isBackfillCompletionRef = useRef(false);
+  const runPollFailuresRef = useRef(0);
+  const backfillPollFailuresRef = useRef(0);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const controlBarRef = useRef<HTMLElement | null>(null);
+
+  const pushToast = useCallback((nextToast: HudToast, autoHideMs = 9000) => {
+    setHudToast(nextToast);
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = null;
+    }
+    if (nextToast.kind === 'ok' && autoHideMs > 0) {
+      toastTimerRef.current = setTimeout(() => {
+        setHudToast((curr) => (curr === nextToast ? null : curr));
+      }, autoHideMs);
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) {
+        clearTimeout(toastTimerRef.current);
+      }
+    };
+  }, []);
 
   const runActive =
     isLaunching ||
     config?.lastPollStatus === 'running' ||
     config?.lastPollStatus === 'importing_snapshot';
 
+  const backfillActive = isStartingBackfill || backfillJob?.status === 'running';
+
   const elapsedSec =
     runActive && config?.lastPollStartedAt
       ? Math.max(0, Math.round((nowMs - new Date(config.lastPollStartedAt).getTime()) / 1000))
+      : 0;
+
+  const backfillElapsedSec =
+    backfillActive && backfillJob?.startedAt
+      ? Math.max(0, Math.round((nowMs - new Date(backfillJob.startedAt).getTime()) / 1000))
       : 0;
 
   const displayedSummary = lastSummary || config?.lastRunSummary || null;
@@ -90,25 +192,37 @@ export default function AdminScraperPage() {
       return;
     }
     try {
-      const [cfg, grp, mat, snaps] = await Promise.all([
+      const [cfg, grp, mat] = await Promise.all([
         fbIngestionService.getConfig(userId),
         fbIngestionService.listGroups(userId),
         fbIngestionService.getOverlapMatrix(userId),
-        fbIngestionService.listRemoteSnapshots(userId).catch(() => []),
       ]);
       setConfig(cfg);
       if (cfg.lastRunSummary) {
         setLastSummary(cfg.lastRunSummary);
       }
+      if (cfg.backfillJob) {
+        setBackfillJob(cfg.backfillJob);
+        if (cfg.backfillJob.status === 'running' || cfg.backfillJob.phase === 'interrupted') {
+          setShowBackfillCard(true);
+        }
+      }
       setGroups(grp);
       setMatrix(mat.groups);
-      setSnapshots(snaps);
+
+      // Load remote Bright Data snapshot list asynchronously so slow external calls never block UI
+      fbIngestionService
+        .listRemoteSnapshots(userId)
+        .then(setSnapshots)
+        .catch(() => {});
     } catch (err) {
-      setBanner({ kind: 'err', text: (err as Error).message });
+      const msg = (err as Error).message;
+      setBanner({ kind: 'err', text: msg });
+      pushToast({ kind: 'err', title: 'Erreur de chargement', text: msg });
     } finally {
       setLoading(false);
     }
-  }, [userId, isAdmin]);
+  }, [userId, isAdmin, pushToast]);
 
   useEffect(() => {
     let active = true;
@@ -118,22 +232,37 @@ export default function AdminScraperPage() {
         return;
       }
       try {
-        const [cfg, grp, mat, snaps] = await Promise.all([
+        const [cfg, grp, mat] = await Promise.all([
           fbIngestionService.getConfig(userId),
           fbIngestionService.listGroups(userId),
           fbIngestionService.getOverlapMatrix(userId),
-          fbIngestionService.listRemoteSnapshots(userId).catch(() => []),
         ]);
         if (!active) return;
         setConfig(cfg);
         if (cfg.lastRunSummary) {
           setLastSummary(cfg.lastRunSummary);
         }
+        if (cfg.backfillJob) {
+          setBackfillJob(cfg.backfillJob);
+          if (cfg.backfillJob.status === 'running' || cfg.backfillJob.phase === 'interrupted') {
+            setShowBackfillCard(true);
+          }
+        }
         setGroups(grp);
         setMatrix(mat.groups);
-        setSnapshots(snaps);
+
+        fbIngestionService
+          .listRemoteSnapshots(userId)
+          .then((snaps) => {
+            if (active) setSnapshots(snaps);
+          })
+          .catch(() => {});
       } catch (err) {
-        if (active) setBanner({ kind: 'err', text: (err as Error).message });
+        if (active) {
+          const msg = (err as Error).message;
+          setBanner({ kind: 'err', text: msg });
+          pushToast({ kind: 'err', title: 'Erreur de chargement', text: msg });
+        }
       } finally {
         if (active) setLoading(false);
       }
@@ -142,68 +271,163 @@ export default function AdminScraperPage() {
     return () => {
       active = false;
     };
-  }, [userId, isAdmin]);
+  }, [userId, isAdmin, pushToast]);
 
-  // Live poll every 3 seconds whenever an ingestion or snapshot import is running
+  const pollRunStatusNow = useCallback(async () => {
+    if (!userId || !isAdmin) return;
+    try {
+      const cfg = await fbIngestionService.getConfig(userId);
+      runPollFailuresRef.current = 0;
+      setRunPollWarning(null);
+      setConfig(cfg);
+
+      const stillRunning =
+        cfg.lastPollStatus === 'running' || cfg.lastPollStatus === 'importing_snapshot';
+      if (!stillRunning && !isPollingCompletionRef.current) {
+        isPollingCompletionRef.current = true;
+        setIsLaunching(false);
+        setIsCancellingRun(false);
+        if (cfg.lastRunSummary) {
+          setLastSummary(cfg.lastRunSummary);
+        }
+
+        const runDurationSec =
+          cfg.lastPollStartedAt && cfg.lastPollFinishedAt
+            ? Math.max(
+                1,
+                Math.round(
+                  (new Date(cfg.lastPollFinishedAt).getTime() -
+                    new Date(cfg.lastPollStartedAt).getTime()) /
+                    1000,
+                ),
+              )
+            : undefined;
+
+        if (cfg.lastPollPhase === 'cancelled') {
+          const msg = cfg.lastPollMessage || 'Collecte annulée.';
+          setRunOutcomeCard({ status: 'cancelled', message: msg, elapsedSec: runDurationSec });
+          setBanner({ kind: 'err', text: msg });
+          pushToast({ kind: 'warn', title: 'Opération annulée', text: msg });
+        } else if (cfg.lastPollStatus === 'error') {
+          const msg = cfg.lastError || cfg.lastPollMessage || 'Erreur lors de la collecte Facebook.';
+          setRunOutcomeCard({ status: 'error', message: msg, elapsedSec: runDurationSec });
+          setBanner({ kind: 'err', text: msg });
+          pushToast({ kind: 'err', title: 'Échec de la collecte', text: msg });
+        } else if (cfg.lastRunSummary) {
+          const errSuffix =
+            cfg.lastRunSummary.errors?.length > 0
+              ? ` (${cfg.lastRunSummary.errors.length} erreur(s) partielle(s) — voir détail ci-dessous)`
+              : '';
+          const msg = `Collecte terminée (${cfg.lastRunSummary.snapshotId}) : +${cfg.lastRunSummary.candidatesCreated} annonce(s) ajoutée(s) à la file de validation.${errSuffix}`;
+          setRunOutcomeCard({
+            status: cfg.lastRunSummary.errors?.length > 0 ? 'error' : 'completed',
+            message: msg,
+            elapsedSec: runDurationSec,
+          });
+          setBanner({
+            kind: cfg.lastRunSummary.errors?.length > 0 ? 'err' : 'ok',
+            text: msg,
+          });
+          pushToast({
+            kind: cfg.lastRunSummary.errors?.length > 0 ? 'warn' : 'ok',
+            title: 'Collecte terminée',
+            text: msg,
+          });
+        } else {
+          const msg = cfg.lastPollMessage || 'Collecte terminée. Groupes et file mis à jour.';
+          setRunOutcomeCard({ status: 'completed', message: msg, elapsedSec: runDurationSec });
+          setBanner({ kind: 'ok', text: msg });
+          pushToast({ kind: 'ok', title: 'Collecte terminée', text: msg });
+        }
+
+        await loadAll();
+        isPollingCompletionRef.current = false;
+      }
+    } catch (err) {
+      runPollFailuresRef.current += 1;
+      if (runPollFailuresRef.current >= 2) {
+        setRunPollWarning(
+          `Suivi temporairement interrompu (${(err as Error).message}). Nouvelle tentative automatique...`,
+        );
+      }
+    }
+  }, [userId, isAdmin, loadAll, pushToast]);
+
+  // Live poll every 2 seconds whenever an ingestion or snapshot import is running
   useEffect(() => {
     if (!userId || !isAdmin || !runActive) return;
-
-    const tickPoll = async () => {
-      try {
-        const cfg = await fbIngestionService.getConfig(userId);
-        setConfig(cfg);
-
-        const stillRunning =
-          cfg.lastPollStatus === 'running' || cfg.lastPollStatus === 'importing_snapshot';
-        if (!stillRunning && !isPollingCompletionRef.current) {
-          isPollingCompletionRef.current = true;
-          setIsLaunching(false);
-          if (cfg.lastRunSummary) {
-            setLastSummary(cfg.lastRunSummary);
-          }
-          if (cfg.lastPollStatus === 'error') {
-            setBanner({
-              kind: 'err',
-              text: cfg.lastError || 'Erreur lors de la collecte Facebook.',
-            });
-          } else if (cfg.lastRunSummary) {
-            const errSuffix =
-              cfg.lastRunSummary.errors?.length > 0
-                ? ` (${cfg.lastRunSummary.errors.length} erreur(s) partielle(s) — voir détail ci-dessous)`
-                : '';
-            setBanner({
-              kind: cfg.lastRunSummary.errors?.length > 0 ? 'err' : 'ok',
-              text: `Collecte terminée (${cfg.lastRunSummary.snapshotId}) : +${cfg.lastRunSummary.candidatesCreated} annonce(s) ajoutée(s) à la file de validation.${errSuffix}`,
-            });
-          } else {
-            setBanner({
-              kind: 'ok',
-              text: 'Collecte terminée. File de validation et groupes mis à jour.',
-            });
-          }
-          await loadAll();
-          isPollingCompletionRef.current = false;
-        }
-      } catch {
-        // Keep polling quietly across transient network hiccups
-      }
-    };
+    runPollFailuresRef.current = 0;
 
     const intervalId = setInterval(() => {
-      void tickPoll();
-    }, 3000);
+      void pollRunStatusNow();
+    }, 2000);
 
     return () => clearInterval(intervalId);
-  }, [userId, isAdmin, runActive, loadAll]);
+  }, [userId, isAdmin, runActive, pollRunStatusNow]);
 
-  // Smooth local elapsed timer during active run
+  const pollBackfillStatusNow = useCallback(async () => {
+    if (!userId || !isAdmin) return;
+    try {
+      const job = await fbIngestionService.getBackfillStatus(userId);
+      backfillPollFailuresRef.current = 0;
+      setBackfillPollWarning(null);
+      setBackfillJob(job);
+
+      if (job.status !== 'running' && !isBackfillCompletionRef.current) {
+        isBackfillCompletionRef.current = true;
+        setIsStartingBackfill(false);
+        setIsCancellingBackfill(false);
+
+        if (job.status === 'completed') {
+          const msg =
+            job.message ||
+            `Migration terminée (${job.scanned} analysées) : ${job.migratedScraped} annonces FB migrées.`;
+          setBanner({ kind: 'ok', text: msg });
+          pushToast({ kind: 'ok', title: 'Migration terminée', text: msg });
+        } else if (job.status === 'cancelled') {
+          const msg = job.message || 'Migration annulée.';
+          setBanner({ kind: 'err', text: msg });
+          pushToast({ kind: 'warn', title: 'Migration annulée', text: msg });
+        } else if (job.status === 'error') {
+          const msg = job.lastError || job.message || 'Erreur durant la migration.';
+          setBanner({ kind: 'err', text: msg });
+          pushToast({ kind: 'err', title: 'Erreur de migration', text: msg });
+        }
+
+        setOriginsRefreshNonce((n) => n + 1);
+        isBackfillCompletionRef.current = false;
+      }
+    } catch (err) {
+      backfillPollFailuresRef.current += 1;
+      if (backfillPollFailuresRef.current >= 2) {
+        setBackfillPollWarning(
+          `Suivi temporairement interrompu (${(err as Error).message}). Nouvelle tentative automatique...`,
+        );
+      }
+    }
+  }, [userId, isAdmin, pushToast]);
+
+  // Live poll every 1.5 seconds whenever a Shadow User migration is running
   useEffect(() => {
-    if (!runActive) return;
+    if (!userId || !isAdmin || !backfillActive) return;
+    backfillPollFailuresRef.current = 0;
+    isBackfillCompletionRef.current = false;
+
+    const intervalId = setInterval(() => {
+      void pollBackfillStatusNow();
+    }, 1500);
+
+    return () => clearInterval(intervalId);
+  }, [userId, isAdmin, backfillActive, pollBackfillStatusNow]);
+
+  // Smooth local elapsed timer during any active operation
+  useEffect(() => {
+    if (!runActive && !backfillActive) return;
     const id = setInterval(() => {
       setNowMs(Date.now());
     }, 1000);
     return () => clearInterval(id);
-  }, [runActive]);
+  }, [runActive, backfillActive]);
 
   const updateConfigPatch = async (patch: Parameters<typeof fbIngestionService.updateConfig>[1]) => {
     if (!userId) return;
@@ -211,53 +435,155 @@ export default function AdminScraperPage() {
       const updated = await fbIngestionService.updateConfig(userId, patch);
       setConfig(updated);
       if (patch.lastError === null) return;
-      setBanner({
-        kind: 'ok',
-        text:
-          typeof patch.isLive === 'boolean'
-            ? patch.isLive
-              ? 'Scraper activé en mode LIVE (surveillance automatique démarrée).'
-              : 'Scraper mis en PAUSE (0 crédit consommé).'
-            : 'Configuration mise à jour.',
-      });
+      const msg =
+        typeof patch.isLive === 'boolean'
+          ? patch.isLive
+            ? 'Scraper activé en mode LIVE (surveillance automatique démarrée).'
+            : 'Scraper mis en PAUSE (0 crédit consommé).'
+          : 'Configuration mise à jour.';
+      setBanner({ kind: 'ok', text: msg });
+      pushToast({ kind: 'ok', title: 'Configuration enregistrée', text: msg });
     } catch (err) {
-      setBanner({ kind: 'err', text: (err as Error).message });
+      const msg = (err as Error).message;
+      setBanner({ kind: 'err', text: msg });
+      pushToast({ kind: 'err', title: 'Erreur configuration', text: msg });
     }
   };
 
   const handleRunActiveGroups = async () => {
     if (!userId || runActive) return;
+    setLaunchingMode('scrape');
     setIsLaunching(true);
+    setRunOutcomeCard(null);
+    setRunPollWarning(null);
     setBanner(null);
     try {
       const res = await fbIngestionService.startRunNow(userId);
-      setBanner({
-        kind: 'ok',
-        text: `Collecte lancée sur ${res.groupsCount ?? 'les'} groupe(s) actif(s). Suivi en direct ci-dessus...`,
-      });
+      const msg = `Collecte lancée sur ${res.groupsCount ?? 'les'} groupe(s) actif(s). Suivi en direct ci-dessus...`;
+      setBanner({ kind: 'ok', text: msg });
+      pushToast({ kind: 'ok', title: 'Collecte démarrée', text: msg }, 5000);
       const cfg = await fbIngestionService.getConfig(userId);
       setConfig(cfg);
+      setIsLaunching(false);
     } catch (err) {
       setIsLaunching(false);
-      setBanner({ kind: 'err', text: (err as Error).message });
+      const msg = (err as Error).message;
+      setRunOutcomeCard({ status: 'error', message: msg });
+      setBanner({ kind: 'err', text: msg });
+      pushToast({ kind: 'err', title: 'Impossible de lancer le scraper', text: msg });
     }
   };
 
   const handleImportSnapshot = async () => {
     if (!userId || !snapshotInput.trim() || runActive) return;
+    setLaunchingMode('snapshot');
     setIsLaunching(true);
+    setRunOutcomeCard(null);
+    setRunPollWarning(null);
     setBanner(null);
     try {
       const res = await fbIngestionService.startImportSnapshot(userId, snapshotInput.trim());
-      setBanner({
-        kind: 'ok',
-        text: `Import du snapshot ${res.snapshotId || snapshotInput.trim()} démarré en arrière-plan...`,
-      });
+      const msg = `Import du snapshot ${res.snapshotId || snapshotInput.trim()} démarré en arrière-plan...`;
+      setBanner({ kind: 'ok', text: msg });
+      pushToast({ kind: 'ok', title: 'Import Snapshot démarré', text: msg }, 5000);
       const cfg = await fbIngestionService.getConfig(userId);
       setConfig(cfg);
+      setIsLaunching(false);
     } catch (err) {
       setIsLaunching(false);
-      setBanner({ kind: 'err', text: (err as Error).message });
+      const msg = (err as Error).message;
+      setRunOutcomeCard({ status: 'error', message: msg });
+      setBanner({ kind: 'err', text: msg });
+      pushToast({ kind: 'err', title: 'Échec lancement import', text: msg });
+    }
+  };
+
+  const handleCancelRun = async () => {
+    if (!userId || isCancellingRun) return;
+    setIsCancellingRun(true);
+    isPollingCompletionRef.current = true;
+    try {
+      const cfg = await fbIngestionService.cancelRun(userId);
+      setConfig(cfg);
+      setIsLaunching(false);
+      setRunPollWarning(null);
+      const msg = 'Collecte annulée / état réinitialisé.';
+      setRunOutcomeCard({ status: 'cancelled', message: msg });
+      setBanner({ kind: 'err', text: msg });
+      pushToast({ kind: 'warn', title: 'Opération annulée', text: msg });
+    } catch (err) {
+      const msg = (err as Error).message;
+      setBanner({ kind: 'err', text: msg });
+      pushToast({ kind: 'err', title: 'Échec annulation', text: msg });
+    } finally {
+      setIsCancellingRun(false);
+      isPollingCompletionRef.current = false;
+    }
+  };
+
+  const handleStartBackfill = async () => {
+    if (!userId || backfillActive) return;
+    setIsStartingBackfill(true);
+    setShowBackfillCard(true);
+    setBackfillPollWarning(null);
+    setBanner(null);
+    try {
+      const res = await fbIngestionService.startBackfillShadowOwners(userId);
+      setBackfillJob(res.job);
+      setIsStartingBackfill(false);
+      pushToast(
+        {
+          kind: 'ok',
+          title: res.alreadyRunning ? 'Migration déjà en cours' : 'Migration démarrée',
+          text:
+            res.job.message ||
+            'Analyse des annonces et upload des avatars sur GCS en arrière-plan...',
+        },
+        5000,
+      );
+    } catch (err) {
+      setIsStartingBackfill(false);
+      const msg = (err as Error).message || 'Erreur lors du démarrage de la migration.';
+      setBackfillJob((prev) => ({
+        status: 'error',
+        phase: 'error',
+        message: msg,
+        current: prev?.current ?? 0,
+        total: prev?.total ?? 0,
+        percent: prev?.percent ?? 0,
+        etaSeconds: null,
+        scanned: prev?.scanned ?? 0,
+        migratedScraped: prev?.migratedScraped ?? 0,
+        markedOrganic: prev?.markedOrganic ?? 0,
+        markedAdminManual: prev?.markedAdminManual ?? 0,
+        avatarsPersisted: prev?.avatarsPersisted ?? 0,
+        errorCount: (prev?.errorCount ?? 0) + 1,
+        lastError: msg,
+        startedAt: prev?.startedAt ?? null,
+        finishedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }));
+      setBanner({ kind: 'err', text: msg });
+      pushToast({ kind: 'err', title: 'Erreur migration', text: msg });
+    }
+  };
+
+  const handleCancelBackfill = async () => {
+    if (!userId || isCancellingBackfill) return;
+    setIsCancellingBackfill(true);
+    try {
+      const job = await fbIngestionService.cancelBackfill(userId);
+      setBackfillJob(job);
+      if (job.status === 'cancelled') {
+        setIsStartingBackfill(false);
+        const msg = job.message || 'Migration annulée.';
+        setBanner({ kind: 'err', text: msg });
+        pushToast({ kind: 'warn', title: 'Migration annulée', text: msg });
+      }
+    } catch (err) {
+      pushToast({ kind: 'err', title: 'Erreur annulation', text: (err as Error).message });
+    } finally {
+      setIsCancellingBackfill(false);
     }
   };
 
@@ -364,7 +690,10 @@ export default function AdminScraperPage() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:pr-24 pt-24 space-y-6">
         {/* Top Master Control Bar */}
-        <section className="bg-white dark:bg-zinc-900 rounded-[2rem] p-6 border border-zinc-200/80 dark:border-zinc-800 shadow-sm space-y-5">
+        <section
+          ref={controlBarRef}
+          className="bg-white dark:bg-zinc-900 rounded-[2rem] p-6 border border-zinc-200/80 dark:border-zinc-800 shadow-sm space-y-5"
+        >
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="space-y-1">
               <Link
@@ -425,8 +754,26 @@ export default function AdminScraperPage() {
                   ) : (
                     <Play className="w-4 h-4" />
                   )}
-                  {runActive ? 'Collecte en cours...' : 'Lancer collecte maintenant'}
+                  {runActive
+                    ? `Collecte (${config.lastRunProgress?.percent ?? 5}%)...`
+                    : 'Lancer collecte maintenant'}
                 </button>
+
+                {runActive && (
+                  <button
+                    type="button"
+                    disabled={isCancellingRun}
+                    onClick={() => void handleCancelRun()}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-full text-xs font-bold border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 hover:bg-red-100 transition disabled:opacity-50"
+                  >
+                    {isCancellingRun ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Ban className="w-3.5 h-3.5" />
+                    )}
+                    Annuler
+                  </button>
+                )}
 
                 <button
                   type="button"
@@ -563,53 +910,73 @@ export default function AdminScraperPage() {
                 )}
               </div>
 
-              {runActive && (
-                <div className="p-4 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900 space-y-2.5">
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                    <div className="flex items-center gap-2 font-bold text-emerald-900 dark:text-emerald-200">
-                      <Loader2 className="w-4 h-4 animate-spin text-brand-green" />
-                      <span>{config.lastPollMessage || 'Traitement en cours en arrière-plan...'}</span>
-                    </div>
-                    <span className="text-[11px] font-mono text-emerald-700 dark:text-emerald-300">
-                      {Math.floor(elapsedSec / 60)}m {String(elapsedSec % 60).padStart(2, '0')}s écoulées
-                    </span>
-                  </div>
-
-                  {config.lastRunProgress && config.lastRunProgress.total > 0 && (
-                    <div className="space-y-1">
-                      <div className="w-full h-2 rounded-full bg-emerald-200/70 dark:bg-emerald-900/60 overflow-hidden">
-                        <div
-                          className="h-full bg-brand-green transition-all duration-300"
-                          style={{
-                            width: `${Math.min(
-                              100,
-                              Math.round(
-                                (config.lastRunProgress.current / config.lastRunProgress.total) * 100,
-                              ),
-                            )}%`,
-                          }}
-                        />
-                      </div>
-                      <div className="flex justify-between text-[11px] text-emerald-800 dark:text-emerald-300 font-semibold">
-                        <span>
-                          Phase : {config.lastPollPhase === 'filtering_ai_gcs' ? 'Filtrage IA Gemini & Upload GCS' : config.lastPollPhase}
-                        </span>
-                        <span>
-                          {config.lastRunProgress.current} / {config.lastRunProgress.total} posts (
-                          {Math.round(
-                            (config.lastRunProgress.current / config.lastRunProgress.total) * 100,
-                          )}
-                          %)
-                        </span>
-                      </div>
-                    </div>
+              {runActive ? (
+                <OperationProgressCard
+                  title={
+                    (config.lastPollStatus === 'importing_snapshot' ||
+                      (isLaunching && launchingMode === 'snapshot'))
+                      ? `Import Snapshot Bright Data${config.lastSnapshotId ? ` (${config.lastSnapshotId})` : ''}`
+                      : `Collecte Scraper Facebook${config.lastSnapshotId ? ` (${config.lastSnapshotId})` : ''}`
+                  }
+                  status="running"
+                  message={
+                    config.lastPollMessage ||
+                    (isLaunching ? 'Démarrage de la collecte sur le serveur...' : 'Traitement en cours...')
+                  }
+                  detail={config.lastRunProgress?.detail || null}
+                  percent={
+                    config.lastRunProgress?.percent ??
+                    (config.lastRunProgress && config.lastRunProgress.total > 0
+                      ? Math.round(
+                          (config.lastRunProgress.current / config.lastRunProgress.total) * 100,
+                        )
+                      : isLaunching
+                      ? 4
+                      : 8)
+                  }
+                  countLabel={
+                    config.lastRunProgress?.unit === 'posts' &&
+                    config.lastRunProgress.total > 0
+                      ? `${config.lastRunProgress.current} / ${config.lastRunProgress.total} posts`
+                      : config.lastSnapshotId
+                      ? `ID: ${config.lastSnapshotId}`
+                      : null
+                  }
+                  elapsedSec={elapsedSec}
+                  etaSeconds={config.lastRunProgress?.etaSeconds ?? null}
+                  etaFallbackLabel={getScraperEtaFallback(config.lastPollPhase)}
+                  steps={buildScraperPipelineSteps(
+                    config.lastPollPhase,
+                    config.lastPollStatus === 'importing_snapshot' ||
+                      (isLaunching && launchingMode === 'snapshot'),
                   )}
-
-                  <p className="text-[11px] text-emerald-700/90 dark:text-emerald-300/90">
-                    La collecte s&apos;exécute en arrière-plan sur le serveur : vous pouvez recharger cette page à tout moment sans interrompre l&apos;opération.
-                  </p>
-                </div>
-              )}
+                  pollWarning={runPollWarning}
+                  isCancelling={isCancellingRun}
+                  onCancel={() => void handleCancelRun()}
+                  onRefreshNow={() => void pollRunStatusNow()}
+                />
+              ) : runOutcomeCard ? (
+                <OperationProgressCard
+                  title={
+                    launchingMode === 'snapshot'
+                      ? 'Résultat import Snapshot Bright Data'
+                      : 'Résultat collecte Scraper Facebook'
+                  }
+                  status={runOutcomeCard.status}
+                  message={runOutcomeCard.message}
+                  percent={runOutcomeCard.status === 'completed' ? 100 : 0}
+                  elapsedSec={runOutcomeCard.elapsedSec}
+                  onRetry={
+                    runOutcomeCard.status === 'error' || runOutcomeCard.status === 'cancelled'
+                      ? () =>
+                          void (launchingMode === 'snapshot'
+                            ? handleImportSnapshot()
+                            : handleRunActiveGroups())
+                      : undefined
+                  }
+                  onDismiss={() => setRunOutcomeCard(null)}
+                />
+              ) : null}
 
               {config.lastError && (
                 <div className="p-3 rounded-2xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 flex items-start justify-between gap-3 text-xs text-red-700 dark:text-red-300">
@@ -711,6 +1078,18 @@ export default function AdminScraperPage() {
           >
             <GitCompare className="w-4 h-4" /> Matrice de similarité
           </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('origins')}
+            className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold transition ${
+              activeTab === 'origins'
+                ? 'bg-brand-green text-white shadow-sm'
+                : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-800'
+            }`}
+          >
+            <ShieldCheck className="w-4 h-4" /> Origines &amp; Réclamations
+          </button>
         </div>
 
         {/* Tab Views */}
@@ -719,7 +1098,18 @@ export default function AdminScraperPage() {
             <Loader2 className="w-5 h-5 animate-spin text-brand-green" /> Chargement de la console...
           </div>
         ) : activeTab === 'queue' ? (
-          <ValidationQueueTab userId={userId} groups={groups} onRefreshAll={loadAll} />
+          <ValidationQueueTab
+            userId={userId}
+            groups={groups}
+            onRefreshAll={loadAll}
+            onNotify={(notice) =>
+              pushToast({
+                kind: notice.kind,
+                title: notice.kind === 'ok' ? 'Validation mise à jour' : 'Erreur validation',
+                text: notice.text,
+              })
+            }
+          />
         ) : activeTab === 'groups' ? (
           <GroupsManagerTab
             userId={userId}
@@ -727,18 +1117,92 @@ export default function AdminScraperPage() {
             config={config}
             isAnyRunActive={runActive}
             onRefresh={loadAll}
-            onRunStarted={(msg) => setBanner({ kind: 'ok', text: msg })}
-            onError={(msg) => setBanner({ kind: 'err', text: msg })}
+            onCancelRun={() => void handleCancelRun()}
+            onRunStarted={async (msg) => {
+              setLaunchingMode('scrape');
+              setRunOutcomeCard(null);
+              setRunPollWarning(null);
+              setBanner({ kind: 'ok', text: msg });
+              pushToast({ kind: 'ok', title: 'Collecte démarrée', text: msg }, 5000);
+              try {
+                const cfg = await fbIngestionService.getConfig(userId);
+                setConfig(cfg);
+              } catch {
+                // Polling effect picks up active state
+              }
+            }}
+            onError={(msg) => {
+              setBanner({ kind: 'err', text: msg });
+              pushToast({ kind: 'err', title: 'Erreur groupe', text: msg });
+            }}
+          />
+        ) : activeTab === 'origins' ? (
+          <PublishedOriginsTab
+            userId={userId}
+            backfillJob={backfillJob}
+            backfillElapsedSec={backfillElapsedSec}
+            backfillPollWarning={backfillPollWarning}
+            isStartingBackfill={isStartingBackfill}
+            isCancellingBackfill={isCancellingBackfill}
+            showBackfillCard={showBackfillCard}
+            refreshNonce={originsRefreshNonce}
+            onStartBackfill={() => void handleStartBackfill()}
+            onCancelBackfill={() => void handleCancelBackfill()}
+            onRefreshBackfillStatus={() => void pollBackfillStatusNow()}
+            onDismissBackfillCard={() => setShowBackfillCard(false)}
+            onError={(msg) => {
+              setBanner({ kind: 'err', text: msg });
+              pushToast({ kind: 'err', title: 'Erreur Origines', text: msg });
+            }}
           />
         ) : (
           <OverlapMatrixTab
             userId={userId}
             matrix={matrix}
             onRefresh={loadAll}
-            onError={(msg) => setBanner({ kind: 'err', text: msg })}
+            onError={(msg) => {
+              setBanner({ kind: 'err', text: msg });
+              pushToast({ kind: 'err', title: 'Erreur matrice', text: msg });
+            }}
           />
         )}
       </main>
+
+      <FloatingOperationHud
+        activeRun={
+          runActive && config
+            ? {
+                title:
+                  config.lastPollStatus === 'importing_snapshot'
+                    ? 'Import Snapshot Bright Data'
+                    : 'Collecte Scraper Facebook',
+                message: config.lastPollMessage || 'Traitement en cours...',
+                percent: config.lastRunProgress?.percent ?? (isLaunching ? 4 : 8),
+                elapsedSec,
+                etaSeconds: config.lastRunProgress?.etaSeconds ?? null,
+                countLabel:
+                  config.lastRunProgress?.unit === 'posts' &&
+                  config.lastRunProgress.total > 0
+                    ? `${config.lastRunProgress.current}/${config.lastRunProgress.total} posts`
+                    : null,
+                isCancelling: isCancellingRun,
+                onCancel: () => void handleCancelRun(),
+                onScrollToTop: () =>
+                  controlBarRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+              }
+            : null
+        }
+        activeBackfill={backfillJob}
+        backfillElapsedSec={backfillElapsedSec}
+        isCancellingBackfill={isCancellingBackfill}
+        onCancelBackfill={() => void handleCancelBackfill()}
+        onFocusOriginsTab={() => {
+          setActiveTab('origins');
+          setShowBackfillCard(true);
+        }}
+        toast={hudToast}
+        onDismissToast={() => setHudToast(null)}
+      />
     </div>
   );
 }

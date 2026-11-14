@@ -53,6 +53,7 @@ import CreateListingForm from '@/components/listing/CreateListingForm';
 import EditPropertyModal from '@/components/dashboard/EditPropertyModal';
 import DeleteConfirmModal from '@/components/dashboard/DeleteConfirmModal';
 import PropertyStatsModal from '@/components/dashboard/PropertyStatsModal';
+import ClaimableListingsBanner from '@/components/dashboard/ClaimableListingsBanner';
 
 const isMockProperty = (p: any) => {
   const id = p?.id || p?._id;
@@ -157,6 +158,7 @@ function DashboardContent() {
   const [statsProperty, setStatsProperty] =
     useState<DashboardProperty | null>(null);
   const [isStatsModalOpen, setIsStatsModalOpen] = useState(false);
+  const [claimRefreshTick, setClaimRefreshTick] = useState(0);
 
   // Load from API (if logged in) or lightweight localStorage preview
   useEffect(() => {
@@ -321,7 +323,7 @@ function DashboardContent() {
     return () => {
       isCancelled = true;
     };
-  }, [currentUserId]);
+  }, [currentUserId, claimRefreshTick]);
 
   // Save properties without freezing main thread on massive arrays
   const saveProperties = useCallback(
@@ -724,6 +726,19 @@ function DashboardContent() {
               Se connecter
             </button>
           </div>
+        )}
+
+        {/* Pre-existing listings matching verified phone number */}
+        {isLoggedIn && (
+          <ClaimableListingsBanner
+            onClaimed={(count) => {
+              setSuccessToast(
+                `${count} annonce${count > 1 ? 's' : ''} rattachée${count > 1 ? 's' : ''} à votre espace propriétaire.`
+              );
+              setClaimRefreshTick((t) => t + 1);
+              setTimeout(() => setSuccessToast(null), 4500);
+            }}
+          />
         )}
 
         {/* Folder Menu Tabs Navigation - Sliding Animated Transition */}

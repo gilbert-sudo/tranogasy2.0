@@ -104,6 +104,11 @@ export class FbIngestionController {
     return this.fbIngestionService.runActiveGroups(body?.groupIds);
   }
 
+  @Post('run/cancel')
+  cancelActiveRun() {
+    return this.fbIngestionService.cancelActiveRun();
+  }
+
   @Post('import-snapshot')
   importSnapshot(@Body() body: { snapshotId: string; async?: boolean }) {
     if (body?.async) {
@@ -150,6 +155,41 @@ export class FbIngestionController {
   @Delete('candidates/:id')
   rejectCandidate(@Param('id') id: string) {
     return this.fbIngestionService.rejectCandidate(id);
+  }
+
+  @Get('properties')
+  listAdminProperties(
+    @Query('origin') origin?: string,
+    @Query('claimStatus') claimStatus?: string,
+    @Query('q') q?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.fbIngestionService.listAdminProperties({
+      origin,
+      claimStatus,
+      q,
+      page: page ? Number(page) : 1,
+      limit: limit ? Number(limit) : 25,
+    });
+  }
+
+  @Get('properties/backfill-shadow-owners/status')
+  getBackfillStatus() {
+    return this.fbIngestionService.getBackfillStatus();
+  }
+
+  @Post('properties/backfill-shadow-owners/cancel')
+  cancelBackfill() {
+    return this.fbIngestionService.cancelBackfill();
+  }
+
+  @Post('properties/backfill-shadow-owners')
+  backfillLegacyScrapedProperties(@Body() body?: { async?: boolean }) {
+    if (body?.async) {
+      return this.fbIngestionService.startBackfillInBackground();
+    }
+    return this.fbIngestionService.backfillLegacyScrapedProperties();
   }
 }
 

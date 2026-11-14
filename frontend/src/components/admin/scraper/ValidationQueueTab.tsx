@@ -258,9 +258,23 @@ function CandidateReviewCard({ candidate, userId, onActionDone, onError }: Candi
           <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
             {candidate.groupName}
           </span>
-          <span className="text-xs text-zinc-500">
-            par {candidate.authorName || 'Facebook'} •{' '}
-            {new Date(candidate.datePosted).toLocaleString('fr-FR')}
+          <span className="inline-flex items-center gap-1.5 text-xs text-zinc-500">
+            {candidate.authorAvatarUrl && (
+              <img
+                src={candidate.authorAvatarUrl}
+                alt={candidate.authorName || 'Auteur'}
+                className="w-5 h-5 rounded-full object-cover border border-zinc-200 dark:border-zinc-700"
+              />
+            )}
+            <span>
+              par <strong className="text-zinc-700 dark:text-zinc-300">{candidate.authorName || 'Membre'}</strong>
+              {candidate.authorFbId ? (
+                <span className="ml-1 font-mono text-[10px] text-zinc-400">
+                  (ID: {candidate.authorFbId})
+                </span>
+              ) : null}{' '}
+              • {new Date(candidate.datePosted).toLocaleString('fr-FR')}
+            </span>
           </span>
           <span
             className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold inline-flex items-center gap-1 ${
@@ -275,14 +289,26 @@ function CandidateReviewCard({ candidate, userId, onActionDone, onError }: Candi
           </span>
         </div>
 
-        <a
-          href={candidate.postUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-700 dark:text-zinc-200 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 rounded-full hover:border-brand-green transition"
-        >
-          Voir post original <ExternalLink className="w-3.5 h-3.5" />
-        </a>
+        <div className="flex flex-wrap items-center gap-2">
+          {candidate.authorUrl && (
+            <a
+              href={candidate.authorUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900 px-3 py-1.5 rounded-full hover:opacity-90 transition"
+            >
+              Profil FB <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          )}
+          <a
+            href={candidate.postUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-700 dark:text-zinc-200 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 rounded-full hover:border-brand-green transition"
+          >
+            Voir post original <ExternalLink className="w-3.5 h-3.5" />
+          </a>
+        </div>
       </div>
 
       {/* Missing fields highlight banner */}
@@ -789,9 +815,10 @@ interface Props {
   userId: string;
   groups: FbGroupTarget[];
   onRefreshAll: () => Promise<void>;
+  onNotify?: (notice: { kind: 'ok' | 'err'; text: string }) => void;
 }
 
-export default function ValidationQueueTab({ userId, groups, onRefreshAll }: Props) {
+export default function ValidationQueueTab({ userId, groups, onRefreshAll, onNotify }: Props) {
   const [statusFilter, setStatusFilter] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
   const [typeFilter, setTypeFilter] = useState<'all' | 'rent' | 'sale'>('all');
   const [groupFilter, setGroupFilter] = useState('');
@@ -934,10 +961,14 @@ export default function ValidationQueueTab({ userId, groups, onRefreshAll }: Pro
               userId={userId}
               onActionDone={async (msg) => {
                 setFeedback({ kind: 'ok', text: msg });
+                onNotify?.({ kind: 'ok', text: msg });
                 await loadCandidates();
                 await onRefreshAll();
               }}
-              onError={(msg) => setFeedback({ kind: 'err', text: msg })}
+              onError={(msg) => {
+                setFeedback({ kind: 'err', text: msg });
+                onNotify?.({ kind: 'err', text: msg });
+              }}
             />
           ))}
         </div>

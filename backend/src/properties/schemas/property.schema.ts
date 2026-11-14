@@ -83,12 +83,41 @@ export class Property {
   })
   status: string;
 
+  /**
+   * Internal admin differentiator separating organic user-generated listings
+   * from scraped Facebook listings and manual admin entries (preserved even after claim).
+   */
+  @Prop({
+    enum: ['user', 'admin_manual', 'facebook_scraper'],
+    required: true,
+    default: 'user',
+  })
+  origin: 'user' | 'admin_manual' | 'facebook_scraper';
+
+  @Prop({
+    enum: ['not_applicable', 'unclaimed', 'claimed'],
+    required: true,
+    default: 'not_applicable',
+  })
+  claimStatus: 'not_applicable' | 'unclaimed' | 'claimed';
+
+  @Prop({ type: Types.ObjectId, ref: 'User', default: null })
+  claimedBy: Types.ObjectId | null;
+
+  @Prop({ type: Date, default: null })
+  claimedAt: Date | null;
+
   @Prop({
     type: {
+      fbUserId: { type: String, required: false },
       username: { type: String, required: false },
       avatar: { type: String, required: false },
       link: { type: String, required: false },
+      postId: { type: String, required: false },
+      postUrl: { type: String, required: false },
+      groupId: { type: String, required: false },
     },
+    required: false,
   })
   sources: Record<string, any>;
 }
@@ -96,4 +125,12 @@ export class Property {
 export const PropertySchema = SchemaFactory.createForClass(Property);
 PropertySchema.index({ city: 1 });
 PropertySchema.index({ type: 1 });
+PropertySchema.index({ type: 1, created_at: -1 });
+PropertySchema.index({ created_at: -1 });
 PropertySchema.index({ status: 1 });
+PropertySchema.index({ origin: 1, claimStatus: 1 });
+PropertySchema.index({ 'sources.postId': 1 });
+PropertySchema.index({ 'sources.fbUserId': 1 });
+PropertySchema.index({ phone1: 1 });
+PropertySchema.index({ phone2: 1 });
+PropertySchema.index({ phone3: 1 });

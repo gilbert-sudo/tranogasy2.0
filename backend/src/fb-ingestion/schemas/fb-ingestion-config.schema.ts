@@ -3,6 +3,36 @@ import { Document } from 'mongoose';
 
 export type FbIngestionConfigDocument = FbIngestionConfig & Document;
 
+export interface FbRunProgress {
+  current: number;
+  total: number;
+  percent?: number;
+  etaSeconds?: number | null;
+  unit?: 'percent' | 'posts';
+  detail?: string | null;
+}
+
+export interface FbBackfillJobState {
+  status: 'idle' | 'running' | 'completed' | 'cancelled' | 'error';
+  phase: string;
+  message: string | null;
+  current: number;
+  total: number;
+  percent: number;
+  etaSeconds: number | null;
+  currentItemTitle?: string | null;
+  scanned: number;
+  migratedScraped: number;
+  markedOrganic: number;
+  markedAdminManual: number;
+  avatarsPersisted: number;
+  errorCount: number;
+  lastError: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  updatedAt: string | null;
+}
+
 /**
  * Singleton runtime configuration and scheduler state for Facebook ingestion.
  */
@@ -51,10 +81,13 @@ export class FbIngestionConfig {
   lastPollMessage: string | null;
 
   @Prop({ type: Object, default: null })
-  lastRunProgress: { current: number; total: number } | null;
+  lastRunProgress: FbRunProgress | null;
 
   @Prop({ type: Object, default: null })
   lastRunSummary: Record<string, any> | null;
+
+  @Prop({ type: Object, default: null })
+  backfillJob: FbBackfillJobState | null;
 
   @Prop({ default: 0 })
   totalRuns: number;

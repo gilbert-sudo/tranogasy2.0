@@ -11,6 +11,8 @@ import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import * as bcrypt from 'bcrypt';
 import { Model, Types } from 'mongoose';
+import { normalizeMalagasyPhone } from '../common/phone.util';
+import { sanitizePropertyForViewer } from '../common/property-sanitizer.util';
 import { City, CityDocument } from '../cities/schemas/city.schema';
 import { Property, PropertyDocument } from '../properties/schemas/property.schema';
 import { PropertiesService } from '../properties/properties.service';
@@ -20,7 +22,9 @@ import { FbCityMatcherService } from './fb-city-matcher.service';
 import {
   BrightDataPostRecord,
   computeTextSimilarity,
+  extractFbUserId,
   extractGroupIdFromUrl,
+  normalizeFbProfileUrl,
   UnwrappedFbPost,
 } from './fb-dedup.util';
 import { unwrapBrightDataPost } from './fb-dedup.util';
@@ -36,8 +40,10 @@ import {
   FbIngestedCandidateDocument,
 } from './schemas/fb-ingested-candidate.schema';
 import {
+  FbBackfillJobState,
   FbIngestionConfig,
   FbIngestionConfigDocument,
+  FbRunProgress,
 } from './schemas/fb-ingestion-config.schema';
 import { FbSeenPost, FbSeenPostDocument } from './schemas/fb-seen-post.schema';
 
@@ -60,6 +66,10 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(FbIngestionService.name);
   private schedulerTimer: NodeJS.Timeout | null = null;
   private isRunInProgress = false;
+  private runAbortController: AbortController | null = null;
+  private isRunCancelRequested = false;
+  private isBackfillInProgress = false;
+  private isBackfillCancelRequested = false;
 
   constructor(
     @InjectModel(FbIngestionConfig.name)
@@ -86,12 +96,68 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
 
   async onModuleInit(): Promise<void> {
     await this.ensureBootstrapped();
+    await this.recoverOrphanedJobsOnStartup();
     // Check every 60s whether the dynamic poll interval has elapsed while isLive=true.
     this.schedulerTimer = setInterval(() => {
       void this.schedulerTick();
     }, 60_000);
     this.schedulerTimer.unref?.();
     this.logger.log('FbIngestion scheduler initialized (starts PAUSED unless isLive=true in DB)');
+  }
+
+  private async recoverOrphanedJobsIfNeeded(
+    cfg?: FbIngestionConfigDocument | Record<string, any> | null,
+  ): Promise<boolean> {
+    try {
+      const target = cfg || (await this.configModel.findOne({ key: 'default' }).lean());
+      if (!target) return false;
+
+      const patch: Record<string, any> = {};
+      const now = new Date();
+
+      if (
+        !this.isRunInProgress &&
+        (target.lastPollStatus === 'running' || target.lastPollStatus === 'importing_snapshot')
+      ) {
+        const msg =
+          'Opération interrompue (aucun processus actif sur le serveur). Vous pouvez relancer la collecte.';
+        patch.lastPollStatus = 'error';
+        patch.lastPollPhase = 'interrupted';
+        patch.lastPollMessage = msg;
+        patch.lastError = msg;
+        patch.lastPollFinishedAt = now;
+        patch.lastRunProgress = null;
+      }
+
+      if (!this.isBackfillInProgress && target.backfillJob?.status === 'running') {
+        const msg =
+          'Migration interrompue (aucun processus actif sur le serveur). Relancez la migration sans risque (opération idempotente).';
+        patch.backfillJob = {
+          ...target.backfillJob,
+          status: 'error',
+          phase: 'interrupted',
+          message: msg,
+          lastError: msg,
+          etaSeconds: null,
+          finishedAt: now.toISOString(),
+          updatedAt: now.toISOString(),
+        };
+      }
+
+      if (Object.keys(patch).length > 0) {
+        await this.configModel.updateOne({ key: 'default' }, { $set: patch });
+        this.logger.warn(`Recovered orphaned background state: ${Object.keys(patch).join(', ')}`);
+        return true;
+      }
+      return false;
+    } catch (err) {
+      this.logger.warn(`Failed orphaned job recovery check: ${(err as Error).message}`);
+      return false;
+    }
+  }
+
+  private async recoverOrphanedJobsOnStartup(): Promise<void> {
+    await this.recoverOrphanedJobsIfNeeded();
   }
 
   onModuleDestroy(): void {
@@ -295,9 +361,12 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
 
   async getConfig(): Promise<FbIngestionConfigDocument> {
     await this.ensureBootstrapped();
-    const cfg = await this.configModel.findOne({ key: 'default' });
+    let cfg = await this.configModel.findOne({ key: 'default' });
     if (!cfg) {
       throw new NotFoundException('Ingestion config missing');
+    }
+    if (await this.recoverOrphanedJobsIfNeeded(cfg)) {
+      cfg = (await this.configModel.findOne({ key: 'default' })) || cfg;
     }
     return cfg;
   }
@@ -483,6 +552,18 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
     return { config, targets };
   }
 
+  private estimateEtaSeconds(
+    startedAtMs: number,
+    completed: number,
+    total: number,
+  ): number | null {
+    if (completed < 1 || total <= 0 || completed >= total) return null;
+    const elapsedMs = Date.now() - startedAtMs;
+    if (elapsedMs < 200) return null;
+    const remaining = total - completed;
+    return Math.max(1, Math.round((elapsedMs / completed) * remaining / 1000));
+  }
+
   private async markRunStarted(
     status: 'running' | 'importing_snapshot',
     phase: string,
@@ -490,12 +571,34 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
     snapshotId?: string,
   ): Promise<void> {
     this.isRunInProgress = true;
+    this.isRunCancelRequested = false;
+    this.runAbortController = new AbortController();
+
+    const initialProgress: FbRunProgress =
+      status === 'importing_snapshot'
+        ? {
+            current: 0,
+            total: 100,
+            percent: 10,
+            etaSeconds: 15,
+            unit: 'percent',
+            detail: 'Téléchargement depuis Bright Data...',
+          }
+        : {
+            current: 0,
+            total: 100,
+            percent: 5,
+            etaSeconds: 90,
+            unit: 'percent',
+            detail: 'Envoi de la requête à Bright Data...',
+          };
+
     const setPatch: Record<string, any> = {
       lastPollStartedAt: new Date(),
       lastPollStatus: status,
       lastPollPhase: phase,
       lastPollMessage: message,
-      lastRunProgress: null,
+      lastRunProgress: initialProgress,
       lastError: null,
     };
     if (snapshotId) {
@@ -531,7 +634,27 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
+  private async finalizeRunCancelled(): Promise<void> {
+    await this.configModel.updateOne(
+      { key: 'default' },
+      {
+        $set: {
+          lastPollFinishedAt: new Date(),
+          lastPollStatus: 'idle',
+          lastPollPhase: 'cancelled',
+          lastPollMessage: 'Opération annulée par l’administrateur.',
+          lastRunProgress: null,
+          lastError: null,
+        },
+      },
+    );
+  }
+
   private async finalizeRunError(err: unknown): Promise<string> {
+    if (this.isRunCancelRequested || this.runAbortController?.signal.aborted) {
+      await this.finalizeRunCancelled();
+      return 'Opération annulée par l’administrateur.';
+    }
     const msg = (err as Error).message || 'Unknown error';
     await this.configModel.updateOne(
       { key: 'default' },
@@ -549,10 +672,18 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
     return msg;
   }
 
+  async cancelActiveRun(): Promise<FbIngestionConfigDocument> {
+    this.isRunCancelRequested = true;
+    this.runAbortController?.abort(new Error('Collecte annulée par l’administrateur.'));
+    await this.finalizeRunCancelled();
+    return this.getConfig();
+  }
+
   private async executeRunActiveGroups(
     config: FbIngestionConfigDocument,
     targets: any[],
   ): Promise<RunSummary> {
+    const signal = this.runAbortController?.signal;
     try {
       // Scale requested posts proportionally if admin changes pollIntervalMinutes (base = 30 min)
       const scaleFactor = Math.max(0.25, config.pollIntervalMinutes / 30);
@@ -565,26 +696,66 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
         posts_to_not_include: Array.isArray(t.recentPostIds) ? t.recentPostIds.slice(-30) : [],
       }));
 
-      const snapshotId = await this.brightDataService.triggerCollection(triggerPayload);
+      const snapshotId = await this.brightDataService.triggerCollection(triggerPayload, signal);
       await this.updatePollState({
         lastSnapshotId: snapshotId,
         lastPollPhase: 'waiting_brightdata',
         lastPollMessage: `Bright Data collecte ${targets.length} groupe(s) (0s)...`,
+        lastRunProgress: {
+          current: 0,
+          total: 600,
+          percent: 10,
+          etaSeconds: null,
+          unit: 'percent',
+          detail: `Snapshot ${snapshotId} — démarrage sur ${targets.length} groupe(s)`,
+        },
       });
 
-      await this.brightDataService.waitForSnapshot(snapshotId, 600000, async ({ elapsedSec, status }) => {
-        await this.updatePollState({
-          lastPollPhase: 'waiting_brightdata',
-          lastPollMessage: `Collecte Bright Data (${status}) : ${elapsedSec}s écoulées (${targets.length} groupe(s))...`,
-        });
-      });
+      await this.brightDataService.waitForSnapshot(
+        snapshotId,
+        600000,
+        async ({ elapsedSec, status, records }) => {
+          // Asymptotic progress curve during external Bright Data collection (10% -> 55%)
+          const percent =
+            status === 'ready'
+              ? 58
+              : Math.min(55, 10 + Math.round(45 * (1 - Math.exp(-elapsedSec / 65))));
+          const recordsNote =
+            typeof records === 'number' && records > 0 ? ` • ${records} post(s) détectés` : '';
+          await this.updatePollState({
+            lastPollPhase: 'waiting_brightdata',
+            lastPollMessage: `Collecte Bright Data (${status}) : ${elapsedSec}s écoulées (${targets.length} groupe(s))${recordsNote}...`,
+            lastRunProgress: {
+              current: elapsedSec,
+              total: 600,
+              percent,
+              etaSeconds: null,
+              unit: 'percent',
+              detail: `Bright Data: ${status}${recordsNote} (max 10 min)`,
+            },
+          });
+        },
+        signal,
+      );
 
       await this.updatePollState({
         lastPollPhase: 'downloading_snapshot',
         lastPollMessage: `Téléchargement du snapshot ${snapshotId}...`,
+        lastRunProgress: {
+          current: 58,
+          total: 100,
+          percent: 58,
+          etaSeconds: 20,
+          unit: 'percent',
+          detail: `Téléchargement JSON (${snapshotId})`,
+        },
       });
-      const records = await this.brightDataService.downloadSnapshot(snapshotId);
-      const summary = await this.processSnapshotRecords(snapshotId, records);
+      const records = await this.brightDataService.downloadSnapshot(snapshotId, signal);
+      const summary = await this.processSnapshotRecords(snapshotId, records, false);
+      if (this.isRunCancelRequested) {
+        await this.finalizeRunCancelled();
+        return summary;
+      }
       await this.finalizeRunSuccess(summary);
       return summary;
     } catch (err) {
@@ -592,17 +763,32 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       throw err;
     } finally {
       this.isRunInProgress = false;
+      this.runAbortController = null;
+      this.isRunCancelRequested = false;
     }
   }
 
   private async executeImportSnapshot(snapshotId: string): Promise<RunSummary> {
+    const signal = this.runAbortController?.signal;
     try {
       await this.updatePollState({
         lastPollPhase: 'downloading_snapshot',
         lastPollMessage: `Téléchargement du snapshot ${snapshotId}...`,
+        lastRunProgress: {
+          current: 10,
+          total: 100,
+          percent: 10,
+          etaSeconds: 15,
+          unit: 'percent',
+          detail: `Téléchargement JSON (${snapshotId})`,
+        },
       });
-      const records = await this.brightDataService.downloadSnapshot(snapshotId);
-      const summary = await this.processSnapshotRecords(snapshotId, records);
+      const records = await this.brightDataService.downloadSnapshot(snapshotId, signal);
+      const summary = await this.processSnapshotRecords(snapshotId, records, true);
+      if (this.isRunCancelRequested) {
+        await this.finalizeRunCancelled();
+        return summary;
+      }
       await this.finalizeRunSuccess(summary);
       return summary;
     } catch (err) {
@@ -610,6 +796,8 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       throw err;
     } finally {
       this.isRunInProgress = false;
+      this.runAbortController = null;
+      this.isRunCancelRequested = false;
     }
   }
 
@@ -743,10 +931,13 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       post.groupName,
     );
 
-    const gcsUpload = await this.gcsService.reuploadFbImages(
-      post.photoUrls,
-      post.canonicalPostId,
-    );
+    const [gcsUpload, gcsAvatarUrl] = await Promise.all([
+      this.gcsService.reuploadFbImages(post.photoUrls, post.canonicalPostId),
+      this.gcsService.reuploadFbAvatar(
+        post.authorAvatar,
+        post.authorFbId || post.canonicalPostId,
+      ),
+    ]);
 
     let aiNotes = parsedResult.aiNotes || '';
     if (gcsUpload.uploadedUrls.length === 0 && gcsUpload.failedCount > 0) {
@@ -773,7 +964,9 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
         canonicalPostId: post.canonicalPostId,
         postUrl: post.postUrl,
         authorName: post.authorName,
-        authorAvatarUrl: post.authorAvatar,
+        authorFbId: post.authorFbId || null,
+        authorUrl: post.authorUrl || null,
+        authorAvatarUrl: gcsAvatarUrl || post.authorAvatar || null,
         datePosted: post.datePosted,
         rawContent: post.content,
         gcsImages: gcsUpload.uploadedUrls,
@@ -823,6 +1016,7 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
   async processSnapshotRecords(
     snapshotId: string,
     records: BrightDataPostRecord[],
+    isSnapshotImport = false,
   ): Promise<RunSummary> {
     const config = await this.getConfig();
     const summary: RunSummary = {
@@ -856,14 +1050,46 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
 
     const totalPostsToScan = summary.unwrappedCount;
     let processedCount = 0;
+    const filterStartedAt = Date.now();
+    let lastProgressWriteAt = 0;
 
-    await this.updatePollState({
-      lastPollPhase: 'filtering_ai_gcs',
-      lastPollMessage: `Filtrage & analyse Gemini/GCS : 0 / ${totalPostsToScan} posts...`,
-      lastRunProgress: { current: 0, total: totalPostsToScan },
-    });
+    const computeFilterPercent = (done: number) => {
+      const ratio = totalPostsToScan > 0 ? done / totalPostsToScan : 1;
+      const base = isSnapshotImport ? 15 : 60;
+      const span = isSnapshotImport ? 85 : 40;
+      return Math.min(100, Math.round(base + ratio * span));
+    };
+
+    const reportFilterProgress = async (force = false, detailOverride?: string) => {
+      const now = Date.now();
+      if (!force && now - lastProgressWriteAt < 350 && processedCount < totalPostsToScan) {
+        return;
+      }
+      lastProgressWriteAt = now;
+      await this.updatePollState({
+        lastPollPhase: 'filtering_ai_gcs',
+        lastPollMessage:
+          totalPostsToScan === 0
+            ? 'Aucun post exploitable dans ce snapshot.'
+            : `Filtrage IA & Images GCS : ${processedCount} / ${totalPostsToScan} posts (+${summary.candidatesCreated} annonces)...`,
+        lastRunProgress: {
+          current: processedCount,
+          total: totalPostsToScan,
+          percent: computeFilterPercent(processedCount),
+          etaSeconds: this.estimateEtaSeconds(filterStartedAt, processedCount, totalPostsToScan),
+          unit: 'posts',
+          detail:
+            detailOverride ||
+            `+${summary.candidatesCreated} retenu(s) • ${summary.duplicateSkipped} doublon(s)`,
+        },
+      });
+    };
+
+    await reportFilterProgress(true, 'Préparation des publications...');
 
     for (const [groupId, posts] of grouped.entries()) {
+      if (this.isRunCancelRequested) break;
+
       // Ensure target group exists (auto-register if discovered via an imported snapshot).
       let groupDoc = await this.groupModel.findOne({ groupId });
       if (!groupDoc) {
@@ -882,12 +1108,14 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
 
       // Sequential pre-filter & deduplication ensures deterministic cross-group overlap credit.
       for (const post of posts) {
+        if (this.isRunCancelRequested) break;
         newRecentIds.add(post.outerPostId);
 
         if (post.isVideoOnly || post.photoUrls.length === 0) {
           summary.videoOnlySkipped++;
           groupDoc.videoOnlySkipped = (groupDoc.videoOnlySkipped || 0) + 1;
           processedCount++;
+          await reportFilterProgress(false, `Pré-filtrage (${groupDoc.name})...`);
           continue;
         }
 
@@ -915,6 +1143,7 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
             }
           }
           processedCount++;
+          await reportFilterProgress(false, `Déduplication (${groupDoc.name})...`);
           continue;
         }
 
@@ -939,34 +1168,27 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
           summary.duplicateSkipped++;
           groupDoc.duplicateSkipped = (groupDoc.duplicateSkipped || 0) + 1;
           processedCount++;
+          await reportFilterProgress(false, `Vérification base (${groupDoc.name})...`);
           continue;
         }
 
         aiEligiblePosts.push(post);
       }
 
-      if (aiEligiblePosts.length > 0) {
+      if (aiEligiblePosts.length > 0 && !this.isRunCancelRequested) {
         let nextIdx = 0;
         const workerCount = Math.min(2, aiEligiblePosts.length);
         const workers = Array.from({ length: workerCount }, async () => {
-          while (nextIdx < aiEligiblePosts.length) {
+          while (nextIdx < aiEligiblePosts.length && !this.isRunCancelRequested) {
             const post = aiEligiblePosts[nextIdx++];
             await this.processSingleEligiblePost(post, groupDoc!, config, summary);
             processedCount++;
-            await this.updatePollState({
-              lastPollPhase: 'filtering_ai_gcs',
-              lastPollMessage: `Analyse Gemini & GCS : ${processedCount} / ${totalPostsToScan} posts (+${summary.candidatesCreated} annonces)...`,
-              lastRunProgress: { current: processedCount, total: totalPostsToScan },
-            });
+            await reportFilterProgress(true, `Analyse Gemini & GCS : ${post.groupName}`);
           }
         });
         await Promise.all(workers);
       } else {
-        await this.updatePollState({
-          lastPollPhase: 'filtering_ai_gcs',
-          lastPollMessage: `Filtrage doublons/vidéos : ${processedCount} / ${totalPostsToScan} posts...`,
-          lastRunProgress: { current: processedCount, total: totalPostsToScan },
-        });
+        await reportFilterProgress(true);
       }
 
       // Compute measured post frequency & detect under-sized scrapeLimitPer30Min windows
@@ -1045,8 +1267,17 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async existsInLiveProperties(post: UnwrappedFbPost): Promise<boolean> {
+    const escapedPostId = post.canonicalPostId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const bySource = await this.propertyModel
-      .findOne({ 'sources.link': { $regex: post.canonicalPostId } }, { _id: 1 })
+      .findOne(
+        {
+          $or: [
+            { 'sources.postId': post.canonicalPostId },
+            { 'sources.link': { $regex: escapedPostId } },
+          ],
+        },
+        { _id: 1 },
+      )
       .lean();
     if (bySource) return true;
 
@@ -1175,7 +1406,12 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
 
     for (const key of scalarFields) {
       if (key in patch) {
-        extracted[key] = patch[key];
+        if (key === 'phone1' || key === 'phone2' || key === 'phone3') {
+          const val = patch[key] ? String(patch[key]).trim() : '';
+          extracted[key] = val ? normalizeMalagasyPhone(val) || val : null;
+        } else {
+          extracted[key] = patch[key];
+        }
       }
     }
 
@@ -1275,17 +1511,49 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       );
     }
 
-    // Resolve an admin owner so public UI displays candidate.sources cleanly.
-    let ownerId = adminUserId;
-    const ownerUser = await this.userModel.findById(adminUserId, { role: 1 }).lean();
-    if (!ownerUser || (ownerUser.role !== 'admin' && ownerUser.role !== 'superadmin')) {
-      const fallbackAdmin = await this.userModel
-        .findOne({ role: { $in: ['admin', 'superadmin'] } }, { _id: 1 })
-        .lean();
-      if (fallbackAdmin) {
-        ownerId = String(fallbackAdmin._id);
+    const normalizedAuthorName =
+      candidate.authorName &&
+      candidate.authorName.trim() &&
+      candidate.authorName.trim().toLowerCase() !== 'facebook' &&
+      candidate.authorName.trim().toLowerCase() !== 'facebook user'
+        ? candidate.authorName.trim()
+        : 'Membre TranoGasy';
+
+    const fbProfileUrl = normalizeFbProfileUrl(candidate.authorUrl);
+    const fbUserId =
+      candidate.authorFbId || extractFbUserId([candidate.authorUrl]) || null;
+
+    // Ensure publisher avatar is persisted in GCS (re-download if candidate only holds a temp FB CDN URL)
+    let permanentAvatarUrl: string | null = null;
+    if (candidate.authorAvatarUrl) {
+      if (this.gcsService.isPermanentGcsUrl(candidate.authorAvatarUrl)) {
+        permanentAvatarUrl = candidate.authorAvatarUrl;
+      } else {
+        permanentAvatarUrl = await this.gcsService.reuploadFbAvatar(
+          candidate.authorAvatarUrl,
+          fbUserId || candidate.canonicalPostId,
+        );
       }
     }
+
+    const locationLabel = [cityDoc.commune, cityDoc.district]
+      .filter(Boolean)
+      .join(', ') || 'Antananarivo, Madagascar';
+
+    // Create/reuse dedicated shadow User profile for this Facebook publisher
+    const shadowOwner = await this.upsertShadowFbPublisher({
+      fbUserId,
+      fbProfileUrl,
+      username: normalizedAuthorName,
+      avatar: permanentAvatarUrl,
+      location: locationLabel,
+    });
+
+    const normalizePhone = (raw?: any) => {
+      if (!raw) return null;
+      const str = String(raw).trim();
+      return normalizeMalagasyPhone(str) || str || null;
+    };
 
     const propertyPayload = {
       title: String(ex.title || 'Propriété').trim(),
@@ -1301,17 +1569,25 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       bathrooms: Math.max(0, Number(ex.bathrooms ?? 0)),
       area: Math.max(0, Number(ex.area ?? 0)),
       floor: ex.floor || null,
-      phone1: ex.phone1 || null,
-      phone2: ex.phone2 || null,
-      phone3: ex.phone3 || null,
+      phone1: normalizePhone(ex.phone1),
+      phone2: normalizePhone(ex.phone2),
+      phone3: normalizePhone(ex.phone3),
       images: candidate.gcsImages || [],
-      owner: ownerId,
+      owner: String(shadowOwner._id),
       coords: cityDoc.coords || { lat: -18.8792, lng: 47.5079 },
       status: 'available',
+      origin: 'facebook_scraper',
+      claimStatus: 'unclaimed',
+      claimedBy: null,
+      claimedAt: null,
       sources: {
-        username: candidate.authorName || 'Facebook',
-        avatar: candidate.authorAvatarUrl || undefined,
-        link: candidate.postUrl,
+        fbUserId: fbUserId || undefined,
+        username: normalizedAuthorName,
+        avatar: permanentAvatarUrl || undefined,
+        link: fbProfileUrl || undefined,
+        postId: candidate.canonicalPostId,
+        postUrl: candidate.postUrl,
+        groupId: candidate.groupId,
       },
       features: ex.features || {},
     };
@@ -1320,6 +1596,9 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
 
     candidate.status = 'approved';
     candidate.publishedPropertyId = String(createdProperty._id);
+    if (permanentAvatarUrl) {
+      candidate.authorAvatarUrl = permanentAvatarUrl;
+    }
     candidate.reviewedAt = new Date();
     await candidate.save();
 
@@ -1332,6 +1611,612 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       candidate,
       property: createdProperty,
     };
+  }
+
+  /**
+   * Upserts a clean native-looking Shadow User document for a scraped Facebook publisher.
+   * Never matches by display name alone (prevents cross-contaminating namesakes) and
+   * intentionally leaves `phone` unset until the real person verifies their phone via OTP.
+   */
+  private async upsertShadowFbPublisher(params: {
+    fbUserId?: string | null;
+    fbProfileUrl?: string | null;
+    username: string;
+    avatar?: string | null;
+    location?: string | null;
+  }): Promise<UserDocument> {
+    let existing: UserDocument | null = null;
+
+    if (params.fbUserId) {
+      existing = await this.userModel.findOne({
+        isShadowAccount: true,
+        mergedIntoUserId: null,
+        fbUserId: params.fbUserId,
+      });
+    }
+
+    if (!existing && params.fbProfileUrl) {
+      existing = await this.userModel.findOne({
+        isShadowAccount: true,
+        mergedIntoUserId: null,
+        fbProfileUrl: params.fbProfileUrl,
+      });
+    }
+
+    if (existing) {
+      let dirty = false;
+      if (params.username && params.username !== 'Membre TranoGasy' && existing.username === 'Membre TranoGasy') {
+        existing.username = params.username;
+        dirty = true;
+      }
+      if (params.avatar && (!existing.avatar || !this.gcsService.isPermanentGcsUrl(existing.avatar))) {
+        existing.avatar = params.avatar;
+        dirty = true;
+      }
+      if (params.fbUserId && !existing.fbUserId) {
+        existing.fbUserId = params.fbUserId;
+        dirty = true;
+      }
+      if (params.fbProfileUrl && !existing.fbProfileUrl) {
+        existing.fbProfileUrl = params.fbProfileUrl;
+        dirty = true;
+      }
+      existing.lastConnectedAt = new Date();
+      dirty = true;
+      if (dirty) {
+        await existing.save();
+      }
+      return existing;
+    }
+
+    const created = new this.userModel({
+      username: params.username || 'Membre TranoGasy',
+      avatar: params.avatar || undefined,
+      bio: null,
+      location: params.location || 'Antananarivo, Madagascar',
+      role: 'user',
+      origin: 'facebook_scraper',
+      isShadowAccount: true,
+      fbUserId: params.fbUserId || null,
+      fbProfileUrl: params.fbProfileUrl || null,
+      mergedIntoUserId: null,
+      created_at: new Date(),
+      lastConnectedAt: new Date(),
+    });
+
+    return created.save();
+  }
+
+  /**
+   * Lists live properties with full Admin audit fields (`origin`, `claimStatus`, `sources.*`)
+   * so admins can distinguish organic user listings from scraped Facebook posts.
+   */
+  async listAdminProperties(params: {
+    origin?: string;
+    claimStatus?: string;
+    q?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const page = Math.max(1, Number(params.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(params.limit) || 25));
+    const skip = (page - 1) * limit;
+
+    const filter: Record<string, any> = {};
+    if (params.origin && params.origin !== 'all') {
+      if (params.origin === 'facebook_scraper') {
+        filter.$or = [
+          { origin: 'facebook_scraper' },
+          { 'sources.username': { $exists: true, $ne: '' } },
+        ];
+      } else {
+        filter.origin = params.origin;
+      }
+    }
+    if (params.claimStatus && params.claimStatus !== 'all') {
+      filter.claimStatus = params.claimStatus;
+    }
+    if (params.q && params.q.trim()) {
+      const escaped = params.q.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const rx = new RegExp(escaped, 'i');
+      filter.$and = [
+        ...(filter.$and || []),
+        {
+          $or: [
+            { title: rx },
+            { propertyNumber: rx },
+            { phone1: rx },
+            { phone2: rx },
+            { phone3: rx },
+            { 'sources.username': rx },
+            { 'sources.fbUserId': rx },
+          ],
+        },
+      ];
+    }
+
+    const [
+      items,
+      filteredTotal,
+      totalCount,
+      facebookScraperCount,
+      userGeneratedCount,
+      adminManualCount,
+      unclaimedCount,
+      claimedCount,
+    ] = await Promise.all([
+      this.propertyModel
+        .find(filter)
+        .populate('city', 'fokontany commune district')
+        .populate(
+          'owner',
+          '_id username avatar role phone isShadowAccount origin fbUserId fbProfileUrl',
+        )
+        .populate('claimedBy', '_id username phone avatar')
+        .sort({ created_at: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      this.propertyModel.countDocuments(filter),
+      this.propertyModel.countDocuments(),
+      this.propertyModel.countDocuments({
+        $or: [
+          { origin: 'facebook_scraper' },
+          { origin: { $exists: false }, 'sources.username': { $exists: true, $ne: '' } },
+        ],
+      }),
+      this.propertyModel.countDocuments({ origin: 'user' }),
+      this.propertyModel.countDocuments({ origin: 'admin_manual' }),
+      this.propertyModel.countDocuments({ origin: 'facebook_scraper', claimStatus: 'unclaimed' }),
+      this.propertyModel.countDocuments({ origin: 'facebook_scraper', claimStatus: 'claimed' }),
+    ]);
+
+    return {
+      items: items.map((p) => sanitizePropertyForViewer(p, true)),
+      total: filteredTotal,
+      page,
+      totalPages: Math.ceil(filteredTotal / limit) || 1,
+      counts: {
+        total: totalCount,
+        facebookScraper: facebookScraperCount,
+        userGenerated: userGeneratedCount,
+        adminManual: adminManualCount,
+        unclaimed: unclaimedCount,
+        claimed: claimedCount,
+      },
+    };
+  }
+
+  private async updateBackfillJobState(job: FbBackfillJobState): Promise<void> {
+    try {
+      await this.configModel.updateOne(
+        { key: 'default' },
+        { $set: { backfillJob: job } },
+      );
+    } catch (err) {
+      this.logger.warn(`Failed to update backfill job state: ${(err as Error).message}`);
+    }
+  }
+
+  async getBackfillStatus(): Promise<FbBackfillJobState> {
+    const cfg = await this.getConfig();
+    const existing = cfg.backfillJob;
+    if (!existing) {
+      return {
+        status: 'idle',
+        phase: 'idle',
+        message: null,
+        current: 0,
+        total: 0,
+        percent: 0,
+        etaSeconds: null,
+        currentItemTitle: null,
+        scanned: 0,
+        migratedScraped: 0,
+        markedOrganic: 0,
+        markedAdminManual: 0,
+        avatarsPersisted: 0,
+        errorCount: 0,
+        lastError: null,
+        startedAt: null,
+        finishedAt: null,
+        updatedAt: null,
+      };
+    }
+
+    if (existing.status === 'running' && !this.isBackfillInProgress) {
+      const recovered: FbBackfillJobState = {
+        ...existing,
+        status: 'error',
+        phase: 'interrupted',
+        message:
+          'Migration interrompue (aucun processus actif sur le serveur). Vous pouvez la relancer sans risque.',
+        lastError:
+          'Le serveur a redémarré ou interrompu la migration précédente.',
+        etaSeconds: null,
+        finishedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      await this.updateBackfillJobState(recovered);
+      return recovered;
+    }
+
+    return existing;
+  }
+
+  async cancelBackfill(): Promise<FbBackfillJobState> {
+    this.isBackfillCancelRequested = true;
+    const cfg = await this.configModel.findOne({ key: 'default' }).lean();
+    const current = cfg?.backfillJob || (await this.getBackfillStatus());
+    if (!this.isBackfillInProgress && current.status === 'running') {
+      const stopped: FbBackfillJobState = {
+        ...current,
+        status: 'cancelled',
+        phase: 'cancelled',
+        message: 'Migration annulée par l’administrateur.',
+        etaSeconds: null,
+        finishedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      await this.updateBackfillJobState(stopped);
+      return stopped;
+    }
+    const pendingStop: FbBackfillJobState = {
+      ...current,
+      message: 'Annulation demandée — arrêt après l’annonce en cours...',
+      updatedAt: new Date().toISOString(),
+    };
+    if (this.isBackfillInProgress) {
+      await this.updateBackfillJobState(pendingStop);
+    }
+    return pendingStop;
+  }
+
+  async startBackfillInBackground(): Promise<{
+    started: boolean;
+    alreadyRunning?: boolean;
+    job: FbBackfillJobState;
+  }> {
+    if (this.isBackfillInProgress) {
+      const current = await this.getBackfillStatus();
+      return { started: false, alreadyRunning: true, job: current };
+    }
+
+    this.isBackfillInProgress = true;
+    this.isBackfillCancelRequested = false;
+
+    const nowIso = new Date().toISOString();
+    const initialJob: FbBackfillJobState = {
+      status: 'running',
+      phase: 'loading_properties',
+      message: 'Chargement des annonces et préparation des Shadow Users...',
+      current: 0,
+      total: 0,
+      percent: 2,
+      etaSeconds: null,
+      currentItemTitle: null,
+      scanned: 0,
+      migratedScraped: 0,
+      markedOrganic: 0,
+      markedAdminManual: 0,
+      avatarsPersisted: 0,
+      errorCount: 0,
+      lastError: null,
+      startedAt: nowIso,
+      finishedAt: null,
+      updatedAt: nowIso,
+    };
+    await this.updateBackfillJobState(initialJob);
+
+    void this.executeBackfillJob(nowIso).catch((err) => {
+      this.logger.error(`Background backfill failed: ${(err as Error).message}`);
+    });
+
+    return {
+      started: true,
+      job: initialJob,
+    };
+  }
+
+  /**
+   * Idempotent admin backfill migrating already-published FB-scraped properties
+   * into the explicit `origin`/`claimStatus`/Shadow-User schema with GCS avatars.
+   */
+  async backfillLegacyScrapedProperties() {
+    if (this.isBackfillInProgress) {
+      throw new BadRequestException('Une migration Shadow Users est déjà en cours.');
+    }
+    this.isBackfillInProgress = true;
+    this.isBackfillCancelRequested = false;
+    const nowIso = new Date().toISOString();
+    await this.updateBackfillJobState({
+      status: 'running',
+      phase: 'loading_properties',
+      message: 'Chargement des annonces et préparation des Shadow Users...',
+      current: 0,
+      total: 0,
+      percent: 2,
+      etaSeconds: null,
+      currentItemTitle: null,
+      scanned: 0,
+      migratedScraped: 0,
+      markedOrganic: 0,
+      markedAdminManual: 0,
+      avatarsPersisted: 0,
+      errorCount: 0,
+      lastError: null,
+      startedAt: nowIso,
+      finishedAt: null,
+      updatedAt: nowIso,
+    });
+    const finalJob = await this.executeBackfillJob(nowIso);
+    return {
+      scanned: finalJob.scanned,
+      migratedScraped: finalJob.migratedScraped,
+      markedOrganic: finalJob.markedOrganic,
+      markedAdminManual: finalJob.markedAdminManual,
+      avatarsPersisted: finalJob.avatarsPersisted,
+    };
+  }
+
+  private async executeBackfillJob(startedAtIso: string): Promise<FbBackfillJobState> {
+    const startedAtMs = Date.now();
+    let jobState: FbBackfillJobState = {
+      status: 'running',
+      phase: 'loading_properties',
+      message: 'Chargement des annonces et candidats approuvés...',
+      current: 0,
+      total: 0,
+      percent: 5,
+      etaSeconds: null,
+      currentItemTitle: null,
+      scanned: 0,
+      migratedScraped: 0,
+      markedOrganic: 0,
+      markedAdminManual: 0,
+      avatarsPersisted: 0,
+      errorCount: 0,
+      lastError: null,
+      startedAt: startedAtIso,
+      finishedAt: null,
+      updatedAt: startedAtIso,
+    };
+
+    try {
+      const candidatesMap = new Map<string, FbIngestedCandidate>();
+      const approvedCandidates = await this.candidateModel
+        .find({ publishedPropertyId: { $ne: null } })
+        .lean();
+      for (const c of approvedCandidates) {
+        if (c.publishedPropertyId) {
+          candidatesMap.set(String(c.publishedPropertyId), c);
+        }
+      }
+
+      const allProps = await this.propertyModel
+        .find({})
+        .populate('city', 'commune district')
+        .populate('owner', '_id role username isShadowAccount')
+        .lean();
+
+      const total = allProps.length;
+      const processingStartedMs = Date.now();
+      let lastDbWriteMs = 0;
+
+      jobState = {
+        ...jobState,
+        phase: 'migrating_properties',
+        total,
+        scanned: total,
+        percent: total === 0 ? 100 : 8,
+        message:
+          total === 0
+            ? 'Aucune annonce trouvée dans la base.'
+            : `Analyse de ${total} annonce(s)...`,
+        updatedAt: new Date().toISOString(),
+      };
+      await this.updateBackfillJobState(jobState);
+
+      for (let idx = 0; idx < allProps.length; idx++) {
+        if (this.isBackfillCancelRequested) {
+          const stoppedAt = new Date().toISOString();
+          jobState = {
+            ...jobState,
+            status: 'cancelled',
+            phase: 'cancelled',
+            current: idx,
+            total,
+            percent: total > 0 ? Math.round((idx / total) * 100) : 0,
+            etaSeconds: null,
+            currentItemTitle: null,
+            message: `Migration annulée (${idx} / ${total} annonces traitées). Vous pouvez reprendre à tout moment.`,
+            finishedAt: stoppedAt,
+            updatedAt: stoppedAt,
+          };
+          await this.updateBackfillJobState(jobState);
+          return jobState;
+        }
+
+        const prop = allProps[idx] as any;
+        const propId = String(prop._id);
+        const propTitle = String(prop.title || prop.propertyNumber || propId).slice(0, 70);
+
+        try {
+          const linkedCandidate = candidatesMap.get(propId);
+          const ownerObj = typeof prop.owner === 'object' ? prop.owner : null;
+          const isFacebookOrigin =
+            prop.origin === 'facebook_scraper' ||
+            Boolean(linkedCandidate) ||
+            Boolean(prop.sources?.username) ||
+            Boolean(prop.sources?.link && String(prop.sources.link).includes('facebook.com'));
+
+          const patch: Record<string, any> = {};
+
+          // Normalize phones everywhere for clean claim matching
+          for (const pk of ['phone1', 'phone2', 'phone3'] as const) {
+            if (prop[pk]) {
+              const norm = normalizeMalagasyPhone(String(prop[pk]));
+              if (norm && norm !== prop[pk]) {
+                patch[pk] = norm;
+              }
+            }
+          }
+
+          if (isFacebookOrigin) {
+            patch.origin = 'facebook_scraper';
+            if (!prop.claimStatus || prop.claimStatus === 'not_applicable') {
+              patch.claimStatus = prop.claimedBy ? 'claimed' : 'unclaimed';
+            }
+
+            const existingSources = { ...(prop.sources || {}) };
+            const rawLink = String(existingSources.link || '');
+            const isPostPermalink = /\/posts\/|permalink\.php|story_fbid/i.test(rawLink);
+
+            const rawProfileUrl = linkedCandidate?.authorUrl || (!isPostPermalink ? rawLink : '');
+            const fbProfileUrl = normalizeFbProfileUrl(rawProfileUrl);
+            const fbUserId =
+              existingSources.fbUserId ||
+              linkedCandidate?.authorFbId ||
+              extractFbUserId([fbProfileUrl, rawLink]) ||
+              null;
+
+            const postUrl =
+              existingSources.postUrl ||
+              linkedCandidate?.postUrl ||
+              (isPostPermalink ? rawLink : null);
+
+            let postId = existingSources.postId || linkedCandidate?.canonicalPostId || null;
+            if (!postId && postUrl) {
+              const m = postUrl.match(/\/posts\/([^/?#]+)/i);
+              if (m?.[1]) postId = m[1];
+            }
+
+            const displayAuthorName =
+              (existingSources.username &&
+                !['facebook', 'facebook user'].includes(existingSources.username.trim().toLowerCase())
+                ? existingSources.username.trim()
+                : linkedCandidate?.authorName?.trim()) || 'Membre TranoGasy';
+
+            let avatarUrl = existingSources.avatar || linkedCandidate?.authorAvatarUrl || null;
+            if (avatarUrl && !this.gcsService.isPermanentGcsUrl(avatarUrl)) {
+              const uploaded = await this.gcsService.reuploadFbAvatar(
+                avatarUrl,
+                fbUserId || postId || propId,
+              );
+              if (uploaded) {
+                avatarUrl = uploaded;
+                jobState.avatarsPersisted++;
+              } else {
+                avatarUrl = null;
+              }
+            }
+
+            patch.sources = {
+              ...existingSources,
+              fbUserId: fbUserId || undefined,
+              username: displayAuthorName,
+              avatar: avatarUrl || undefined,
+              link: fbProfileUrl || undefined,
+              postId: postId || undefined,
+              postUrl: postUrl || undefined,
+              groupId: existingSources.groupId || linkedCandidate?.groupId || undefined,
+            };
+
+            // Move legacy admin-owned unclaimed listings onto dedicated Shadow User profiles
+            if (
+              patch.claimStatus !== 'claimed' &&
+              (!ownerObj || ownerObj.role === 'admin' || ownerObj.role === 'superadmin')
+            ) {
+              const loc =
+                [prop.city?.commune, prop.city?.district].filter(Boolean).join(', ') ||
+                'Antananarivo, Madagascar';
+              const shadowOwner = await this.upsertShadowFbPublisher({
+                fbUserId,
+                fbProfileUrl,
+                username: displayAuthorName,
+                avatar: avatarUrl,
+                location: loc,
+              });
+              patch.owner = shadowOwner._id;
+            }
+
+            await this.propertyModel.updateOne({ _id: prop._id }, { $set: patch });
+            jobState.migratedScraped++;
+          } else if (!prop.origin) {
+            const isAdminManual =
+              ownerObj?.role === 'admin' || ownerObj?.role === 'superadmin';
+            patch.origin = isAdminManual ? 'admin_manual' : 'user';
+            patch.claimStatus = 'not_applicable';
+            await this.propertyModel.updateOne({ _id: prop._id }, { $set: patch });
+            if (isAdminManual) jobState.markedAdminManual++;
+            else jobState.markedOrganic++;
+          } else if (Object.keys(patch).length > 0) {
+            await this.propertyModel.updateOne({ _id: prop._id }, { $set: patch });
+          }
+        } catch (err) {
+          jobState.errorCount++;
+          jobState.lastError = `Annonce "${propTitle}": ${(err as Error).message}`;
+          this.logger.warn(`Backfill item failed (${propId}): ${(err as Error).message}`);
+        }
+
+        const processed = idx + 1;
+        const nowMs = Date.now();
+        if (nowMs - lastDbWriteMs >= 350 || processed === total || processed === 1) {
+          lastDbWriteMs = nowMs;
+          const etaSeconds =
+            processed >= 2 ? this.estimateEtaSeconds(processingStartedMs, processed, total) : null;
+          jobState = {
+            ...jobState,
+            current: processed,
+            total,
+            percent: total > 0 ? Math.min(99, Math.round((processed / total) * 100)) : 100,
+            etaSeconds,
+            currentItemTitle: propTitle,
+            message: `Migration : ${processed} / ${total} annonces (${jobState.migratedScraped} FB migrées, ${jobState.avatarsPersisted} avatars GCS)...`,
+            updatedAt: new Date().toISOString(),
+          };
+          await this.updateBackfillJobState(jobState);
+        }
+      }
+
+      const finishedAt = new Date().toISOString();
+      const errSuffix = jobState.errorCount > 0 ? `, ${jobState.errorCount} erreur(s)` : '';
+      const durationSec = Math.max(1, Math.round((Date.now() - startedAtMs) / 1000));
+      jobState = {
+        ...jobState,
+        status: 'completed',
+        phase: 'completed',
+        current: total,
+        total,
+        percent: 100,
+        etaSeconds: 0,
+        currentItemTitle: null,
+        message: `Migration terminée en ${durationSec}s (${total} analysées) : ${jobState.migratedScraped} annonces FB passées en Shadow User (${jobState.avatarsPersisted} avatars uploadés sur GCS), ${jobState.markedAdminManual} manuelles admin, ${jobState.markedOrganic} utilisateurs réels${errSuffix}.`,
+        finishedAt,
+        updatedAt: finishedAt,
+      };
+      await this.updateBackfillJobState(jobState);
+      return jobState;
+    } catch (err) {
+      const finishedAt = new Date().toISOString();
+      const errMsg = (err as Error).message || 'Erreur inconnue durant la migration';
+      jobState = {
+        ...jobState,
+        status: 'error',
+        phase: 'error',
+        etaSeconds: null,
+        currentItemTitle: null,
+        lastError: errMsg,
+        message: `Échec de la migration : ${errMsg}`,
+        finishedAt,
+        updatedAt: finishedAt,
+      };
+      await this.updateBackfillJobState(jobState);
+      throw err;
+    } finally {
+      this.isBackfillInProgress = false;
+      this.isBackfillCancelRequested = false;
+    }
   }
 
   async rejectCandidate(id: string) {

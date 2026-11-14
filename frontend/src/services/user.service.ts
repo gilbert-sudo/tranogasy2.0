@@ -13,8 +13,6 @@ export interface PublicProfileUser {
   location?: string | null;
   created_at?: string;
   lastConnectedAt?: string;
-  isCuratedSource?: boolean;
-  sourceLink?: string | null;
 }
 
 export interface PublicProfileStats {
@@ -53,17 +51,16 @@ export function resolveProfileHref(
 
   const ownerObj = typeof owner === 'object' && owner !== null ? owner : null;
 
-  // If admin-curated listing with a distinct source username
-  if (ownerObj?.role === 'admin' && sources?.username) {
-    const cleanSource = sources.username.trim();
-    if (ownerObj._id) {
-      return `/profile/${encodeURIComponent(ownerObj._id)}?source=${encodeURIComponent(cleanSource)}`;
-    }
-    return `/profile/${encodeURIComponent(cleanSource)}`;
-  }
-
   if (ownerObj?._id) {
     return `/profile/${encodeURIComponent(ownerObj._id)}`;
+  }
+
+  if (ownerObj?.username && ownerObj.role !== 'admin') {
+    return `/profile/${encodeURIComponent(ownerObj.username.trim())}`;
+  }
+
+  if (sources?.username) {
+    return `/profile/${encodeURIComponent(sources.username.trim().replace(/^@/, ''))}`;
   }
 
   if (ownerObj?.username) {

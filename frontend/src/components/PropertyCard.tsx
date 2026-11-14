@@ -3,6 +3,7 @@
 import { useState, useEffect, memo } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { BedDouble, Bath, Maximize, MapPin, Heart, Check, ChevronLeft, ChevronRight } from 'lucide-react';
 import {
   FaCar, FaMotorcycle, FaWifi, FaParking, FaShieldAlt, FaSwimmingPool, FaHotTub, FaBed, FaShower
@@ -21,6 +22,7 @@ import { useFavoriteStore } from '@/store/favoriteStore';
 import { useFavorite } from '@/hooks/useFavorite';
 import { useUserStore } from '@/store/userStore';
 import { usePropertyDetailModalStore } from '@/store/propertyDetailModalStore';
+import { resolveProfileHref } from '@/services/user.service';
 
 const FEATURE_ICONS: Record<string, React.ElementType> = {
   electricityJirama: FaPlugCircleBolt,
@@ -112,10 +114,21 @@ interface PropertyProps {
     images?: string[];
     features?: Record<string, boolean>;
     created_at: string;
+    owner?: {
+      _id?: string;
+      username?: string;
+      avatar?: string | null;
+      role?: string;
+    } | null;
+    sources?: {
+      username?: string | null;
+      avatar?: string | null;
+    } | null;
   };
 }
 
 function PropertyCardComponent({ property }: PropertyProps) {
+  const router = useRouter();
   const user = useUserStore((state) => state.user);
   const isFavorite = useFavoriteStore((state) => Boolean(state.favorites[property._id]));
   const { checkFavorite, toggleFavorite } = useFavorite();
@@ -396,6 +409,52 @@ function PropertyCardComponent({ property }: PropertyProps) {
             {property.description?.trim() || 'Aucune description disponible pour cette propriété...'}
           </p>
 
+          {/* Publisher identity bar */}
+          {(() => {
+            const isAdminFallback =
+              property.owner?.role === 'admin' && Boolean(property.sources?.username);
+            const publisherName = isAdminFallback
+              ? property.sources?.username || 'Membre TranoGasy'
+              : property.owner?.username || null;
+            if (!publisherName) return null;
+
+            const publisherAvatar = isAdminFallback
+              ? property.sources?.avatar || null
+              : property.owner?.avatar || null;
+            const fallbackAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(
+              publisherName
+            )}&background=7cbd1e&color=fff&size=64`;
+            const profileHref = resolveProfileHref(property.owner, property.sources);
+
+            return (
+              <div className="mt-1.5 flex items-center">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    router.push(profileHref);
+                  }}
+                  title={`Voir le profil de ${publisherName}`}
+                  className="inline-flex items-center gap-1.5 max-w-full rounded-full pr-2 py-0.5 text-left hover:bg-zinc-200/70 dark:hover:bg-zinc-700/70 transition-colors group/pub"
+                >
+                  <img
+                    src={publisherAvatar || fallbackAvatar}
+                    alt={publisherName}
+                    onError={(e) => {
+                      const img = e.currentTarget;
+                      if (img.src !== fallbackAvatar) img.src = fallbackAvatar;
+                    }}
+                    className="h-5 w-5 rounded-full object-cover border border-zinc-200 dark:border-zinc-600 shrink-0"
+                  />
+                  <span className="truncate text-[11px] font-medium text-zinc-700 dark:text-zinc-300 group-hover/pub:text-brand-green transition-colors">
+                    {publisherName}
+                  </span>
+                </button>
+              </div>
+            );
+          })()}
+
           {/* Bottom line: Icons & Features */}
           <div className="mt-1 flex items-center pt-1.5 border-t border-zinc-100 dark:border-zinc-700/60 overflow-hidden">
             {/* Core Stats */}
@@ -447,7 +506,10 @@ const PropertyCard = memo(
     prev.property.price === next.property.price &&
     prev.property.rent === next.property.rent &&
     prev.property.title === next.property.title &&
-    prev.property.type === next.property.type
+    prev.property.type === next.property.type &&
+    prev.property.owner?._id === next.property.owner?._id &&
+    prev.property.owner?.username === next.property.owner?.username &&
+    prev.property.owner?.avatar === next.property.owner?.avatar
 );
 
 export default PropertyCard;

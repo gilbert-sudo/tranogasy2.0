@@ -4,11 +4,24 @@ import {
   BadRequestException,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import * as bcrypt from 'bcrypt';
+import {
+  getPhoneLookupVariants,
+  normalizeMalagasyPhone,
+  resolveAuthSecret,
+  signAuthToken,
+} from '../common/phone.util';
+import {
+  sanitizeOwnerForViewer,
+  sanitizePropertyForViewer,
+} from '../common/property-sanitizer.util';
 import { User, UserDocument } from './schemas/user.schema';
 import { Property, PropertyDocument } from '../properties/schemas/property.schema';
+import { PropertiesService } from '../properties/properties.service';
+import { SmsService } from '../sms/sms.service';
 
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -19,47 +32,83 @@ export class UsersService {
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     @InjectModel(Property.name) private propertyModel: Model<PropertyDocument>,
+    private readonly configService: ConfigService,
+    private readonly smsService: SmsService,
+    private readonly propertiesService: PropertiesService,
   ) {}
 
+  private issueAuthToken(user: { _id?: any; phone?: string | null }): string {
+    const secret = resolveAuthSecret(
+      this.configService.get<string>('AUTH_TOKEN_SECRET') ||
+        this.configService.get<string>('JWT_SECRET'),
+      this.configService.get<string>('DATABASE_URI'),
+    );
+    return signAuthToken(String(user._id), String(user.phone || ''), secret);
+  }
+
+  async requestPhoneOtp(phone: string) {
+    return this.smsService.requestAuthOtp(phone);
+  }
+
+  async verifyPhoneOtp(phone: string, code: string) {
+    const verifiedPhone = await this.smsService.verifyAuthOtp(phone, code);
+    const loginResult = await this.loginOrRegisterByPhone(verifiedPhone);
+    const claimData = await this.propertiesService.findClaimableByPhone(verifiedPhone);
+
+    return {
+      verified: true,
+      message: loginResult.isNew ? 'Compte créé avec succès' : 'Connexion réussie',
+      isNew: loginResult.isNew,
+      user: loginResult.user,
+      authToken: loginResult.authToken,
+      claimableListings: claimData.claimableListings,
+      suggestedProfile: claimData.suggestedProfile,
+    };
+  }
+
   async checkExistence(phone: string): Promise<boolean> {
-    const cleanPhone = phone.replace(/\D/g, '');
-    const altPhone = cleanPhone.startsWith('0') ? cleanPhone.slice(1) : `0${cleanPhone}`;
+    const variants = getPhoneLookupVariants(phone);
+    if (variants.length === 0) return false;
     const user = await this.userModel
-      .findOne({ $or: [{ phone: cleanPhone }, { phone: altPhone }, { phone }] })
+      .findOne({ phone: { $in: variants }, isShadowAccount: { $ne: true } })
       .exec();
     return !!user;
   }
 
   async getUserByPhone(phone: string): Promise<any> {
-    const cleanPhone = phone.replace(/\D/g, '');
-    const altPhone = cleanPhone.startsWith('0') ? cleanPhone.slice(1) : `0${cleanPhone}`;
+    const variants = getPhoneLookupVariants(phone);
+    if (variants.length === 0) return null;
     const user = await this.userModel
-      .findOne({ $or: [{ phone: cleanPhone }, { phone: altPhone }, { phone }] })
+      .findOne({ phone: { $in: variants }, isShadowAccount: { $ne: true } })
       .select('-password -backUpCode')
       .lean()
       .exec();
-    return user;
+    return user ? sanitizeOwnerForViewer(user, false) : null;
   }
 
   async loginOrRegisterByPhone(
     rawPhone: string,
     defaultUsername?: string,
-  ): Promise<{ isNew: boolean; user: any }> {
-    const cleanPhone = rawPhone.replace(/\D/g, '');
-    const altPhone = cleanPhone.startsWith('0') ? cleanPhone.slice(1) : `0${cleanPhone}`;
-    const standardPhone = cleanPhone.startsWith('0') ? cleanPhone : `0${cleanPhone}`;
+  ): Promise<{ isNew: boolean; user: any; authToken: string }> {
+    const standardPhone = normalizeMalagasyPhone(rawPhone) || rawPhone.replace(/\D/g, '');
+    const variants = getPhoneLookupVariants(rawPhone);
 
     let user = await this.userModel
-      .findOne({ $or: [{ phone: cleanPhone }, { phone: altPhone }, { phone: rawPhone }] })
+      .findOne({ phone: { $in: variants }, isShadowAccount: { $ne: true } })
       .exec();
 
     if (user) {
       user.lastConnectedAt = new Date();
+      if (standardPhone && user.phone !== standardPhone) {
+        user.phone = standardPhone;
+      }
       await user.save();
-      const userObj = user.toObject();
-      delete userObj.password;
-      delete userObj.backUpCode;
-      return { isNew: false, user: userObj };
+      const userObj = sanitizeOwnerForViewer(user.toObject(), false);
+      return {
+        isNew: false,
+        user: userObj,
+        authToken: this.issueAuthToken(userObj),
+      };
     }
 
     const cleanUsername = defaultUsername?.trim() || `Membre ${standardPhone.slice(-4)}`;
@@ -67,14 +116,18 @@ export class UsersService {
       username: cleanUsername,
       phone: standardPhone,
       role: 'user',
+      origin: 'organic',
+      isShadowAccount: false,
       created_at: new Date(),
       lastConnectedAt: new Date(),
     });
     const saved = await createdUser.save();
-    const userObj = saved.toObject();
-    delete userObj.password;
-    delete userObj.backUpCode;
-    return { isNew: true, user: userObj };
+    const userObj = sanitizeOwnerForViewer(saved.toObject(), false);
+    return {
+      isNew: true,
+      user: userObj,
+      authToken: this.issueAuthToken(userObj),
+    };
   }
 
   async login(
@@ -82,13 +135,12 @@ export class UsersService {
     passwordToTest?: string,
     defaultUsername?: string,
   ): Promise<any> {
-    const cleanPhone = phone.replace(/\D/g, '');
-    const altPhone = cleanPhone.startsWith('0') ? cleanPhone.slice(1) : `0${cleanPhone}`;
+    const variants = getPhoneLookupVariants(phone);
 
     // If password is provided, verify it if the existing account has a password set
     if (passwordToTest) {
       const user = await this.userModel
-        .findOne({ $or: [{ phone: cleanPhone }, { phone: altPhone }, { phone }] })
+        .findOne({ phone: { $in: variants }, isShadowAccount: { $ne: true } })
         .exec();
       if (user && user.password) {
         const match = await bcrypt.compare(passwordToTest, user.password);
@@ -97,12 +149,11 @@ export class UsersService {
         }
         user.lastConnectedAt = new Date();
         await user.save();
-        const userObj = user.toObject();
-        delete userObj.password;
-        delete userObj.backUpCode;
+        const userObj = sanitizeOwnerForViewer(user.toObject(), false);
         return {
           message: 'Connexion réussie',
           user: userObj,
+          authToken: this.issueAuthToken(userObj),
         };
       }
     }
@@ -112,6 +163,7 @@ export class UsersService {
     return {
       message: result.isNew ? 'Compte créé avec succès' : 'Connexion réussie',
       user: result.user,
+      authToken: result.authToken,
       isNew: result.isNew,
     };
   }
@@ -122,12 +174,11 @@ export class UsersService {
       throw new BadRequestException('Le numéro de téléphone est requis');
     }
 
-    const cleanPhone = phone.replace(/\D/g, '');
-    const altPhone = cleanPhone.startsWith('0') ? cleanPhone.slice(1) : `0${cleanPhone}`;
-    const standardPhone = cleanPhone.startsWith('0') ? cleanPhone : `0${cleanPhone}`;
+    const standardPhone = normalizeMalagasyPhone(phone) || phone.replace(/\D/g, '');
+    const variants = getPhoneLookupVariants(phone);
 
     let user = await this.userModel
-      .findOne({ $or: [{ phone: cleanPhone }, { phone: altPhone }, { phone }] })
+      .findOne({ phone: { $in: variants }, isShadowAccount: { $ne: true } })
       .exec();
 
     if (user) {
@@ -136,12 +187,11 @@ export class UsersService {
       }
       user.lastConnectedAt = new Date();
       await user.save();
-      const userObj = user.toObject();
-      delete userObj.password;
-      delete userObj.backUpCode;
+      const userObj = sanitizeOwnerForViewer(user.toObject(), false);
       return {
         message: 'Connexion réussie',
         user: userObj,
+        authToken: this.issueAuthToken(userObj),
         isNew: false,
       };
     }
@@ -159,18 +209,19 @@ export class UsersService {
       phone: standardPhone,
       password: hashedPassword,
       role: createUserDto.role || 'user',
+      origin: 'organic',
+      isShadowAccount: false,
       created_at: new Date(),
       lastConnectedAt: new Date(),
     });
 
     const saved = await createdUser.save();
-    const userObj = saved.toObject();
-    delete userObj.password;
-    delete userObj.backUpCode;
+    const userObj = sanitizeOwnerForViewer(saved.toObject(), false);
 
     return {
       message: 'Compte créé avec succès',
       user: userObj,
+      authToken: this.issueAuthToken(userObj),
       isNew: true,
     };
   }
@@ -182,7 +233,7 @@ export class UsersService {
     let userDoc: any = null;
     let properties: any[] = [];
 
-    // 1. If a curated sourceName is explicitly requested, or if identifier matches a curated source
+    // 1. Legacy fallback only if an explicit sourceName query parameter is passed
     if (cleanSource) {
       const sourceRegex = new RegExp(`^${escapeRegex(cleanSource)}$`, 'i');
       properties = await this.propertyModel
@@ -202,7 +253,7 @@ export class UsersService {
         username: firstProp?.sources?.username || cleanSource,
         avatar: firstProp?.sources?.avatar || null,
         coverImage: null,
-        bio: `Annonceur partenaire vérifié sur TranoGasy.`,
+        bio: null,
         phone: firstProp?.phone1 || firstProp?.phone2 || firstProp?.owner?.phone || null,
         role: 'user',
         location: firstProp?.city
@@ -210,22 +261,30 @@ export class UsersService {
           : 'Antananarivo, Madagascar',
         created_at: firstProp?.created_at || new Date(),
         lastConnectedAt: firstProp?.created_at || new Date(),
-        isCuratedSource: true,
-        sourceLink: firstProp?.sources?.link || null,
       };
     }
 
-    // 2. Look up by MongoDB ObjectId if valid
+    // 2. Look up by MongoDB ObjectId if valid (following shadow merge chain transparently)
     if (!userDoc && Types.ObjectId.isValid(cleanId)) {
-      const foundUser = await this.userModel
+      let foundUser: any = await this.userModel
         .findById(cleanId)
         .select('-password -backUpCode')
         .lean();
 
+      if (foundUser?.mergedIntoUserId && Types.ObjectId.isValid(String(foundUser.mergedIntoUserId))) {
+        const mergedTarget = await this.userModel
+          .findById(foundUser.mergedIntoUserId)
+          .select('-password -backUpCode')
+          .lean();
+        if (mergedTarget) {
+          foundUser = mergedTarget;
+        }
+      }
+
       if (foundUser) {
         userDoc = foundUser;
         properties = await this.propertyModel
-          .find({ owner: new Types.ObjectId(cleanId) })
+          .find({ owner: new Types.ObjectId(String(foundUser._id)) })
           .populate('city')
           .populate('features')
           .populate(
@@ -237,13 +296,13 @@ export class UsersService {
       }
     }
 
-    // 2.5. Look up by phone in User collection
+    // 2.5. Look up by phone in active User collection
     if (!userDoc && cleanId) {
       const cleanPhone = cleanId.replace(/\D/g, '');
       if (cleanPhone.length >= 8) {
-        const altPhone = cleanPhone.startsWith('0') ? cleanPhone.slice(1) : `0${cleanPhone}`;
+        const variants = getPhoneLookupVariants(cleanId);
         const foundByPhone = await this.userModel
-          .findOne({ $or: [{ phone: cleanPhone }, { phone: altPhone }, { phone: cleanId }] })
+          .findOne({ phone: { $in: variants }, isShadowAccount: { $ne: true } })
           .select('-password -backUpCode')
           .lean();
 
@@ -263,13 +322,21 @@ export class UsersService {
       }
     }
 
-    // 3. Look up by username in User collection
+    // 3. Look up by username in User collection (prioritize non-shadow or unmerged accounts)
     if (!userDoc && cleanId) {
       const nameRegex = new RegExp(`^${escapeRegex(cleanId)}$`, 'i');
-      const foundByName = await this.userModel
-        .findOne({ username: nameRegex })
+      let foundByName: any = await this.userModel
+        .findOne({ username: nameRegex, mergedIntoUserId: null })
+        .sort({ isShadowAccount: 1, created_at: -1 })
         .select('-password -backUpCode')
         .lean();
+
+      if (!foundByName) {
+        foundByName = await this.userModel
+          .findOne({ username: nameRegex })
+          .select('-password -backUpCode')
+          .lean();
+      }
 
       if (foundByName) {
         userDoc = foundByName;
@@ -286,7 +353,7 @@ export class UsersService {
       }
     }
 
-    // 4. Fallback: Look up by sources.username in Property collection
+    // 4. Fallback: Look up by sources.username in Property collection (legacy records)
     if (!userDoc && cleanId) {
       const sourceRegex = new RegExp(`^${escapeRegex(cleanId)}$`, 'i');
       properties = await this.propertyModel
@@ -307,7 +374,7 @@ export class UsersService {
           username: firstProp?.sources?.username || cleanId,
           avatar: firstProp?.sources?.avatar || null,
           coverImage: null,
-          bio: `Annonceur partenaire sur TranoGasy.`,
+          bio: null,
           phone: firstProp?.phone1 || firstProp?.phone2 || null,
           role: 'user',
           location: firstProp?.city
@@ -315,8 +382,6 @@ export class UsersService {
             : 'Madagascar',
           created_at: firstProp?.created_at || new Date(),
           lastConnectedAt: firstProp?.created_at || new Date(),
-          isCuratedSource: true,
-          sourceLink: firstProp?.sources?.link || null,
         };
       } else {
         // Community member / commenter without published properties yet
@@ -369,7 +434,7 @@ export class UsersService {
 
     return {
       user: {
-        ...userDoc,
+        ...sanitizeOwnerForViewer(userDoc, false),
         fallbackCoverImage,
       },
       stats: {
@@ -378,7 +443,7 @@ export class UsersService {
         saleCount,
         activeCommunes,
       },
-      properties,
+      properties: properties.map((p) => sanitizePropertyForViewer(p, false)),
     };
   }
 

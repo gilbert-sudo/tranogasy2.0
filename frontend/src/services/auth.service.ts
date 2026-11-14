@@ -7,6 +7,48 @@ export interface AuthUserPayload {
   password?: string;
 }
 
+export interface ClaimableListingPreview {
+  _id: string;
+  title: string;
+  type: 'sale' | 'rent' | 'colocation' | string;
+  price?: number | null;
+  rent?: number | null;
+  city?: {
+    fokontany?: string;
+    commune?: string;
+    district?: string;
+    region?: string;
+  } | null;
+  thumbnail?: string | null;
+  matchedPhone?: string | null;
+  sources?: {
+    username?: string | null;
+    avatar?: string | null;
+  } | null;
+}
+
+export interface SuggestedFbProfile {
+  username: string | null;
+  avatar: string | null;
+}
+
+export interface OtpRequestResponse {
+  success: boolean;
+  phone: string;
+  provider?: string;
+  message?: string;
+}
+
+export interface OtpVerifyResponse {
+  verified: boolean;
+  message: string;
+  isNew: boolean;
+  user: Record<string, unknown>;
+  authToken: string;
+  claimableListings: ClaimableListingPreview[];
+  suggestedProfile: SuggestedFbProfile | null;
+}
+
 export const authService = {
   login: (phone: string, password?: string) => {
     return apiFetch<any>('/users/login', {
@@ -19,6 +61,20 @@ export const authService = {
     return apiFetch<{ message: string; isNew: boolean; user: any }>('/users/phone-login', {
       method: 'POST',
       body: JSON.stringify({ phone, username: defaultUsername }),
+    });
+  },
+
+  requestOtp: (phone: string) => {
+    return apiFetch<OtpRequestResponse>('/users/otp/request', {
+      method: 'POST',
+      body: JSON.stringify({ phone }),
+    });
+  },
+
+  verifyOtp: (phone: string, code: string) => {
+    return apiFetch<OtpVerifyResponse>('/users/otp/verify', {
+      method: 'POST',
+      body: JSON.stringify({ phone, code }),
     });
   },
 

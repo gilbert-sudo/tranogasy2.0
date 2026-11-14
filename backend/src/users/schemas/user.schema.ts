@@ -66,8 +66,30 @@ export class User {
   @Prop()
   lastConnectedAt: Date;
 
+  /**
+   * Origin and shadow-profile metadata used for seamlessly displaying
+   * Facebook publishers as native users until they verify their phone and claim.
+   */
+  @Prop({ enum: ['organic', 'facebook_scraper'], default: 'organic' })
+  origin: 'organic' | 'facebook_scraper';
+
+  @Prop({ default: false })
+  isShadowAccount: boolean;
+
+  @Prop({ type: String, default: null })
+  fbUserId: string | null;
+
+  @Prop({ type: String, default: null })
+  fbProfileUrl: string | null;
+
+  @Prop({ type: Types.ObjectId, ref: 'User', default: null })
+  mergedIntoUserId: Types.ObjectId | null;
+
   @Prop({ default: Date.now })
   created_at: Date;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
+UserSchema.index({ fbUserId: 1 }, { sparse: true });
+UserSchema.index({ fbProfileUrl: 1 }, { sparse: true });
+UserSchema.index({ phone: 1 }, { sparse: true });

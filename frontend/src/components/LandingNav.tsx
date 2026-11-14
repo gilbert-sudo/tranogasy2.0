@@ -227,7 +227,7 @@ export default function LandingNav() {
                     hover:scale-105 active:scale-95 transition-all flex-shrink-0"
                 >
                   <div className="relative w-[34px] h-[34px] rounded-full overflow-hidden">
-                    <Image src="/assets/icon-512.png" alt="TranoGasy" fill className="object-contain rounded-full" priority />
+                    <Image src="/assets/icon-512.png" alt="TranoGasy" fill sizes="34px" className="object-contain rounded-full" priority />
                   </div>
                 </div>
                 <span className="font-extrabold tracking-tight text-lg sm:text-xl leading-none">
@@ -255,7 +255,7 @@ export default function LandingNav() {
                   hover:scale-105 active:scale-95 transition-all flex-shrink-0"
               >
                 <div className="relative w-[34px] h-[34px] rounded-full overflow-hidden">
-                  <Image src="/assets/icon-512.png" alt="TranoGasy" fill className="object-contain rounded-full" priority />
+                  <Image src="/assets/icon-512.png" alt="TranoGasy" fill sizes="34px" className="object-contain rounded-full" priority />
                 </div>
               </Link>
 

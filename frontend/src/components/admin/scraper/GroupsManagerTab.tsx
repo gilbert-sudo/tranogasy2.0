@@ -22,7 +22,8 @@ interface Props {
   config: FbIngestionConfig;
   isAnyRunActive?: boolean;
   onRefresh: () => Promise<void>;
-  onRunStarted?: (message: string) => void;
+  onRunStarted?: (message: string) => void | Promise<void>;
+  onCancelRun?: () => void;
   onError: (msg: string) => void;
 }
 
@@ -33,6 +34,7 @@ export default function GroupsManagerTab({
   isAnyRunActive = false,
   onRefresh,
   onRunStarted,
+  onCancelRun,
   onError,
 }: Props) {
   const [newUrl, setNewUrl] = useState('');
@@ -118,8 +120,7 @@ export default function GroupsManagerTab({
     setBusyGroupId(g.groupId);
     try {
       await fbIngestionService.startRunNow(userId, [g.groupId]);
-      onRunStarted?.(`Collecte démarrée pour "${g.name}" (suivi en direct ci-dessus)...`);
-      await onRefresh();
+      await onRunStarted?.(`Collecte démarrée pour "${g.name}". Suivi en temps réel actif...`);
     } catch (err) {
       onError((err as Error).message);
     } finally {
@@ -127,8 +128,42 @@ export default function GroupsManagerTab({
     }
   };
 
+  const runPercent = config.lastRunProgress?.percent ?? 5;
+
   return (
     <div className="space-y-6">
+      {isAnyRunActive && (
+        <div className="rounded-2xl p-4 bg-emerald-50/85 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+            <Loader2 className="w-4 h-4 animate-spin text-brand-green shrink-0" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-bold text-emerald-950 dark:text-emerald-100 truncate">
+                  {config.lastPollMessage || 'Collecte Facebook en cours...'}
+                </span>
+                <span className="font-mono font-bold text-brand-green shrink-0">
+                  {runPercent}%
+                </span>
+              </div>
+              <div className="w-full h-1.5 rounded-full bg-emerald-200/70 dark:bg-emerald-900/60 overflow-hidden mt-1.5">
+                <div
+                  className="h-full bg-brand-green transition-all duration-300"
+                  style={{ width: `${Math.max(0, Math.min(100, Math.round(runPercent)))}%` }}
+                />
+              </div>
+            </div>
+          </div>
+          {onCancelRun && (
+            <button
+              type="button"
+              onClick={onCancelRun}
+              className="px-3 py-1 rounded-full bg-white dark:bg-zinc-900 border border-red-200 dark:border-red-900 text-red-600 dark:text-red-300 font-bold hover:bg-red-50 shrink-0 cursor-pointer"
+            >
+              Annuler
+            </button>
+          )}
+        </div>
+      )}
       {/* KPI Budget & Coverage Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white dark:bg-zinc-900 rounded-[1.5rem] p-5 border border-zinc-200/80 dark:border-zinc-800">

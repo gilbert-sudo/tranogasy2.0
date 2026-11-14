@@ -132,13 +132,8 @@ export function useUserProfile(identifier?: string | null, sourceName?: string |
   }, [cachedEntry, currentUser, identifier]);
 
   const isOwnProfile = useMemo(() => {
-    if (!currentUser || !profileUser || profileUser.isCuratedSource) return false;
-    return (
-      String(currentUser._id) === String(profileUser._id) ||
-      (Boolean(currentUser.username) &&
-        Boolean(profileUser.username) &&
-        currentUser.username.toLowerCase() === profileUser.username.toLowerCase())
-    );
+    if (!currentUser || !profileUser) return false;
+    return Boolean(currentUser._id && profileUser._id && String(currentUser._id) === String(profileUser._id));
   }, [currentUser, profileUser]);
 
   const properties = useMemo(() => {
