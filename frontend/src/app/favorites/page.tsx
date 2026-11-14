@@ -17,11 +17,18 @@ import PropertyCard from '@/components/PropertyCard';
 import { useUserStore } from '@/store/userStore';
 import { useFavorite } from '@/hooks/useFavorite';
 import { useModalStore } from '@/store/modalStore';
+import {
+  HouseType,
+  PROPERTY_TYPE_DEFS,
+  computePropertyCategoryFlags,
+  matchesComputedCategory,
+} from '@/lib/propertyTypes';
+import { removeDiacritics } from '@/services/city.service';
 
 // Static file in /public (was a 3.8 MB inline string via useImage, which bloated this page's JS bundle)
 const NO_FAVORITE_IMG = '/images/no-favorite.svg';
 
-type FilterCategory = 'all' | 'rent' | 'sale' | 'house' | 'apartment';
+type FilterCategory = 'all' | 'rent' | 'sale' | HouseType;
 type SortOption = 'newest' | 'price-asc' | 'price-desc';
 
 export default function FavoritesPage() {
@@ -64,30 +71,60 @@ export default function FavoritesPage() {
     return favoritePropertiesData?.filter((prop) => favorites[prop._id]) || [];
   }, [favoritePropertiesData, favorites]);
 
+  const isRentProp = useCallback(
+    (p: any) =>
+      p.type === 'rent' ||
+      p.type?.toLowerCase().includes('location') ||
+      Boolean(p.rent && p.rent > 0),
+    []
+  );
+
+  const isSaleProp = useCallback(
+    (p: any) =>
+      p.type === 'sale' ||
+      p.type?.toLowerCase().includes('vente') ||
+      (!isRentProp(p) && Boolean(p.price && p.price > 0)),
+    [isRentProp]
+  );
+
+  const favoriteEntries = useMemo(
+    () =>
+      allFavorites.map((prop) => ({
+        prop,
+        flags: computePropertyCategoryFlags(
+          prop,
+          removeDiacritics((prop.houseType || '').toLowerCase()),
+          removeDiacritics((prop.title || '').toLowerCase()),
+          removeDiacritics((prop.description || '').toLowerCase())
+        ),
+      })),
+    [allFavorites]
+  );
+
   // Categories with live counts
-  const categories = useMemo(() => [
-    { id: 'all' as FilterCategory, label: 'Toutes', count: allFavorites.length },
-    { 
-      id: 'rent' as FilterCategory, 
-      label: 'En location', 
-      count: allFavorites.filter(p => p.type?.toLowerCase().includes('location') || (p.rent && p.rent > 0)).length 
-    },
-    { 
-      id: 'sale' as FilterCategory, 
-      label: 'En vente', 
-      count: allFavorites.filter(p => p.type?.toLowerCase().includes('vente') || (!p.rent && p.price)).length 
-    },
-    { 
-      id: 'house' as FilterCategory, 
-      label: 'Maisons', 
-      count: allFavorites.filter(p => p.houseType?.toLowerCase().includes('maison') || p.houseType?.toLowerCase().includes('villa')).length 
-    },
-    { 
-      id: 'apartment' as FilterCategory, 
-      label: 'Apparts', 
-      count: allFavorites.filter(p => p.houseType?.toLowerCase().includes('appartement') || p.houseType?.toLowerCase().includes('studio')).length 
-    },
-  ], [allFavorites]);
+  const categories = useMemo(
+    () => [
+      { id: 'all' as FilterCategory, label: 'Toutes', count: allFavorites.length },
+      {
+        id: 'rent' as FilterCategory,
+        label: 'En location',
+        count: allFavorites.filter(isRentProp).length,
+      },
+      {
+        id: 'sale' as FilterCategory,
+        label: 'En vente',
+        count: allFavorites.filter(isSaleProp).length,
+      },
+      ...PROPERTY_TYPE_DEFS.map((def) => ({
+        id: def.id as FilterCategory,
+        label: def.shortLabel,
+        count: favoriteEntries.filter(({ flags }) =>
+          matchesComputedCategory(flags, def.id)
+        ).length,
+      })),
+    ],
+    [allFavorites, favoriteEntries, isRentProp, isSaleProp]
+  );
 
   // Rolling Header Scroll Listener
   const handleScroll = useCallback(() => {
@@ -106,24 +143,14 @@ export default function FavoritesPage() {
 
   // Filtered & Sorted properties
   const filteredProperties = useMemo(() => {
-    return allFavorites
-      .filter((prop) => {
+    return favoriteEntries
+      .filter(({ prop, flags }) => {
         if (activeCategory === 'rent') {
-          const isRent = prop.type?.toLowerCase().includes('location') || (prop.rent && prop.rent > 0);
-          if (!isRent) return false;
+          if (!isRentProp(prop)) return false;
         } else if (activeCategory === 'sale') {
-          const isSale = prop.type?.toLowerCase().includes('vente') || (!prop.rent && prop.price);
-          if (!isSale) return false;
-        } else if (activeCategory === 'house') {
-          const isHouse = 
-            prop.houseType?.toLowerCase().includes('maison') || 
-            prop.houseType?.toLowerCase().includes('villa');
-          if (!isHouse) return false;
-        } else if (activeCategory === 'apartment') {
-          const isApartment = 
-            prop.houseType?.toLowerCase().includes('appartement') || 
-            prop.houseType?.toLowerCase().includes('studio');
-          if (!isApartment) return false;
+          if (!isSaleProp(prop)) return false;
+        } else if (activeCategory !== 'all') {
+          if (!matchesComputedCategory(flags, activeCategory)) return false;
         }
 
         if (searchQuery.trim()) {
@@ -137,6 +164,7 @@ export default function FavoritesPage() {
 
         return true;
       })
+      .map(({ prop }) => prop)
       .sort((a, b) => {
         if (sortBy === 'price-asc') {
           return (a.price || a.rent || 0) - (b.price || b.rent || 0);
@@ -146,7 +174,7 @@ export default function FavoritesPage() {
         }
         return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
       });
-  }, [allFavorites, activeCategory, searchQuery, sortBy]);
+  }, [favoriteEntries, activeCategory, searchQuery, sortBy, isRentProp, isSaleProp]);
 
   return (
     <div className={`font-sans flex flex-col ${

@@ -3,6 +3,10 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { getPhoneLookupVariants, normalizeMalagasyPhone } from '../common/phone.util';
 import {
+  buildMongoHouseTypeFilter,
+  normalizeHouseType,
+} from '../common/property-types.util';
+import {
   sanitizeOwnerForViewer,
   sanitizePropertyForViewer,
 } from '../common/property-sanitizer.util';
@@ -130,6 +134,13 @@ export class PropertiesService {
       data.status = 'available';
     }
 
+    // 6. Normalize houseType and numeric dimensions (e.g. commercial tsena/bureau may omit residential rooms)
+    data.houseType = normalizeHouseType(data.houseType) || 'maison';
+    for (const numericKey of ['rooms', 'toilet', 'bathrooms', 'livingRoom', 'kitchen', 'area'] as const) {
+      const parsedNum = Number(data[numericKey] ?? 0);
+      data[numericKey] = Number.isFinite(parsedNum) && parsedNum >= 0 ? parsedNum : 0;
+    }
+
     const createdProperty = new this.propertyModel(data);
     const saved = await createdProperty.save();
 
@@ -204,7 +215,14 @@ export class PropertiesService {
     }
 
     if (query.houseType && query.houseType !== 'all') {
-      mongoFilter.houseType = new RegExp(`^${query.houseType}$`, 'i');
+      const houseTypeFilter = buildMongoHouseTypeFilter(query.houseType);
+      if (houseTypeFilter) {
+        if ('$or' in houseTypeFilter) {
+          mongoFilter.$and = [...(mongoFilter.$and || []), houseTypeFilter];
+        } else {
+          Object.assign(mongoFilter, houseTypeFilter);
+        }
+      }
     }
 
     if (query.cityId && Types.ObjectId.isValid(query.cityId)) {

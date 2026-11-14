@@ -3,7 +3,8 @@
 import { useState, useRef, useEffect } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { X, Share2, Phone, MapPin, Heart, ChevronLeft, BedDouble, Expand, Home, Utensils, Droplets, Grid2X2, ChevronRight, MessageCircle, Send } from 'lucide-react';
+import { X, Share2, Phone, MapPin, Heart, ChevronLeft, BedDouble, Expand, Home, Utensils, Droplets, Grid2X2, ChevronRight, MessageCircle, Send, Layers } from 'lucide-react';
+import { getHouseTypeLabel, isCommercialHouseType } from '@/lib/propertyTypes';
 import {
   FaCar, FaMotorcycle, FaWifi, FaParking, FaShieldAlt, FaSwimmingPool, FaHotTub, FaBed, FaShower
 } from "react-icons/fa";
@@ -218,21 +219,33 @@ function PropertyDetailsContent({
     ? Number(property.area)
     : extractSurface(property?.description);
 
+  const isCommercial = isCommercialHouseType(property?.houseType);
+  const categoryLabel = getHouseTypeLabel(property?.houseType, {
+    compact: true,
+    floor: property?.floor,
+  });
+
   const toiletCount = (property?.toilet !== undefined && property?.toilet !== null && Number(property.toilet) > 0)
     ? Number(property.toilet)
     : (property?.features?.insideToilet ? 1 : 0);
 
-  const bathroomCount = (property?.bathrooms !== undefined && property?.bathrooms !== null && Number(property.bathrooms) > 0)
-    ? Number(property.bathrooms)
-    : (property?.features?.insideBathroom ? 1 : 0);
+  const bathroomCount = isCommercial
+    ? 0
+    : (property?.bathrooms !== undefined && property?.bathrooms !== null && Number(property.bathrooms) > 0)
+      ? Number(property.bathrooms)
+      : (property?.features?.insideBathroom ? 1 : 0);
 
-  const kitchenCount = (property?.kitchen !== undefined && property?.kitchen !== null && Number(property.kitchen) > 0)
-    ? Number(property.kitchen)
-    : (property?.features?.openKitchen || property?.features?.kitchenFacilities || property?.features?.placardKitchen ? 1 : 0);
+  const kitchenCount = isCommercial
+    ? 0
+    : (property?.kitchen !== undefined && property?.kitchen !== null && Number(property.kitchen) > 0)
+      ? Number(property.kitchen)
+      : (property?.features?.openKitchen || property?.features?.kitchenFacilities || property?.features?.placardKitchen ? 1 : 0);
 
-  const livingRoomCount = (property?.livingRoom !== undefined && property?.livingRoom !== null && Number(property.livingRoom) > 0)
-    ? Number(property.livingRoom)
-    : (property?.features?.furnishedProperty ? 1 : 0);
+  const livingRoomCount = isCommercial
+    ? 0
+    : (property?.livingRoom !== undefined && property?.livingRoom !== null && Number(property.livingRoom) > 0)
+      ? Number(property.livingRoom)
+      : (property?.features?.furnishedProperty ? 1 : 0);
 
   const activeFeatures = property?.features 
     ? Object.entries(property.features)
@@ -278,14 +291,21 @@ function PropertyDetailsContent({
     }
   };
 
-  const stats = [
-    { value: property?.rooms || 0, label: "Chambres", icon: BedDouble },
-    { value: livingRoomCount || 0, label: "Salon", icon: Home },
-    { value: kitchenCount || 0, label: "Cuisine", icon: Utensils },
-    { value: bathroomCount || 0, label: "Douches", icon: Droplets },
-    { value: toiletCount || 0, label: "W.C", icon: Grid2X2 },
-    { value: parsedArea ? `${parsedArea}` : 'Non précisée', label: "Surface (m²)", icon: Expand },
-  ];
+  const stats = isCommercial
+    ? [
+        ...(property?.floor ? [{ value: property.floor, label: "Niveau", icon: Layers }] : []),
+        ...(toiletCount > 0 ? [{ value: toiletCount, label: "W.C", icon: Grid2X2 }] : []),
+        { value: parsedArea ? `${parsedArea}` : 'Non précisée', label: "Surface (m²)", icon: Expand },
+      ]
+    : [
+        { value: property?.rooms || 0, label: "Chambres", icon: BedDouble },
+        { value: livingRoomCount || 0, label: "Salon", icon: Home },
+        { value: kitchenCount || 0, label: "Cuisine", icon: Utensils },
+        { value: bathroomCount || 0, label: "Douches", icon: Droplets },
+        { value: toiletCount || 0, label: "W.C", icon: Grid2X2 },
+        ...(property?.floor ? [{ value: property.floor, label: "Étage", icon: Layers }] : []),
+        { value: parsedArea ? `${parsedArea}` : 'Non précisée', label: "Surface (m²)", icon: Expand },
+      ];
 
   const handleMobileScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const scrollPosition = e.currentTarget.scrollLeft;
@@ -465,13 +485,16 @@ function PropertyDetailsContent({
 
   const renderIdentityAndStats = (isMobile: boolean) => (
     <div className={isMobile ? "lg:hidden px-4" : "hidden lg:block"}>
-      <div className="flex items-center gap-3 mb-4">
+      <div className="flex flex-wrap items-center gap-2.5 mb-4">
         <span className={`px-3 py-1.5 rounded-full text-[10px] font-extrabold uppercase tracking-widest shadow-sm ${
           property.type === 'rent'
             ? 'bg-brand-green text-white'
             : 'bg-zinc-950 text-white dark:bg-white dark:text-zinc-950'
         }`}>
           {property.type === 'rent' ? 'En location' : 'En vente'}
+        </span>
+        <span className="px-3 py-1.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200/80 dark:border-zinc-700/80">
+          {categoryLabel}
         </span>
         <span className="text-xs font-bold text-zinc-400 uppercase tracking-widest">
           Réf: {property.propertyNumber || property._id.slice(-4).toUpperCase()}

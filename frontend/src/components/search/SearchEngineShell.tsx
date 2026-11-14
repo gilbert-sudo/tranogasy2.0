@@ -26,6 +26,7 @@ import {
   SearchViewMode,
   SearchFilters,
 } from '@/store/searchStore';
+import { mapCategoryQueryParam } from '@/lib/propertyTypes';
 import FuturisticSearchMap from './FuturisticSearchMap';
 import SearchTopOmnibox from './SearchTopOmnibox';
 import SearchFloatingBottomHud from './SearchFloatingBottomHud';
@@ -50,17 +51,7 @@ const MADAGASCAR_CITY_COORDS: Record<string, { lat: number; lng: number; zoom: n
   'nosy be': { lat: -13.3167, lng: 48.2667, zoom: 12 },
 };
 
-const CATEGORY_MAP: Record<string, HouseCategoryFilter> = {
-  all: 'all',
-  tous: 'all',
-  apartment: 'appartement',
-  appartement: 'appartement',
-  home: 'maison',
-  maison: 'maison',
-  villa: 'villa',
-  office: 'bureau',
-  bureau: 'bureau',
-};
+const FALLBACK_COORDS = { lat: -18.8792, lng: 47.5079 };
 
 const SORT_OPTIONS: { id: SearchSortBy; label: string }[] = [
   { id: 'relevance', label: 'Pertinence' },
@@ -180,7 +171,7 @@ export default function SearchEngineShell() {
       patch.type = typeParam;
     }
     if (categoryParam) {
-      const mapped = CATEGORY_MAP[categoryParam.toLowerCase()];
+      const mapped = mapCategoryQueryParam(categoryParam);
       if (mapped) {
         patch.houseType = mapped;
       }

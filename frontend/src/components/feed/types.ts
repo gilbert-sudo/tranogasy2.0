@@ -88,6 +88,7 @@ export interface FeedProperty {
   topProperty?: boolean;
   type: 'rent' | 'sale';
   houseType?: string;
+  floor?: string | null;
   city?: PropertyCity;
   coords?: {
     lat: number;

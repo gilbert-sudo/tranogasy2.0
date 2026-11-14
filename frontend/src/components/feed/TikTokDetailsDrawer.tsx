@@ -2,7 +2,8 @@
 
 import React, { useRef, useEffect } from 'react';
 import Link from 'next/link';
-import { X, MapPin, Phone, Share2, BedDouble, Home, Utensils, Droplets, Grid2X2, Expand, MessageCircle, ChevronRight, Maximize2 } from 'lucide-react';
+import { X, MapPin, Phone, Share2, BedDouble, Home, Utensils, Droplets, Grid2X2, Expand, MessageCircle, ChevronRight, Maximize2, Layers } from 'lucide-react';
+import { getHouseTypeLabel, isCommercialHouseType } from '@/lib/propertyTypes';
 import { usePropertyDetailModalStore } from '@/store/propertyDetailModalStore';
 import {
   FaCar, FaMotorcycle, FaWifi, FaParking, FaShieldAlt, FaSwimmingPool, FaHotTub, FaBed
@@ -225,26 +226,58 @@ export default function TikTokDetailsDrawer({
         .map(([key]) => key)
     : [];
 
-  const specs = [
-    { value: property.rooms || 0, label: 'Chambre(s)', icon: BedDouble },
-    { value: property.livingRoom || 0, label: 'Salon', icon: Home },
-    { value: property.kitchen || 0, label: 'Cuisine', icon: Utensils },
-    {
-      value: property.toilet || 0,
-      label: `W.C (${property.features?.insideToilet ? 'Int.' : 'Ext.'})`,
-      icon: Grid2X2,
-    },
-    {
-      value: property.bathrooms || 0,
-      label: `Douche (${property.features?.insideBathroom ? 'Int.' : 'Ext.'})`,
-      icon: Droplets,
-    },
-    {
-      value: property.area ? `${property.area} m²` : '-',
-      label: 'Surface',
-      icon: Expand,
-    },
-  ];
+  const isCommercial = isCommercialHouseType(property.houseType);
+  const categoryLabel = getHouseTypeLabel(property.houseType, {
+    compact: true,
+    floor: property.floor,
+  });
+  const toiletCount =
+    property.toilet !== undefined && property.toilet !== null && Number(property.toilet) > 0
+      ? Number(property.toilet)
+      : property.features?.insideToilet
+      ? 1
+      : 0;
+
+  const specs = isCommercial
+    ? [
+        ...(property.floor
+          ? [{ value: property.floor, label: 'Niveau', icon: Layers }]
+          : []),
+        ...(toiletCount > 0
+          ? [
+              {
+                value: toiletCount,
+                label: `W.C (${property.features?.insideToilet ? 'Int.' : 'Ext.'})`,
+                icon: Grid2X2,
+              },
+            ]
+          : []),
+        {
+          value: property.area ? `${property.area} m²` : '-',
+          label: 'Surface',
+          icon: Expand,
+        },
+      ]
+    : [
+        { value: property.rooms || 0, label: 'Chambre(s)', icon: BedDouble },
+        { value: property.livingRoom || 0, label: 'Salon', icon: Home },
+        { value: property.kitchen || 0, label: 'Cuisine', icon: Utensils },
+        {
+          value: toiletCount,
+          label: `W.C (${property.features?.insideToilet ? 'Int.' : 'Ext.'})`,
+          icon: Grid2X2,
+        },
+        {
+          value: property.bathrooms || 0,
+          label: `Douche (${property.features?.insideBathroom ? 'Int.' : 'Ext.'})`,
+          icon: Droplets,
+        },
+        {
+          value: property.area ? `${property.area} m²` : '-',
+          label: 'Surface',
+          icon: Expand,
+        },
+      ];
 
   // Micro-motion class matching scroll direction
   const animClass = direction === 'up' ? 'animate-feed-detail-down' : 'animate-feed-detail-up';
@@ -257,7 +290,7 @@ export default function TikTokDetailsDrawer({
       {/* Header Info */}
       <div className={`space-y-3 ${animClass}`} style={{ animationDelay: '0ms' }}>
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span
               className={`px-3 py-1 rounded-full text-[11px] font-extrabold uppercase tracking-wider shadow-sm ${
                 property.type === 'rent'
@@ -266,6 +299,9 @@ export default function TikTokDetailsDrawer({
               }`}
             >
               {property.type === 'rent' ? 'Location' : 'Vente'}
+            </span>
+            <span className="px-2.5 py-1 rounded-full border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 text-[11px] font-bold text-zinc-700 dark:text-zinc-200">
+              {categoryLabel}
             </span>
             {property.propertyNumber && (
               <span className="px-2.5 py-1 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 text-[11px] font-bold text-zinc-600 dark:text-zinc-300">
@@ -362,7 +398,7 @@ export default function TikTokDetailsDrawer({
         <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-widest mb-3">
           Caractéristiques principales
         </h4>
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+        <div className={`grid gap-2 ${isCommercial ? 'grid-cols-2 sm:grid-cols-3' : 'grid-cols-3 sm:grid-cols-6'}`}>
           {specs.map((item, idx) => {
             const Icon = item.icon;
             return (

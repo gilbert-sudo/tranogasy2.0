@@ -1,6 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 import { City } from '../../cities/schemas/city.schema';
+import { HOUSE_TYPE_VALUES } from '../../common/property-types.util';
 import { Feature } from '../../features/schemas/feature.schema';
 
 export type PropertyDocument = Property & Document;
@@ -22,19 +23,19 @@ export class Property {
   @Prop({ required: false })
   rent: number;
 
-  @Prop({ required: true })
+  @Prop({ required: false, default: 0 })
   rooms: number;
 
-  @Prop({ required: true })
+  @Prop({ required: false, default: 0 })
   toilet: number;
 
-  @Prop({ required: false })
+  @Prop({ required: false, default: 0 })
   kitchen: number;
 
-  @Prop({ required: true })
+  @Prop({ required: false, default: 0 })
   bathrooms: number;
 
-  @Prop({ default: false })
+  @Prop({ required: false, default: 0 })
   livingRoom: number;
 
   @Prop({ default: null })
@@ -49,7 +50,7 @@ export class Property {
   @Prop({ required: true, default: false })
   topProperty: boolean;
 
-  @Prop({ required: true })
+  @Prop({ required: false, default: 0 })
   area: number;
 
   @Prop({ required: true })
@@ -70,7 +71,7 @@ export class Property {
   @Prop({ enum: ['sale', 'rent'], required: true })
   type: string;
 
-  @Prop({ enum: ['maison', 'appartement'], required: false, default: null })
+  @Prop({ enum: [...HOUSE_TYPE_VALUES], required: false, default: null })
   houseType: string;
 
   @Prop({ required: false, default: null })
@@ -125,6 +126,8 @@ export class Property {
 export const PropertySchema = SchemaFactory.createForClass(Property);
 PropertySchema.index({ city: 1 });
 PropertySchema.index({ type: 1 });
+PropertySchema.index({ houseType: 1 });
+PropertySchema.index({ type: 1, houseType: 1, created_at: -1 });
 PropertySchema.index({ type: 1, created_at: -1 });
 PropertySchema.index({ created_at: -1 });
 PropertySchema.index({ status: 1 });

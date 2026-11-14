@@ -6,10 +6,12 @@ import PropertyCardSkeleton from '@/components/PropertyCardSkeleton';
 import { Loader2, RefreshCw, ServerCrash, Sparkles, CheckCircle2 } from 'lucide-react';
 import { usePropertyStore } from '@/store/propertyStore';
 import { getApiBaseUrl } from '@/services/api';
+import { HouseCategoryFilter, mapCategoryQueryParam } from '@/lib/propertyTypes';
 
 interface PropertyFeedProps {
   initialProperties?: any[];
   filterType?: 'location' | 'vente';
+  houseTypeFilter?: HouseCategoryFilter;
   sortBy?: string;
 }
 
@@ -26,7 +28,8 @@ function buildApiUrl(
   pageNum: number,
   limit: number,
   filterType: 'location' | 'vente' = 'location',
-  sortBy: string = 'Trier par'
+  sortBy: string = 'Trier par',
+  houseTypeFilter: HouseCategoryFilter = 'all'
 ): string {
   const apiUrl = getApiBaseUrl();
   const params = new URLSearchParams();
@@ -38,6 +41,12 @@ function buildApiUrl(
     params.set('type', 'rent');
   } else if (filterType === 'vente') {
     params.set('type', 'sale');
+  }
+
+  // Category / houseType filter
+  const mappedHouseType = mapCategoryQueryParam(houseTypeFilter);
+  if (mappedHouseType !== 'all') {
+    params.set('houseType', mappedHouseType);
   }
 
   // Sort filter
@@ -55,9 +64,10 @@ function buildApiUrl(
 export default function PropertyFeed({
   initialProperties = [],
   filterType = 'location',
+  houseTypeFilter = 'all',
   sortBy = 'Trier par',
 }: PropertyFeedProps) {
-  const cacheKey = `${filterType}_${sortBy}`;
+  const cacheKey = `${filterType}_${houseTypeFilter}_${sortBy}`;
 
   // Zustand actions & getters
   const setTopPropertiesData = usePropertyStore((state) => state.setTopPropertiesData);
@@ -110,7 +120,7 @@ export default function PropertyFeed({
   const isFetchingRef = useRef<boolean>(false);
   const isFirstMountRef = useRef<boolean>(true);
   const activeReqIdRef = useRef<number>(0);
-  const fetchPageRef = useRef<(pageNum: number, type: 'location' | 'vente', sort: string, isAutoRetry?: boolean) => Promise<void>>(async () => {});
+  const fetchPageRef = useRef<(pageNum: number, type: 'location' | 'vente', houseType: HouseCategoryFilter, sort: string, isAutoRetry?: boolean) => Promise<void>>(async () => {});
 
   const clearPendingRetry = useCallback(() => {
     if (retryTimeoutRef.current) {
@@ -130,9 +140,10 @@ export default function PropertyFeed({
     async (
       nextPageNum: number,
       type: 'location' | 'vente',
+      houseType: HouseCategoryFilter,
       sort: string
     ): Promise<PrefetchedBatch | null> => {
-      const currentCacheKey = `${type}_${sort}`;
+      const currentCacheKey = `${type}_${houseType}_${sort}`;
 
       // If already prefetched this exact page for this filter, return existing
       if (
@@ -159,7 +170,7 @@ export default function PropertyFeed({
 
       const promise = (async () => {
         try {
-          const url = buildApiUrl(nextPageNum, PAGE_LIMIT, type, sort);
+          const url = buildApiUrl(nextPageNum, PAGE_LIMIT, type, sort, houseType);
           const timeoutId = setTimeout(() => controller.abort(), 12000);
 
           const res = await fetch(url, {
@@ -230,6 +241,7 @@ export default function PropertyFeed({
     async (
       pageNum: number,
       type: 'location' | 'vente',
+      houseType: HouseCategoryFilter,
       sort: string,
       isAutoRetry = false
     ) => {
@@ -238,10 +250,10 @@ export default function PropertyFeed({
         fetchAbortControllerRef.current.abort();
       }
 
-      const currentCacheKey = `${type}_${sort}`;
+      const currentCacheKey = `${type}_${houseType}_${sort}`;
       const reqId = ++activeReqIdRef.current;
       const isInitial = pageNum === 1;
-      const url = buildApiUrl(pageNum, PAGE_LIMIT, type, sort);
+      const url = buildApiUrl(pageNum, PAGE_LIMIT, type, sort, houseType);
       const controller = new AbortController();
       fetchAbortControllerRef.current = controller;
       let timedOut = false;
@@ -303,7 +315,7 @@ export default function PropertyFeed({
 
         // Preload head of 10 properties right away even though user hasn't scrolled
         if (newHasMore) {
-          prefetchNextPage(2, type, sort);
+          prefetchNextPage(2, type, houseType, sort);
         }
       } catch (error: unknown) {
         if (!isMountedRef.current || reqId !== activeReqIdRef.current) {
@@ -323,7 +335,7 @@ export default function PropertyFeed({
           const delayMs = Math.min(2000 + nextAttempt * 1000, 5000);
           retryTimeoutRef.current = setTimeout(() => {
             if (isMountedRef.current && reqId === activeReqIdRef.current) {
-              void fetchPageRef.current(pageNum, type, sort, true);
+              void fetchPageRef.current(pageNum, type, houseType, sort, true);
             }
           }, delayMs);
         } else {
@@ -354,9 +366,9 @@ export default function PropertyFeed({
     if (prefetchAbortControllerRef.current) {
       prefetchAbortControllerRef.current.abort();
     }
-  }, [filterType, sortBy]);
+  }, [filterType, houseTypeFilter, sortBy]);
 
-  // Sync with Zustand store on mount and on filterType/sortBy change
+  // Sync with Zustand store on mount and on filterType/houseTypeFilter/sortBy change
   useEffect(() => {
     const cachedEntry = usePropertyStore.getState().getTopPropertiesData(cacheKey);
 
@@ -371,13 +383,13 @@ export default function PropertyFeed({
         setIsLoadingInitial(false);
         setIsFilterLoading(false);
         if (cachedEntry.hasMore) {
-          prefetchNextPage(cachedEntry.page + 1, filterType, sortBy);
+          prefetchNextPage(cachedEntry.page + 1, filterType, houseTypeFilter, sortBy);
         }
         return;
       }
 
-      // 2. If initialProperties provided, seed Zustand store and use it
-      if (initialProperties && initialProperties.length > 0) {
+      // 2. If initialProperties provided for unfiltered default category, seed Zustand store and use it
+      if (houseTypeFilter === 'all' && initialProperties && initialProperties.length > 0) {
         const initialHasMore = initialProperties.length >= PAGE_LIMIT;
         setTopPropertiesData(cacheKey, {
           properties: initialProperties,
@@ -390,13 +402,13 @@ export default function PropertyFeed({
         setHasMore(initialHasMore);
         setIsLoadingInitial(false);
         if (initialHasMore) {
-          prefetchNextPage(2, filterType, sortBy);
+          prefetchNextPage(2, filterType, houseTypeFilter, sortBy);
         }
         return;
       }
 
       // 3. First time entering landing page: fetch properties just one time
-      fetchPage(1, filterType, sortBy);
+      fetchPage(1, filterType, houseTypeFilter, sortBy);
       return;
     }
 
@@ -409,13 +421,13 @@ export default function PropertyFeed({
       setIsFilterLoading(false);
       setIsLoadingInitial(false);
       if (cachedEntry.hasMore) {
-        prefetchNextPage(cachedEntry.page + 1, filterType, sortBy);
+        prefetchNextPage(cachedEntry.page + 1, filterType, houseTypeFilter, sortBy);
       }
       return;
     }
 
     // Not yet cached for this filter combination: fetch it once
-    fetchPage(1, filterType, sortBy);
+    fetchPage(1, filterType, houseTypeFilter, sortBy);
 
     return () => {
       activeReqIdRef.current += 1;
@@ -427,6 +439,7 @@ export default function PropertyFeed({
   }, [
     cacheKey,
     filterType,
+    houseTypeFilter,
     sortBy,
     fetchPage,
     clearPendingRetry,
@@ -449,7 +462,7 @@ export default function PropertyFeed({
     }
 
     const targetPage = page + 1;
-    const currentCacheKey = `${filterType}_${sortBy}`;
+    const currentCacheKey = `${filterType}_${houseTypeFilter}_${sortBy}`;
 
     // 1. FAST PATH: Already pre-loaded in memory ahead of time!
     if (
@@ -486,7 +499,7 @@ export default function PropertyFeed({
 
       // Keep 10 pre-loaded properties ahead for the next scroll!
       if (batch.hasMore) {
-        prefetchNextPage(batch.page + 1, filterType, sortBy);
+        prefetchNextPage(batch.page + 1, filterType, houseTypeFilter, sortBy);
       }
       return;
     }
@@ -527,7 +540,7 @@ export default function PropertyFeed({
             setHasMore(batch.hasMore);
 
             if (batch.hasMore) {
-              prefetchNextPage(batch.page + 1, filterType, sortBy);
+              prefetchNextPage(batch.page + 1, filterType, houseTypeFilter, sortBy);
             }
           }
           return;
@@ -546,7 +559,7 @@ export default function PropertyFeed({
 
     try {
       const nextPage = page + 1;
-      const url = buildApiUrl(nextPage, PAGE_LIMIT, filterType, sortBy);
+      const url = buildApiUrl(nextPage, PAGE_LIMIT, filterType, sortBy, houseTypeFilter);
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000);
@@ -591,7 +604,7 @@ export default function PropertyFeed({
 
         // Keep 10 pre-loaded properties ahead!
         if (newHasMore) {
-          prefetchNextPage(nextPage + 1, filterType, sortBy);
+          prefetchNextPage(nextPage + 1, filterType, houseTypeFilter, sortBy);
         }
       }
     } catch (err) {
@@ -607,6 +620,7 @@ export default function PropertyFeed({
     isLoadingInitial,
     isFilterLoading,
     filterType,
+    houseTypeFilter,
     sortBy,
     cacheKey,
     appendTopPropertiesData,
@@ -717,7 +731,7 @@ export default function PropertyFeed({
         <button
           onClick={() => {
             setRetryCount(0);
-            fetchPage(1, filterType, sortBy, false);
+            fetchPage(1, filterType, houseTypeFilter, sortBy, false);
           }}
           className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-zinc-900 text-white hover:bg-zinc-800 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-100 font-semibold text-sm shadow-md transition-all active:scale-95 cursor-pointer"
         >
@@ -734,7 +748,7 @@ export default function PropertyFeed({
       <div className="col-span-full py-16 text-center text-zinc-400 dark:text-zinc-500">
         <p className="text-lg font-medium">Aucune propriété disponible pour le moment.</p>
         <button
-          onClick={() => fetchPage(1, filterType, sortBy, false)}
+          onClick={() => fetchPage(1, filterType, houseTypeFilter, sortBy, false)}
           className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-full border border-zinc-200 dark:border-zinc-800 text-xs font-semibold hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
         >
           <RefreshCw className="w-3.5 h-3.5" />

@@ -1,8 +1,9 @@
 import { create } from 'zustand';
 import { CityLocation } from '@/services/city.service';
+import type { HouseCategoryFilter } from '@/lib/propertyTypes';
 
 export type OfferTypeFilter = 'rent' | 'sale' | 'all';
-export type HouseCategoryFilter = 'all' | 'appartement' | 'maison' | 'villa' | 'bureau';
+export type { HouseCategoryFilter };
 export type PlacementFilter = 'all' | 'inside' | 'outside';
 export type SearchSortBy = 'relevance' | 'newest' | 'price_asc' | 'price_desc' | 'distance';
 export type SearchViewMode = 'map' | 'split' | 'list' | 'feed';

@@ -122,6 +122,7 @@ export class FbIngestionController {
     @Query('status') status?: string,
     @Query('groupId') groupId?: string,
     @Query('type') type?: string,
+    @Query('houseType') houseType?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
@@ -129,6 +130,7 @@ export class FbIngestionController {
       status,
       groupId,
       type,
+      houseType,
       page: page ? Number(page) : 1,
       limit: limit ? Number(limit) : 25,
     });

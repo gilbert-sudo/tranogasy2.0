@@ -13,6 +13,7 @@ export default function LandingSectionFeed({
 }: LandingSectionFeedProps) {
   const activeTab = usePropertyStore((state) => state.activeTab);
   const setActiveTab = usePropertyStore((state) => state.setActiveTab);
+  const activeCategory = usePropertyStore((state) => state.activeCategory);
   const sortBy = usePropertyStore((state) => state.sortBy);
   const setSortBy = usePropertyStore((state) => state.setSortBy);
 
@@ -20,7 +21,9 @@ export default function LandingSectionFeed({
     <section className="w-full">
       {/* Top Property Section header with tab & sort controls */}
       <TopPropertySection
-        viewAllHref="/search"
+        viewAllHref={
+          activeCategory !== 'all' ? `/search?category=${activeCategory}` : '/search'
+        }
         activeTab={activeTab}
         sortBy={sortBy}
         onTabChange={(tab) => setActiveTab(tab)}
@@ -31,6 +34,7 @@ export default function LandingSectionFeed({
       <PropertyFeed
         initialProperties={initialProperties}
         filterType={activeTab}
+        houseTypeFilter={activeCategory}
         sortBy={sortBy}
       />
     </section>

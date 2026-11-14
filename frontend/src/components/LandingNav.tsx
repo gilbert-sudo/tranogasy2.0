@@ -8,11 +8,6 @@ import {
   Search,
   MapPin,
   Bell,
-  Building2,
-  Home,
-  Building,
-  Landmark,
-  Globe,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
@@ -22,17 +17,10 @@ import {
 } from 'lucide-react';
 import { useModalStore } from '@/store/modalStore';
 import { useUserStore } from '@/store/userStore';
+import { usePropertyStore } from '@/store/propertyStore';
+import { SEARCH_CATEGORY_OPTIONS } from '@/lib/propertyTypes';
 
 const SCROLL_THRESHOLD = 180;
-
-// Categories matching Image 2
-const CATEGORIES = [
-  { id: 'apartment', name: 'Appartement', icon: Building2 },
-  { id: 'home',      name: 'Maison',      icon: Home },
-  { id: 'office',    name: 'Bureau',      icon: Building },
-  { id: 'villa',     name: 'Villa',       icon: Landmark },
-  { id: 'tous',      name: 'Tous',        icon: Globe },
-];
 
 // Available locations
 const CITIES = [
@@ -50,7 +38,8 @@ export default function LandingNav() {
   const router = useRouter();
   const [isScrolled, setIsScrolled] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
-  const [activeCategory, setActiveCategory] = useState('Appartement');
+  const activeCategory = usePropertyStore((state) => state.activeCategory);
+  const setActiveCategory = usePropertyStore((state) => state.setActiveCategory);
   const [selectedLocation, setSelectedLocation] = useState('Antananarivo, Madagascar');
   const [isLocationOpen, setIsLocationOpen] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
@@ -62,10 +51,12 @@ export default function LandingNav() {
       const q = (opts?.queryOverride ?? searchQuery).trim();
       if (q) params.set('q', q);
 
-      const catName = opts?.categoryOverride ?? activeCategory;
-      const catObj = CATEGORIES.find((c) => c.name === catName);
-      if (catObj && catObj.id !== 'tous') {
-        params.set('category', catObj.id);
+      const catId = opts?.categoryOverride ?? activeCategory;
+      const catObj = SEARCH_CATEGORY_OPTIONS.find(
+        (c) => c.id === catId || c.shortLabel === catId || c.urlParam === catId,
+      );
+      if (catObj && catObj.id !== 'all') {
+        params.set('category', catObj.urlParam);
       }
 
       if (selectedLocation) {
@@ -730,15 +721,15 @@ export default function LandingNav() {
                 onScroll={checkScroll}
                 className="flex items-center gap-2.5 overflow-x-auto scrollbar-hide py-1 -mx-1 px-1 w-full"
               >
-                {CATEGORIES.map((cat) => {
-                  const isActive = activeCategory === cat.name;
+                {SEARCH_CATEGORY_OPTIONS.map((cat) => {
+                  const isActive = activeCategory === cat.id;
                   const Icon = cat.icon;
                   return (
                     <button
                       key={cat.id}
-                      id={`category-pill-${cat.id}`}
+                      id={`category-pill-${cat.urlParam}`}
                       type="button"
-                      onClick={() => setActiveCategory(cat.name)}
+                      onClick={() => setActiveCategory(cat.id)}
                       className={`h-11 px-2.5 pr-4.5 rounded-full flex items-center gap-2.5 flex-shrink-0 transition-all active:scale-95 cursor-pointer ${
                         isActive
                           ? 'bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 shadow-[0_4px_16px_rgba(0,0,0,0.18)]'
@@ -758,7 +749,7 @@ export default function LandingNav() {
 
                       {/* Pill text */}
                       <span className={`text-sm tracking-tight ${isActive ? 'font-bold' : 'font-medium'}`}>
-                        {cat.name}
+                        {cat.shortLabel}
                       </span>
                     </button>
                   );

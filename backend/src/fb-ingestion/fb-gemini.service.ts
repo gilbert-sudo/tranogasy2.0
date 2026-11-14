@@ -1,5 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import {
+  HOUSE_TYPE_VALUES,
+  HouseType,
+  normalizeHouseType,
+} from '../common/property-types.util';
 
 export const PROPERTY_FEATURE_KEYS = [
   'motoAccess',
@@ -45,7 +50,7 @@ export type PropertyFeatureKey = (typeof PROPERTY_FEATURE_KEYS)[number];
 export interface GeminiParsedListing {
   category: 'house_or_apartment' | 'land' | 'seeker_request' | 'spam_or_other';
   type: 'rent' | 'sale' | null;
-  houseType: 'maison' | 'appartement' | null;
+  houseType: HouseType | null;
   title: string;
   description: string;
   priceAriary: number | null;
@@ -143,14 +148,19 @@ export class FbGeminiService {
       '- Set rentAriary ONLY when type="rent" (and priceAriary=null). Set priceAriary ONLY when type="sale" (and rentAriary=null).',
       '',
       'FIELDS & MALAGASY VOCABULARY:',
-      '- houseType: "appartement" for studio/appartement/loft/étage in shared building/chambre; "maison" for villa/trano mitokana/duplex/pavillon/villa basse.',
-      '- rooms: number of bedrooms/chambres ("efitra", "chambres", "chambre à coucher", or "F3"/"T3" -> 2 bedrooms if salon mentioned else estimate carefully). Set null if not mentioned.',
-      '- livingRoom: salon / living count (null if not mentioned).',
-      '- kitchen: cuisine / lakozia count (null if not mentioned).',
+      '- houseType: MUST be one of "maison", "villa", "appartement", "bureau", "tsena":',
+      '  * "tsena": retail/commercial unit in Madagascar ("tsena", "box", "box commercial", "box PPN", "box cash point", "magasin", "boutique", "local commercial", "espace commercial", "showroom", "stand", "kiosque", "dépôt", "entrepôt", "usage commercial").',
+      '  * "bureau": office / professional workspace ("bureau", "bureaux", "open space", "cabinet", "local professionnel", "usage bureau").',
+      '  * "villa": standalone/modern/upscale villa ("villa", "villa basse", "villa à étage", "villa moderne", "villa contemporaine", "mini-villa").',
+      '  * "appartement": apartment, studio, loft, shared-floor unit, chambre ("appartement", "appart", "studio", "chambre", "garçonnière", "étage" in shared building).',
+      '  * "maison": family/individual house ("maison", "trano", "trano mitokana", "trano ahofa", "pavillon", "maison basse") when not a villa, apartment, bureau, or tsena.',
+      '- rooms: number of bedrooms/chambres ("efitra", "chambres", "chambre à coucher", or "F3"/"T3" -> 2 bedrooms if salon mentioned else estimate carefully). For "tsena" or "bureau", set null unless residential bedrooms are explicitly included.',
+      '- livingRoom: salon / living count (null if not mentioned, or for commercial "tsena"/"bureau").',
+      '- kitchen: cuisine / lakozia count (null if not mentioned, or for commercial "tsena"/"bureau").',
       '- toilet: WC / kabone count (null if not mentioned; "douche et wc" / "sanitaire" -> toilet=1, bathrooms=1).',
-      '- bathrooms: douche / salle de bain / SDB count (null if not mentioned).',
+      '- bathrooms: douche / salle de bain / SDB count (null if not mentioned, or for commercial "tsena"/"bureau" without shower).',
       '- area: integer m² if mentioned, otherwise null.',
-      '- floor: string such as "RDC", "1er étage", "Villa basse", etc., or null.',
+      '- floor: string such as "RDC", "Rez-de-chaussée", "1er étage", "Villa basse", etc., or null.',
       '- locationHints: neighborhoods/fokontany/communes mentioned (e.g. ["Ivandry", "Alarobia", "Ambatobe", "Itaosy", "67ha"]).',
       '- features: set booleans ONLY when explicitly mentioned or strongly implied:',
       '  * "acces moto" / "moto miditra" -> motoAccess=true',
@@ -197,7 +207,7 @@ export class FbGeminiService {
               enum: ['house_or_apartment', 'land', 'seeker_request', 'spam_or_other'],
             },
             type: { type: 'STRING', enum: ['rent', 'sale'], nullable: true },
-            houseType: { type: 'STRING', enum: ['maison', 'appartement'], nullable: true },
+            houseType: { type: 'STRING', enum: [...HOUSE_TYPE_VALUES], nullable: true },
             title: { type: 'STRING' },
             description: { type: 'STRING' },
             priceAriary: { type: 'INTEGER', nullable: true },
@@ -310,10 +320,7 @@ export class FbGeminiService {
         ? rawParsed.category
         : 'spam_or_other',
       type: listingType,
-      houseType:
-        rawParsed.houseType === 'maison' || rawParsed.houseType === 'appartement'
-          ? rawParsed.houseType
-          : null,
+      houseType: normalizeHouseType(rawParsed.houseType),
       title: String(rawParsed.title || 'Propriété à Antananarivo').slice(0, 120),
       description: String(rawParsed.description || params.content),
       priceAriary:

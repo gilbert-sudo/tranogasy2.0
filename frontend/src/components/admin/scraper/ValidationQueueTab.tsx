@@ -27,12 +27,21 @@ import {
   MISSING_FIELD_LABELS,
   PROPERTY_FEATURE_GROUPS,
 } from './featureLabels';
+import {
+  HouseCategoryFilter,
+  HouseType,
+  PROPERTY_TYPE_DEFS,
+  SEARCH_CATEGORY_OPTIONS,
+  getRequiredMissingSpecs,
+  isCommercialHouseType,
+  normalizeHouseType,
+} from '@/lib/propertyTypes';
 
 interface CandidateDraft {
   title: string;
   description: string;
   type: 'rent' | 'sale' | null;
-  houseType: 'maison' | 'appartement' | null;
+  houseType: HouseType | null;
   price: string;
   rent: string;
   rooms: string;
@@ -57,7 +66,7 @@ function toDraft(c: FbIngestedCandidate): CandidateDraft {
     title: ex?.title || '',
     description: ex?.description || c.rawContent || '',
     type: ex?.type || null,
-    houseType: ex?.houseType || 'maison',
+    houseType: normalizeHouseType(ex?.houseType) || 'maison',
     price: ex?.price != null ? String(ex.price) : '',
     rent: ex?.rent != null ? String(ex.rent) : '',
     rooms: ex?.rooms != null ? String(ex.rooms) : '',
@@ -85,6 +94,7 @@ function toNumOrNull(val: string): number | null {
 }
 
 function buildPatchFromDraft(d: CandidateDraft): Record<string, unknown> {
+  const commercial = isCommercialHouseType(d.houseType);
   return {
     title: d.title.trim(),
     description: d.description.trim(),
@@ -92,11 +102,11 @@ function buildPatchFromDraft(d: CandidateDraft): Record<string, unknown> {
     houseType: d.houseType,
     price: d.type === 'sale' ? toNumOrNull(d.price) : null,
     rent: d.type === 'rent' ? toNumOrNull(d.rent) : null,
-    rooms: toNumOrNull(d.rooms),
-    livingRoom: toNumOrNull(d.livingRoom),
-    kitchen: toNumOrNull(d.kitchen),
+    rooms: commercial ? null : toNumOrNull(d.rooms),
+    livingRoom: commercial ? null : toNumOrNull(d.livingRoom),
+    kitchen: commercial ? null : toNumOrNull(d.kitchen),
     toilet: toNumOrNull(d.toilet),
-    bathrooms: toNumOrNull(d.bathrooms),
+    bathrooms: commercial ? null : toNumOrNull(d.bathrooms),
     area: toNumOrNull(d.area),
     floor: d.floor.trim() || null,
     phone1: d.phone1.trim() || null,
@@ -114,10 +124,11 @@ function computeLiveMissing(d: CandidateDraft): string[] {
   if (d.type === 'sale' && (!toNumOrNull(d.price) || Number(d.price) <= 0)) missing.push('price');
   if (d.type === 'rent' && (!toNumOrNull(d.rent) || Number(d.rent) <= 0)) missing.push('rent');
   if (!d.matchedCityId) missing.push('city');
-  if (d.rooms === '') missing.push('rooms');
-  if (d.toilet === '') missing.push('toilet');
-  if (d.bathrooms === '') missing.push('bathrooms');
-  if (d.area === '') missing.push('area');
+  const requiredSpecs = getRequiredMissingSpecs(d.houseType);
+  if (requiredSpecs.includes('rooms') && d.rooms === '') missing.push('rooms');
+  if (requiredSpecs.includes('toilet') && d.toilet === '') missing.push('toilet');
+  if (requiredSpecs.includes('bathrooms') && d.bathrooms === '') missing.push('bathrooms');
+  if (requiredSpecs.includes('area') && d.area === '') missing.push('area');
   if (!d.phone1.trim()) missing.push('phone1');
   return missing;
 }
@@ -434,21 +445,26 @@ function CandidateReviewCard({ candidate, userId, onActionDone, onError }: Candi
               <label className="block text-xs font-semibold text-zinc-500 mb-1">
                 Catégorie du bien
               </label>
-              <div className="grid grid-cols-2 gap-2">
-                {(['maison', 'appartement'] as const).map((ht) => (
-                  <button
-                    key={ht}
-                    type="button"
-                    onClick={() => setDraft((prev) => ({ ...prev, houseType: ht }))}
-                    className={`py-2 px-3 rounded-xl text-xs font-bold border capitalize transition ${
-                      draft.houseType === ht
-                        ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 border-zinc-900 dark:border-white'
-                        : 'bg-zinc-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
-                    }`}
-                  >
-                    {ht}
-                  </button>
-                ))}
+              <div className="flex flex-wrap gap-1.5">
+                {PROPERTY_TYPE_DEFS.map((def) => {
+                  const Icon = def.icon;
+                  const active = draft.houseType === def.id;
+                  return (
+                    <button
+                      key={def.id}
+                      type="button"
+                      onClick={() => setDraft((prev) => ({ ...prev, houseType: def.id }))}
+                      className={`inline-flex items-center gap-1.5 py-2 px-2.5 rounded-xl text-xs font-bold border transition ${
+                        active
+                          ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 border-zinc-900 dark:border-white'
+                          : 'bg-zinc-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:border-zinc-400 dark:hover:border-zinc-500'
+                      }`}
+                    >
+                      <Icon className="w-3.5 h-3.5 shrink-0" />
+                      {def.shortLabel}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -587,46 +603,56 @@ function CandidateReviewCard({ candidate, userId, onActionDone, onError }: Candi
           </div>
 
           {/* Numeric rooms & dimensions */}
-          <div className="grid grid-cols-3 sm:grid-cols-7 gap-2">
-            {(
-              [
-                { key: 'rooms', label: 'Chambres' },
-                { key: 'livingRoom', label: 'Salon' },
-                { key: 'kitchen', label: 'Cuisine' },
-                { key: 'toilet', label: 'WC' },
-                { key: 'bathrooms', label: 'Douche' },
-                { key: 'area', label: 'm²' },
-              ] as const
-            ).map((field) => (
-              <div key={field.key}>
-                <label className="block text-[11px] font-semibold text-zinc-500 mb-1">
-                  {field.label}
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  value={draft[field.key]}
-                  onChange={(e) =>
-                    setDraft((prev) => ({ ...prev, [field.key]: e.target.value }))
-                  }
-                  placeholder="—"
-                  className={`w-full px-2.5 py-1.5 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 ${missingRing(
-                    field.key,
-                  )}`}
-                />
+          {(() => {
+            const commercial = isCommercialHouseType(draft.houseType);
+            const numericFields = commercial
+              ? ([
+                  { key: 'toilet', label: 'WC (opt.)' },
+                  { key: 'area', label: 'm²' },
+                ] as const)
+              : ([
+                  { key: 'rooms', label: 'Chambres' },
+                  { key: 'livingRoom', label: 'Salon' },
+                  { key: 'kitchen', label: 'Cuisine' },
+                  { key: 'toilet', label: 'WC' },
+                  { key: 'bathrooms', label: 'Douche' },
+                  { key: 'area', label: 'm²' },
+                ] as const);
+
+            return (
+              <div className={`grid gap-2 ${commercial ? 'grid-cols-3' : 'grid-cols-3 sm:grid-cols-7'}`}>
+                {numericFields.map((field) => (
+                  <div key={field.key}>
+                    <label className="block text-[11px] font-semibold text-zinc-500 mb-1">
+                      {field.label}
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={draft[field.key]}
+                      onChange={(e) =>
+                        setDraft((prev) => ({ ...prev, [field.key]: e.target.value }))
+                      }
+                      placeholder="—"
+                      className={`w-full px-2.5 py-1.5 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 ${missingRing(
+                        field.key,
+                      )}`}
+                    />
+                  </div>
+                ))}
+                <div>
+                  <label className="block text-[11px] font-semibold text-zinc-500 mb-1">Étage</label>
+                  <input
+                    type="text"
+                    value={draft.floor}
+                    onChange={(e) => setDraft((prev) => ({ ...prev, floor: e.target.value }))}
+                    placeholder={commercial ? 'RDC / Bord de route' : 'RDC'}
+                    className="w-full px-2.5 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs focus:outline-none focus:ring-2 focus:ring-brand-green"
+                  />
+                </div>
               </div>
-            ))}
-            <div>
-              <label className="block text-[11px] font-semibold text-zinc-500 mb-1">Étage</label>
-              <input
-                type="text"
-                value={draft.floor}
-                onChange={(e) => setDraft((prev) => ({ ...prev, floor: e.target.value }))}
-                placeholder="RDC"
-                className="w-full px-2.5 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs focus:outline-none focus:ring-2 focus:ring-brand-green"
-              />
-            </div>
-          </div>
+            );
+          })()}
 
           {/* Phones */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -821,6 +847,7 @@ interface Props {
 export default function ValidationQueueTab({ userId, groups, onRefreshAll, onNotify }: Props) {
   const [statusFilter, setStatusFilter] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
   const [typeFilter, setTypeFilter] = useState<'all' | 'rent' | 'sale'>('all');
+  const [houseTypeFilter, setHouseTypeFilter] = useState<HouseCategoryFilter>('all');
   const [groupFilter, setGroupFilter] = useState('');
   const [items, setItems] = useState<FbIngestedCandidate[]>([]);
   const [counts, setCounts] = useState({ pending: 0, approved: 0, rejected: 0 });
@@ -833,6 +860,7 @@ export default function ValidationQueueTab({ userId, groups, onRefreshAll, onNot
       const res = await fbIngestionService.listCandidates(userId, {
         status: statusFilter,
         type: typeFilter === 'all' ? undefined : typeFilter,
+        houseType: houseTypeFilter === 'all' ? undefined : houseTypeFilter,
         groupId: groupFilter || undefined,
         limit: 40,
       });
@@ -843,7 +871,7 @@ export default function ValidationQueueTab({ userId, groups, onRefreshAll, onNot
     } finally {
       setLoading(false);
     }
-  }, [userId, statusFilter, typeFilter, groupFilter]);
+  }, [userId, statusFilter, typeFilter, houseTypeFilter, groupFilter]);
 
   useEffect(() => {
     let active = true;
@@ -852,6 +880,7 @@ export default function ValidationQueueTab({ userId, groups, onRefreshAll, onNot
         const res = await fbIngestionService.listCandidates(userId, {
           status: statusFilter,
           type: typeFilter === 'all' ? undefined : typeFilter,
+          houseType: houseTypeFilter === 'all' ? undefined : houseTypeFilter,
           groupId: groupFilter || undefined,
           limit: 40,
         });
@@ -868,7 +897,7 @@ export default function ValidationQueueTab({ userId, groups, onRefreshAll, onNot
     return () => {
       active = false;
     };
-  }, [userId, statusFilter, typeFilter, groupFilter]);
+  }, [userId, statusFilter, typeFilter, houseTypeFilter, groupFilter]);
 
   return (
     <div className="space-y-5">
@@ -907,6 +936,18 @@ export default function ValidationQueueTab({ userId, groups, onRefreshAll, onNot
             <option value="all">Tous types (Rent + Sale)</option>
             <option value="rent">Location uniquement (Rent)</option>
             <option value="sale">Vente uniquement (Sale)</option>
+          </select>
+
+          <select
+            value={houseTypeFilter}
+            onChange={(e) => setHouseTypeFilter(e.target.value as HouseCategoryFilter)}
+            className="px-3 py-1.5 rounded-full border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs font-semibold"
+          >
+            {SEARCH_CATEGORY_OPTIONS.map((opt) => (
+              <option key={opt.id} value={opt.id}>
+                {opt.id === 'all' ? 'Toutes catégories' : opt.label}
+              </option>
+            ))}
           </select>
 
           <select

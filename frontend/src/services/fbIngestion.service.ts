@@ -1,4 +1,5 @@
 import { apiFetch, type FetchOptions } from './api';
+import type { HouseType } from '@/lib/propertyTypes';
 
 export interface FbRunProgress {
   current: number;
@@ -133,7 +134,7 @@ export interface FbIngestedCandidate {
     title: string;
     description: string;
     type: 'rent' | 'sale' | null;
-    houseType: 'maison' | 'appartement' | null;
+    houseType: HouseType | null;
     price: number | null;
     rent: number | null;
     rooms: number | null;
@@ -393,12 +394,13 @@ export const fbIngestionService = {
 
   listCandidates: (
     userId: string,
-    params: { status?: string; groupId?: string; type?: string; page?: number; limit?: number } = {},
+    params: { status?: string; groupId?: string; type?: string; houseType?: string; page?: number; limit?: number } = {},
   ) => {
     const query = new URLSearchParams();
     if (params.status) query.set('status', params.status);
     if (params.groupId) query.set('groupId', params.groupId);
     if (params.type) query.set('type', params.type);
+    if (params.houseType) query.set('houseType', params.houseType);
     if (params.page) query.set('page', String(params.page));
     if (params.limit) query.set('limit', String(params.limit));
     return apiFetch<CandidateListResponse>(

@@ -3,6 +3,12 @@
 import React, { useState, useEffect } from 'react';
 import { X, Check, Home, Tag, Save } from 'lucide-react';
 import { DashboardProperty } from './DashboardPropertyCard';
+import {
+  PROPERTY_TYPE_DEFS,
+  isCommercialHouseType,
+  normalizeHouseType,
+  usesFloorHouseType,
+} from '@/lib/propertyTypes';
 
 interface EditPropertyModalProps {
   isOpen: boolean;
@@ -23,12 +29,18 @@ export default function EditPropertyModal({
     if (property) {
       setFormData({
         ...property,
+        houseType: normalizeHouseType(property.houseType) || 'maison',
         price: property.type === 'rent' ? property.rent || property.price : property.price || property.rent,
       });
     }
   }, [property]);
 
   if (!isOpen || !property) return null;
+
+  const selectedHouseType =
+    normalizeHouseType(formData.houseType) || normalizeHouseType(property.houseType) || 'maison';
+  const isCommercial = isCommercialHouseType(selectedHouseType);
+  const usesFloor = usesFloorHouseType(selectedHouseType);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,10 +53,12 @@ export default function EditPropertyModal({
       title: formData.title || property.title,
       description: formData.description || property.description,
       type: formData.type || property.type,
-      houseType: formData.houseType || property.houseType,
-      area: Number(formData.area) || property.area,
-      rooms: Number(formData.rooms) || property.rooms,
-      bathrooms: Number(formData.bathrooms) || property.bathrooms,
+      houseType: selectedHouseType,
+      floor: usesFloor ? (formData.floor?.trim() || null) : null,
+      area: Number(formData.area ?? property.area ?? 0),
+      rooms: isCommercial ? 0 : Number(formData.rooms ?? property.rooms ?? 0),
+      bathrooms: isCommercial ? 0 : Number(formData.bathrooms ?? property.bathrooms ?? 0),
+      toilet: Number(formData.toilet ?? property.toilet ?? 0),
       price: isRent ? property.price : numPrice,
       rent: isRent ? numPrice : property.rent,
       status: formData.status || property.status,
@@ -150,22 +164,37 @@ export default function EditPropertyModal({
               Catégorie
             </label>
             <div className="grid grid-cols-5 gap-1.5">
-              {['Villa', 'Appartement', 'Maison', 'Bureau', 'Terrain'].map((ht) => (
+              {PROPERTY_TYPE_DEFS.map((def) => (
                 <button
-                  key={ht}
+                  key={def.id}
                   type="button"
-                  onClick={() => setFormData({ ...formData, houseType: ht })}
-                  className={`py-1.5 px-2 rounded-xl text-[11px] font-semibold border transition-all cursor-pointer ${
-                    formData.houseType?.toLowerCase() === ht.toLowerCase()
+                  onClick={() => setFormData({ ...formData, houseType: def.id })}
+                  className={`py-1.5 px-2 rounded-xl text-[11px] font-semibold border transition-all cursor-pointer truncate ${
+                    selectedHouseType === def.id
                       ? 'bg-brand-green text-white border-brand-green shadow-xs'
                       : 'bg-zinc-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
                   }`}
                 >
-                  {ht}
+                  {def.shortLabel}
                 </button>
               ))}
             </div>
           </div>
+
+          {usesFloor && (
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 mb-1">
+                {selectedHouseType === 'appartement' ? 'Étage' : 'Niveau / Emplacement (opt.)'}
+              </label>
+              <input
+                type="text"
+                value={formData.floor ?? ''}
+                onChange={(e) => setFormData({ ...formData, floor: e.target.value })}
+                placeholder={isCommercial ? 'Ex: RDC, Galerie marchande...' : 'Ex: RDC, 2ème étage...'}
+                className="w-full px-3 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs sm:text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-green"
+              />
+            </div>
+          )}
 
           {/* Prix & Surface */}
           <div className="grid grid-cols-3 gap-3">
@@ -194,31 +223,60 @@ export default function EditPropertyModal({
             </div>
           </div>
 
-          {/* Pièces & Salles de bain */}
-          <div className="grid grid-cols-2 gap-3">
+          {/* Pièces, Douches & WC */}
+          {!isCommercial ? (
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 mb-1">
+                  Nombre de pièces
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  value={formData.rooms ?? ''}
+                  onChange={(e) => setFormData({ ...formData, rooms: Number(e.target.value) })}
+                  className="w-full px-3 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-green"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 mb-1">
+                  Salles de bain
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  value={formData.bathrooms ?? ''}
+                  onChange={(e) => setFormData({ ...formData, bathrooms: Number(e.target.value) })}
+                  className="w-full px-3 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-green"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 mb-1">
+                  Toilettes / W.C
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  value={formData.toilet ?? ''}
+                  onChange={(e) => setFormData({ ...formData, toilet: Number(e.target.value) })}
+                  className="w-full px-3 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-green"
+                />
+              </div>
+            </div>
+          ) : (
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 mb-1">
-                Nombre de pièces
+                Toilettes / W.C (optionnel)
               </label>
               <input
                 type="number"
-                value={formData.rooms ?? ''}
-                onChange={(e) => setFormData({ ...formData, rooms: Number(e.target.value) })}
+                min={0}
+                value={formData.toilet ?? ''}
+                onChange={(e) => setFormData({ ...formData, toilet: Number(e.target.value) })}
                 className="w-full px-3 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-green"
               />
             </div>
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 mb-1">
-                Salles de bain
-              </label>
-              <input
-                type="number"
-                value={formData.bathrooms ?? ''}
-                onChange={(e) => setFormData({ ...formData, bathrooms: Number(e.target.value) })}
-                className="w-full px-3 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-green"
-              />
-            </div>
-          </div>
+          )}
 
           {/* Description */}
           <div>

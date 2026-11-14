@@ -12,11 +12,6 @@ import {
   Compass,
   Crosshair,
   Sparkles,
-  Building2,
-  Home,
-  Building,
-  Landmark,
-  Globe,
   Radar,
   Loader2,
   Car,
@@ -35,6 +30,7 @@ import {
   HouseCategoryFilter,
   DEFAULT_ANTANANARIVO_CENTER,
 } from '@/store/searchStore';
+import { SEARCH_CATEGORY_OPTIONS } from '@/lib/propertyTypes';
 
 const RADIUS_OPTIONS = [
   { label: 'Toute la carte', value: 0 },
@@ -46,17 +42,7 @@ const RADIUS_OPTIONS = [
   { label: '10 km', value: 10000 },
 ];
 
-const QUICK_CATEGORIES: Array<{
-  id: HouseCategoryFilter;
-  label: string;
-  icon: React.ElementType;
-}> = [
-  { id: 'all', label: 'Tous les biens', icon: Globe },
-  { id: 'appartement', label: 'Appartement', icon: Building2 },
-  { id: 'maison', label: 'Maison', icon: Home },
-  { id: 'villa', label: 'Villa', icon: Landmark },
-  { id: 'bureau', label: 'Bureau', icon: Building },
-];
+const QUICK_CATEGORIES = SEARCH_CATEGORY_OPTIONS;
 
 const QUICK_FEATURES: Array<{
   key: string;

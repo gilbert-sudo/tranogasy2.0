@@ -3,6 +3,11 @@ import { propertyService } from '@/services/property.service';
 import { cityService, removeDiacritics } from '@/services/city.service';
 import { usePropertyStore } from '@/store/propertyStore';
 import { useSearchStore, DEFAULT_ANTANANARIVO_CENTER } from '@/store/searchStore';
+import {
+  computePropertyCategoryFlags,
+  mapCategoryQueryParam,
+  matchesComputedCategory,
+} from '@/lib/propertyTypes';
 
 // Fast inline Haversine distance in meters (avoids geolib object allocation overhead in tight loops)
 const DEG_TO_RAD = Math.PI / 180;
@@ -267,18 +272,12 @@ export function usePropertySearch(initialProperties?: any[]) {
       const districtNorm = removeDiacritics((prop.city?.district || '').toLowerCase());
       const regionNorm = removeDiacritics((prop.city?.region || '').toLowerCase());
 
-      const isVillaCandidate =
-        houseTypeNorm === 'villa' ||
-        titleNorm.includes('villa') ||
-        descNorm.includes('villa') ||
-        (houseTypeNorm === 'maison' &&
-          Boolean(prop.features?.swimmingPool || prop.features?.garden));
-
-      const isBureauCandidate =
-        houseTypeNorm === 'bureau' ||
-        titleNorm.includes('bureau') ||
-        titleNorm.includes('commercial') ||
-        descNorm.includes('usage bureau');
+      const categoryFlags = computePropertyCategoryFlags(
+        prop,
+        houseTypeNorm,
+        titleNorm,
+        descNorm,
+      );
 
       const searchBlob = `${titleNorm} ${descNorm} ${propNumNorm} ${fokontanyNorm} ${communeNorm} ${districtNorm} ${regionNorm}`;
       const roomsNum = Number(prop.rooms) || 0;
@@ -294,8 +293,7 @@ export function usePropertySearch(initialProperties?: any[]) {
         _score: score,
         _createdAtMs: createdAtMs,
         _houseTypeNorm: houseTypeNorm,
-        _isVillaCandidate: isVillaCandidate,
-        _isBureauCandidate: isBureauCandidate,
+        _categoryFlags: categoryFlags,
         _searchBlob: searchBlob,
         _roomsNum: roomsNum,
         _totalRoomsNum: totalRoomsNum,
@@ -372,10 +370,7 @@ export function usePropertySearch(initialProperties?: any[]) {
   const rawFilteredWithoutRadius = useMemo(() => {
     const cleanQuery = removeDiacritics(filters.query.trim().toLowerCase());
     const tokens = cleanQuery ? cleanQuery.split(/\s+/).filter(Boolean) : [];
-    const targetHouseType =
-      filters.houseType !== 'all'
-        ? removeDiacritics(filters.houseType.toLowerCase())
-        : 'all';
+    const targetHouseType = mapCategoryQueryParam(filters.houseType);
     const activeFeatureKeys = Object.entries(filters.features)
       .filter(([_, val]) => Boolean(val))
       .map(([key]) => key);
@@ -386,15 +381,9 @@ export function usePropertySearch(initialProperties?: any[]) {
         return false;
       }
 
-      // 2. Property Category (appartement / maison / villa / bureau / all)
-      if (targetHouseType !== 'all') {
-        if (targetHouseType === 'villa') {
-          if (!prop._isVillaCandidate) return false;
-        } else if (targetHouseType === 'bureau') {
-          if (!prop._isBureauCandidate) return false;
-        } else if (prop._houseTypeNorm !== targetHouseType) {
-          return false;
-        }
+      // 2. Property Category (appartement / maison / villa / tsena / bureau / all)
+      if (!matchesComputedCategory(prop._categoryFlags, targetHouseType)) {
+        return false;
       }
 
       // 3. Budget Min & Max

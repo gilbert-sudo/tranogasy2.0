@@ -212,4 +212,38 @@ describe('FbIngestionService background job tracking & recovery', () => {
     expect(finalProgress.total).toBe(1);
     expect(finalProgress.unit).toBe('posts');
   });
+
+  it('recomputes missingFields without bedrooms/WC/bathrooms when category changes to tsena', async () => {
+    const mockCandidate: any = {
+      _id: 'cand-tsena-1',
+      status: 'pending',
+      matchedCityId: 'city-1',
+      gcsImages: [],
+      extracted: {
+        title: 'Box commercial à louer à Namontana',
+        description: 'Box cash point 100 000 Ar',
+        type: 'rent',
+        houseType: 'appartement',
+        rent: 100000,
+        rooms: null,
+        toilet: null,
+        bathrooms: null,
+        area: null,
+        phone1: '0386349387',
+      },
+      missingFields: ['rooms', 'toilet', 'bathrooms', 'area'],
+      save: jest.fn().mockResolvedValue(true),
+    };
+
+    const { service, candidateModel } = createHarness();
+    candidateModel.findById = jest.fn().mockResolvedValue(mockCandidate);
+
+    await service.updateCandidate('cand-tsena-1', { houseType: 'tsena' });
+    expect(mockCandidate.extracted.houseType).toBe('tsena');
+    expect(mockCandidate.missingFields).toEqual(['area']);
+
+    await service.updateCandidate('cand-tsena-1', { houseType: 'maison' });
+    expect(mockCandidate.extracted.houseType).toBe('maison');
+    expect(mockCandidate.missingFields).toEqual(['rooms', 'toilet', 'bathrooms', 'area']);
+  });
 });

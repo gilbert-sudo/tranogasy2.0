@@ -12,6 +12,10 @@ import { InjectModel } from '@nestjs/mongoose';
 import * as bcrypt from 'bcrypt';
 import { Model, Types } from 'mongoose';
 import { normalizeMalagasyPhone } from '../common/phone.util';
+import {
+  getRequiredMissingSpecs,
+  normalizeHouseType,
+} from '../common/property-types.util';
 import { sanitizePropertyForViewer } from '../common/property-sanitizer.util';
 import { City, CityDocument } from '../cities/schemas/city.schema';
 import { Property, PropertyDocument } from '../properties/schemas/property.schema';
@@ -946,6 +950,7 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
 
     const missingFields = this.computeMissingFields({
       type: parsedResult.type,
+      houseType: parsedResult.houseType,
       price: parsedResult.priceAriary,
       rent: parsedResult.rentAriary,
       matchedCityId: cityMatch.bestMatch?._id || null,
@@ -1308,6 +1313,7 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
 
   private computeMissingFields(data: {
     type?: string | null;
+    houseType?: string | null;
     price?: number | null;
     rent?: number | null;
     matchedCityId?: string | null;
@@ -1322,10 +1328,24 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
     if (data.type === 'sale' && (!data.price || data.price <= 0)) missing.push('price');
     if (data.type === 'rent' && (!data.rent || data.rent <= 0)) missing.push('rent');
     if (!data.matchedCityId) missing.push('city');
-    if (data.rooms === null || data.rooms === undefined) missing.push('rooms');
-    if (data.toilet === null || data.toilet === undefined) missing.push('toilet');
-    if (data.bathrooms === null || data.bathrooms === undefined) missing.push('bathrooms');
-    if (data.area === null || data.area === undefined) missing.push('area');
+
+    const requiredSpecs = getRequiredMissingSpecs(data.houseType);
+    if (requiredSpecs.includes('rooms') && (data.rooms === null || data.rooms === undefined)) {
+      missing.push('rooms');
+    }
+    if (requiredSpecs.includes('toilet') && (data.toilet === null || data.toilet === undefined)) {
+      missing.push('toilet');
+    }
+    if (
+      requiredSpecs.includes('bathrooms') &&
+      (data.bathrooms === null || data.bathrooms === undefined)
+    ) {
+      missing.push('bathrooms');
+    }
+    if (requiredSpecs.includes('area') && (data.area === null || data.area === undefined)) {
+      missing.push('area');
+    }
+
     const hasPhone = (data.phones || []).some((p) => Boolean(p && String(p).trim()));
     if (!hasPhone) missing.push('phone1');
     return missing;
@@ -1339,6 +1359,7 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
     status?: string;
     groupId?: string;
     type?: string;
+    houseType?: string;
     page?: number;
     limit?: number;
   }) {
@@ -1351,6 +1372,10 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
     if (params.groupId) filter.groupId = params.groupId;
     if (params.type === 'rent' || params.type === 'sale') {
       filter['extracted.type'] = params.type;
+    }
+    const normalizedHouseType = normalizeHouseType(params.houseType);
+    if (normalizedHouseType) {
+      filter['extracted.houseType'] = normalizedHouseType;
     }
 
     const [items, total, pendingCount, approvedCount, rejectedCount] = await Promise.all([
@@ -1409,6 +1434,8 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
         if (key === 'phone1' || key === 'phone2' || key === 'phone3') {
           const val = patch[key] ? String(patch[key]).trim() : '';
           extracted[key] = val ? normalizeMalagasyPhone(val) || val : null;
+        } else if (key === 'houseType') {
+          extracted[key] = patch[key] ? normalizeHouseType(patch[key]) || null : null;
         } else {
           extracted[key] = patch[key];
         }
@@ -1454,6 +1481,7 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
     candidate.extracted = extracted;
     candidate.missingFields = this.computeMissingFields({
       type: extracted.type,
+      houseType: extracted.houseType,
       price: extracted.price,
       rent: extracted.rent,
       matchedCityId: candidate.matchedCityId,
@@ -1560,7 +1588,7 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       description: String(ex.description || candidate.rawContent).trim(),
       city: String(cityDoc._id),
       type: ex.type,
-      houseType: ex.houseType || 'maison',
+      houseType: normalizeHouseType(ex.houseType) || 'maison',
       ...(ex.type === 'sale' ? { price: Math.round(amount) } : { rent: Math.round(amount) }),
       rooms: Math.max(0, Number(ex.rooms ?? 0)),
       livingRoom: Math.max(0, Number(ex.livingRoom ?? 0)),

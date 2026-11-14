@@ -4,7 +4,8 @@ import { useState, useEffect, memo } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { BedDouble, Bath, Maximize, MapPin, Heart, Check, ChevronLeft, ChevronRight } from 'lucide-react';
+import { BedDouble, Bath, Maximize, MapPin, Heart, Check, ChevronLeft, ChevronRight, Grid2X2 } from 'lucide-react';
+import { getHouseTypeLabel, isCommercialHouseType } from '@/lib/propertyTypes';
 import {
   FaCar, FaMotorcycle, FaWifi, FaParking, FaShieldAlt, FaSwimmingPool, FaHotTub, FaBed, FaShower
 } from "react-icons/fa";
@@ -103,9 +104,11 @@ interface PropertyProps {
     rent?: number;
     rooms: number;
     bathrooms: number;
+    toilet?: number;
     area: number;
     type: string;
-    houseType: string;
+    houseType?: string;
+    floor?: string | null;
     city?: {
       district: string;
       commune: string;
@@ -215,6 +218,18 @@ function PropertyCardComponent({ property }: PropertyProps) {
         .filter(([key, value]) => Boolean(value) && key !== '_id' && key !== '__v')
         .map(([key]) => key)
     : [];
+
+  const isCommercial = isCommercialHouseType(property.houseType);
+  const categoryLabel = getHouseTypeLabel(property.houseType, {
+    compact: true,
+    floor: property.floor,
+  });
+  const toiletCount =
+    property.toilet !== undefined && property.toilet !== null && Number(property.toilet) > 0
+      ? Number(property.toilet)
+      : property.features?.insideToilet
+      ? 1
+      : 0;
 
   const displayArea = (property.area && Number(property.area) > 0)
     ? Number(property.area)
@@ -395,7 +410,7 @@ function PropertyCardComponent({ property }: PropertyProps) {
           {/* Second line: Type & Location */}
           <div className="mt-1 flex items-center gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
             <span className="font-semibold">
-              {property.houseType ? property.houseType.charAt(0).toUpperCase() + property.houseType.slice(1) : 'Propriété'}
+              {categoryLabel}
             </span>
             <span>•</span>
             <MapPin className="h-3 w-3 text-brand-green shrink-0" />
@@ -459,14 +474,24 @@ function PropertyCardComponent({ property }: PropertyProps) {
           <div className="mt-1 flex items-center pt-1.5 border-t border-zinc-100 dark:border-zinc-700/60 overflow-hidden">
             {/* Core Stats */}
             <div className="flex items-center gap-2.5 text-zinc-500 dark:text-zinc-400 shrink-0 pr-3 border-r border-zinc-200 dark:border-zinc-700">
-              <span className="flex items-center gap-1 text-[11px]" title="Pièces">
-                <BedDouble className="h-3.5 w-3.5" />
-                {property.rooms || 0}
-              </span>
-              <span className="flex items-center gap-1 text-[11px]" title="Salles de bain">
-                <Bath className="h-3.5 w-3.5" />
-                {property.bathrooms || 0}
-              </span>
+              {!isCommercial && (
+                <>
+                  <span className="flex items-center gap-1 text-[11px]" title="Pièces">
+                    <BedDouble className="h-3.5 w-3.5" />
+                    {property.rooms || 0}
+                  </span>
+                  <span className="flex items-center gap-1 text-[11px]" title="Salles de bain">
+                    <Bath className="h-3.5 w-3.5" />
+                    {property.bathrooms || 0}
+                  </span>
+                </>
+              )}
+              {isCommercial && toiletCount > 0 && (
+                <span className="flex items-center gap-1 text-[11px]" title="W.C / Toilettes">
+                  <Grid2X2 className="h-3.5 w-3.5" />
+                  {toiletCount}
+                </span>
+              )}
               <span className="flex items-center gap-1 text-[11px]" title="Surface">
                 <Maximize className="h-3.5 w-3.5" />
                 {displayArea ? `${displayArea}m²` : '-'}

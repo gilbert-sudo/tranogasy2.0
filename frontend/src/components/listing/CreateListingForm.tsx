@@ -28,7 +28,22 @@ import {
   MessageSquare,
   ShieldCheck,
   RotateCcw,
+  Building2,
+  Landmark,
+  Briefcase,
+  Store,
+  Layers,
 } from 'lucide-react';
+import {
+  PROPERTY_TYPE_DEFS,
+  PROPERTY_TYPE_MAP,
+  RESIDENTIAL_FLOOR_PRESETS,
+  COMMERCIAL_FLOOR_PRESETS,
+  type HouseType,
+  isCommercialHouseType,
+  usesFloorHouseType,
+  getHouseTypeLabel,
+} from '@/lib/propertyTypes';
 import { useUserStore } from '@/store/userStore';
 import { useModalStore } from '@/store/modalStore';
 import { usePropertyStore } from '@/store/propertyStore';
@@ -61,11 +76,15 @@ export default function CreateListingForm({
   const { images, isUploading: isImageUploading } = imageUploadState;
 
   // Form Fields
-  // Defaulted for current business focus: houses for rent only
-  const [type, _setType] = useState<'rent' | 'sale'>('rent');
-  const [houseType, _setHouseType] = useState<'maison' | 'appartement'>('maison');
-  const [floor, _setFloor] = useState<string>('');
+  const [type, setType] = useState<'rent' | 'sale'>('rent');
+  const [houseType, setHouseType] = useState<HouseType>('maison');
+  const [floor, setFloor] = useState<string>('');
   const [title, setTitle] = useState('');
+
+  const isCommercial = isCommercialHouseType(houseType);
+  const usesFloor = usesFloorHouseType(houseType);
+  const activeTypeDef = PROPERTY_TYPE_MAP[houseType];
+  const floorPresets = isCommercial ? COMMERCIAL_FLOOR_PRESETS : RESIDENTIAL_FLOOR_PRESETS;
   const [description, setDescription] = useState('');
 
   // Pricing (in Ariary MGA)
@@ -209,7 +228,7 @@ export default function CreateListingForm({
       );
       return false;
     }
-    if (houseType === 'appartement' && !floor) {
+    if (houseType === 'appartement' && !floor.trim()) {
       setFormError("Veuillez préciser l'étage pour un appartement.");
       return false;
     }
@@ -257,19 +276,19 @@ export default function CreateListingForm({
         description: description.trim(),
         type,
         houseType,
-        floor: houseType === 'appartement' ? floor : null,
+        floor: usesFloor ? (floor.trim() || null) : null,
         price: type === 'sale' ? price : null,
         rent: type === 'rent' ? rent : null,
         city: selectedCity?._id,
         coords: coords || selectedCity?.coords || null,
-        rooms: Number(rooms) || 0,
-        bathrooms: Number(bathrooms) || 0,
+        rooms: isCommercial ? 0 : (Number(rooms) || 0),
+        bathrooms: isCommercial ? 0 : (Number(bathrooms) || 0),
         toilet: Number(toilet) || 0,
-        kitchen: Number(kitchen) || 0,
-        livingRoom: Number(livingRoom) || 0,
+        kitchen: isCommercial ? 0 : (Number(kitchen) || 0),
+        livingRoom: isCommercial ? 0 : (Number(livingRoom) || 0),
         area: Number(area) || 0,
-        insideToilet,
-        insideBathroom,
+        insideToilet: isCommercial && toilet <= 0 ? false : insideToilet,
+        insideBathroom: isCommercial ? false : insideBathroom,
         images: images.filter((img) => (img.status === 'done' && img.src) || img.src).map((img) => img.src),
         owner: currentUser._id || currentUser.id,
         phone1: phone1.trim(),
@@ -282,8 +301,8 @@ export default function CreateListingForm({
         } : null,
         features: {
           ...features,
-          insideToilet,
-          insideBathroom,
+          insideToilet: isCommercial && toilet <= 0 ? false : insideToilet,
+          insideBathroom: isCommercial ? false : insideBathroom,
         },
       };
 
@@ -297,16 +316,16 @@ export default function CreateListingForm({
           title: result.title,
           description: result.description,
           type: result.type || (result.rent ? 'rent' : 'sale'),
-          houseType: result.houseType
-            ? result.houseType.charAt(0).toUpperCase() + result.houseType.slice(1)
-            : 'Villa',
+          houseType: getHouseTypeLabel(result.houseType || houseType, { compact: true }),
+          floor: result.floor ?? (usesFloor ? (floor.trim() || null) : null),
           price: result.price || result.rent || 0,
           rent: result.rent || result.price || 0,
           city: result.city,
           neighborhood: result.city?.fokontany || '',
-          area: result.area || 0,
-          rooms: result.rooms || 1,
-          bathrooms: result.bathrooms || 1,
+          area: result.area ?? 0,
+          rooms: isCommercial ? 0 : (result.rooms ?? 0),
+          bathrooms: isCommercial ? 0 : (result.bathrooms ?? 0),
+          toilet: result.toilet ?? 0,
           images: result.images || [],
           status:
             result.status === 'available'
@@ -573,6 +592,140 @@ export default function CreateListingForm({
                   </h2>
                 </div>
 
+                {/* Transaction & Catégorie du bien */}
+                <div className="space-y-4">
+                  {/* Offer Type */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                      Type d&apos;offre *
+                    </label>
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => setType('rent')}
+                        className={`flex items-center justify-center gap-2 py-2.5 px-4 rounded-2xl border text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                          type === 'rent'
+                            ? 'bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 border-zinc-950 dark:border-white shadow-sm'
+                            : 'bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:border-zinc-300 dark:hover:border-zinc-700'
+                        }`}
+                      >
+                        <Key className="w-4 h-4 shrink-0" />
+                        <span>À louer (Location)</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setType('sale')}
+                        className={`flex items-center justify-center gap-2 py-2.5 px-4 rounded-2xl border text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                          type === 'sale'
+                            ? 'bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 border-zinc-950 dark:border-white shadow-sm'
+                            : 'bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:border-zinc-300 dark:hover:border-zinc-700'
+                        }`}
+                      >
+                        <DollarSign className="w-4 h-4 shrink-0" />
+                        <span>À vendre (Vente)</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Property Category */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                      Catégorie du bien *
+                    </label>
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                      {PROPERTY_TYPE_DEFS.map((def) => {
+                        const isSelected = houseType === def.id;
+                        const TypeIcon =
+                          def.id === 'villa'
+                            ? Landmark
+                            : def.id === 'appartement'
+                            ? Building2
+                            : def.id === 'bureau'
+                            ? Briefcase
+                            : def.id === 'tsena'
+                            ? Store
+                            : Home;
+                        return (
+                          <button
+                            key={def.id}
+                            type="button"
+                            onClick={() => setHouseType(def.id)}
+                            className={`flex flex-col items-start gap-1 p-2.5 sm:p-3 rounded-2xl border text-left transition-all cursor-pointer ${
+                              isSelected
+                                ? 'bg-brand-green/10 dark:bg-brand-green/20 border-brand-green text-zinc-950 dark:text-white ring-2 ring-brand-green/20'
+                                : 'bg-zinc-50 dark:bg-zinc-900 border-zinc-200/80 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:border-zinc-300 dark:hover:border-zinc-700'
+                            }`}
+                          >
+                            <div
+                              className={`w-7 h-7 rounded-full flex items-center justify-center ${
+                                isSelected
+                                  ? 'bg-brand-green text-white'
+                                  : 'bg-zinc-200/70 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400'
+                              }`}
+                            >
+                              <TypeIcon className="w-3.5 h-3.5" />
+                            </div>
+                            <div className="text-xs font-extrabold leading-tight">
+                              {def.shortLabel}
+                            </div>
+                            <div className="text-[10px] text-zinc-500 dark:text-zinc-400 leading-tight line-clamp-2">
+                              {def.subtitle}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Conditional Étage / Niveau */}
+                  {usesFloor && (
+                    <div className="space-y-2 p-3 sm:p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/70 dark:border-zinc-800">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                          <Layers className="w-3.5 h-3.5 text-brand-green" />
+                          <span>
+                            {houseType === 'appartement' ? "Étage *" : "Niveau / Emplacement"}
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">
+                          {houseType === 'appartement' ? 'Obligatoire' : 'Optionnel'}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {floorPresets.map((preset) => {
+                          const active = floor === preset;
+                          return (
+                            <button
+                              key={preset}
+                              type="button"
+                              onClick={() => setFloor(active ? '' : preset)}
+                              className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all cursor-pointer ${
+                                active
+                                  ? 'bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 border-zinc-950 dark:border-white'
+                                  : 'bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:border-zinc-300'
+                              }`}
+                            >
+                              {preset}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <input
+                        type="text"
+                        maxLength={40}
+                        value={floor}
+                        onChange={(e) => setFloor(e.target.value)}
+                        placeholder={
+                          isCommercial
+                            ? 'Ex: RDC, Galerie marchande, 1er étage...'
+                            : 'Ex: RDC, 2ème étage...'
+                        }
+                        className="w-full px-3.5 py-2 text-xs sm:text-sm font-medium rounded-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 focus:border-brand-green focus:outline-none focus:ring-4 focus:ring-brand-green/15 text-zinc-900 dark:text-white placeholder:text-zinc-400"
+                      />
+                    </div>
+                  )}
+                </div>
+
                 {/* Title */}
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
@@ -592,7 +745,7 @@ export default function CreateListingForm({
                       maxLength={120}
                       value={title}
                       onChange={(e) => setTitle(e.target.value)}
-                      placeholder="Ex: Villa contemporaine 5 pièces avec piscine à Ivandry"
+                      placeholder={activeTypeDef.titlePlaceholder}
                       className="w-full pl-12 pr-4 py-2.5 sm:py-3 text-sm sm:text-base font-medium rounded-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 focus:border-brand-green focus:outline-none focus:ring-4 focus:ring-brand-green/15 text-zinc-900 dark:text-white placeholder:text-zinc-400 dark:placeholder:text-zinc-500 transition-all shadow-xs"
                     />
                   </div>
@@ -645,12 +798,14 @@ export default function CreateListingForm({
                     Étape 3
                   </span>
                   <h2 className="text-lg sm:text-xl font-extrabold tracking-tight">
-                    Caractéristiques & Pièces
+                    {isCommercial ? 'Surface & Commodités' : 'Caractéristiques & Pièces'}
                   </h2>
                 </div>
 
                 {/* Steppers Grid - Compact, Ultra-arrondi & Animations fluides */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-3.5">
+                <div className={`grid grid-cols-2 ${isCommercial ? 'sm:grid-cols-2' : 'sm:grid-cols-3'} gap-2.5 sm:gap-3.5`}>
+                  {!isCommercial && (
+                    <>
                   {/* Chambres */}
                   <div className="p-2.5 sm:p-3.5 rounded-2xl sm:rounded-3xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/70 dark:border-zinc-800 space-y-2 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
                     <div className="flex items-center gap-1.5 min-w-0">
@@ -737,6 +892,8 @@ export default function CreateListingForm({
                       </button>
                     </div>
                   </div>
+                    </>
+                  )}
 
                   {/* WC */}
                   <div className="p-2.5 sm:p-3.5 rounded-2xl sm:rounded-3xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/70 dark:border-zinc-800 space-y-2 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
@@ -750,7 +907,7 @@ export default function CreateListingForm({
                         </span>
                       </div>
                       <span className="text-[10px] font-bold text-brand-green px-1.5 py-0.5 rounded-full bg-brand-green/10 dark:bg-brand-green/20 shrink-0">
-                        {insideToilet ? "Int." : "Ext."}
+                        {isCommercial && toilet <= 0 ? "Opt." : insideToilet ? "Int." : "Ext."}
                       </span>
                     </div>
                     <div className="flex items-center justify-between px-0.5 sm:px-1">
@@ -784,6 +941,8 @@ export default function CreateListingForm({
                     </div>
                   </div>
 
+                  {!isCommercial && (
+                    <>
                   {/* Salon / Living */}
                   <div className="p-2.5 sm:p-3.5 rounded-2xl sm:rounded-3xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/70 dark:border-zinc-800 space-y-2 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
                     <div className="flex items-center gap-1.5 min-w-0">
@@ -865,6 +1024,8 @@ export default function CreateListingForm({
                       </button>
                     </div>
                   </div>
+                    </>
+                  )}
 
                   {/* Surface m² */}
                   <div className="p-2.5 sm:p-3.5 rounded-2xl sm:rounded-3xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/70 dark:border-zinc-800 space-y-2 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
@@ -873,7 +1034,7 @@ export default function CreateListingForm({
                         <Maximize2 className="w-3.5 h-3.5" />
                       </div>
                       <span className="text-xs font-bold text-zinc-600 dark:text-zinc-300 truncate">
-                        Surface habitable
+                        {isCommercial ? 'Surface (m²)' : 'Surface habitable'}
                       </span>
                     </div>
                     <div className="relative flex items-center group">
@@ -892,6 +1053,7 @@ export default function CreateListingForm({
                 </div>
 
                 {/* Emplacement Sanitaires (Douche & W.C.) - Design épuré sans double bordure */}
+                {(!isCommercial || toilet > 0) && (
                 <div className="space-y-2 pt-1">
                   <div className="flex items-center justify-between px-0.5">
                     <div className="flex items-center gap-2">
@@ -900,7 +1062,7 @@ export default function CreateListingForm({
                         Emplacement des sanitaires
                       </span>
                       <span className="text-[11px] text-zinc-400 dark:text-zinc-500 font-medium hidden sm:inline">
-                        • Douche & W.C. indiqués ci-dessus
+                        {isCommercial ? '• W.C. indiqué ci-dessus' : '• Douche & W.C. indiqués ci-dessus'}
                       </span>
                     </div>
                     <span className="text-[10px] font-semibold text-zinc-400 dark:text-zinc-500 tracking-wide uppercase">
@@ -908,8 +1070,9 @@ export default function CreateListingForm({
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3.5">
-                    {/* Douche / Salle de bain - Carte autonome sans bordure imbriquée */}
+                  <div className={`grid grid-cols-1 ${!isCommercial ? 'sm:grid-cols-2' : ''} gap-2.5 sm:gap-3.5`}>
+                    {!isCommercial && (
+                    /* Douche / Salle de bain - Carte autonome sans bordure imbriquée */
                     <div className="flex items-center justify-between p-2.5 sm:p-3 rounded-2xl sm:rounded-3xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/70 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
                       <div className="flex items-center gap-2 min-w-0 pr-1.5">
                         <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-brand-green/10 dark:bg-brand-green/20 flex items-center justify-center shrink-0 text-brand-green">
@@ -968,6 +1131,7 @@ export default function CreateListingForm({
                         </button>
                       </div>
                     </div>
+                    )}
 
                     {/* Toilettes / W.C. - Carte autonome sans bordure imbriquée */}
                     <div className="flex items-center justify-between p-2.5 sm:p-3 rounded-2xl sm:rounded-3xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/70 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
@@ -1030,6 +1194,7 @@ export default function CreateListingForm({
                     </div>
                   </div>
                 </div>
+                )}
               </section>
 
               {/* SECTION 4: ÉQUIPEMENTS & PRESTATIONS (34 FEATURES) */}
@@ -1252,12 +1417,12 @@ export default function CreateListingForm({
                 description={description}
                 type={type}
                 houseType={houseType}
-                floor={floor}
+                floor={usesFloor ? floor : ''}
                 price={price}
                 rent={rent}
                 area={area}
-                rooms={rooms}
-                bathrooms={bathrooms}
+                rooms={isCommercial ? 0 : rooms}
+                bathrooms={isCommercial ? 0 : bathrooms}
                 toilet={toilet}
                 images={images}
                 cityLabel={
@@ -1273,9 +1438,11 @@ export default function CreateListingForm({
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400">
-                  Tarification du loyer
+                  {type === 'rent' ? 'Tarification du loyer' : 'Prix de vente'}
                 </h3>
-                <span className="text-[11px] text-zinc-400 font-medium">D&eacute;finissez votre loyer</span>
+                <span className="text-[11px] text-zinc-400 font-medium">
+                  {type === 'rent' ? 'Définissez votre loyer' : 'Définissez votre prix'}
+                </span>
               </div>
               {renderPriceSection(false)}
             </div>
@@ -1313,12 +1480,12 @@ export default function CreateListingForm({
                   description={description}
                   type={type}
                   houseType={houseType}
-                  floor={floor}
+                  floor={usesFloor ? floor : ''}
                   price={price}
                   rent={rent}
                   area={area}
-                  rooms={rooms}
-                  bathrooms={bathrooms}
+                  rooms={isCommercial ? 0 : rooms}
+                  bathrooms={isCommercial ? 0 : bathrooms}
                   toilet={toilet}
                   images={images}
                   cityLabel={

@@ -5,6 +5,7 @@ import Image from 'next/image';
 import {
   BedDouble,
   Bath,
+  Toilet,
   Maximize,
   MapPin,
   Heart,
@@ -12,6 +13,7 @@ import {
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
+import { getHouseTypeLabel, isCommercialHouseType } from '@/lib/propertyTypes';
 import {
   FaCar,
   FaMotorcycle,
@@ -114,6 +116,7 @@ export default function ListingLivePreviewCard({
   area,
   rooms,
   bathrooms,
+  toilet = 0,
   images,
   cityLabel,
   features = {},
@@ -290,10 +293,7 @@ export default function ListingLivePreviewCard({
           {/* Second line: Type & Location */}
           <div className="mt-1 flex items-center gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
             <span className="font-semibold">
-              {houseType
-                ? houseType.charAt(0).toUpperCase() + houseType.slice(1)
-                : 'Propriété'}
-              {houseType === 'appartement' && floor ? ` (${floor})` : ''}
+              {houseType ? getHouseTypeLabel(houseType, { compact: true, floor }) : 'Propriété'}
             </span>
             <span>•</span>
             <MapPin className="h-3 w-3 text-brand-green shrink-0" />
@@ -311,20 +311,35 @@ export default function ListingLivePreviewCard({
           {/* Bottom line: Core Stats & Features Icons */}
           <div className="mt-1 flex items-center pt-1.5 border-t border-zinc-100 dark:border-zinc-700/60 overflow-hidden">
             {/* Core Stats */}
-            <div className="flex items-center gap-2.5 text-zinc-500 dark:text-zinc-400 shrink-0 pr-3 border-r border-zinc-200 dark:border-zinc-700">
-              <span className="flex items-center gap-1 text-[11px]" title="Pièces">
-                <BedDouble className="h-3.5 w-3.5" />
-                {rooms || 0}
-              </span>
-              <span className="flex items-center gap-1 text-[11px]" title="Salles de bain">
-                <Bath className="h-3.5 w-3.5" />
-                {bathrooms || 0}
-              </span>
-              <span className="flex items-center gap-1 text-[11px]" title="Surface">
-                <Maximize className="h-3.5 w-3.5" />
-                {area ? `${area}m²` : '-'}
-              </span>
-            </div>
+            {isCommercialHouseType(houseType) ? (
+              <div className="flex items-center gap-2.5 text-zinc-500 dark:text-zinc-400 shrink-0 pr-3 border-r border-zinc-200 dark:border-zinc-700">
+                <span className="flex items-center gap-1 text-[11px]" title="Surface">
+                  <Maximize className="h-3.5 w-3.5" />
+                  {area ? `${area}m²` : '-'}
+                </span>
+                {toilet > 0 && (
+                  <span className="flex items-center gap-1 text-[11px]" title="Toilettes / W.C.">
+                    <Toilet className="h-3.5 w-3.5" />
+                    {toilet}
+                  </span>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2.5 text-zinc-500 dark:text-zinc-400 shrink-0 pr-3 border-r border-zinc-200 dark:border-zinc-700">
+                <span className="flex items-center gap-1 text-[11px]" title="Pièces">
+                  <BedDouble className="h-3.5 w-3.5" />
+                  {rooms || 0}
+                </span>
+                <span className="flex items-center gap-1 text-[11px]" title="Salles de bain">
+                  <Bath className="h-3.5 w-3.5" />
+                  {bathrooms || 0}
+                </span>
+                <span className="flex items-center gap-1 text-[11px]" title="Surface">
+                  <Maximize className="h-3.5 w-3.5" />
+                  {area ? `${area}m²` : '-'}
+                </span>
+              </div>
+            )}
 
             {/* Features Icons */}
             {activeFeatures.length > 0 ? (

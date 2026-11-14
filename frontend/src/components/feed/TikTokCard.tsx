@@ -32,6 +32,7 @@ import { useFavorite } from '@/hooks/useFavorite';
 import { useUserStore } from '@/store/userStore';
 import { useModalStore } from '@/store/modalStore';
 import { resolveProfileHref } from '@/services/user.service';
+import { getHouseTypeLabel } from '@/lib/propertyTypes';
 
 const FEATURE_ICONS: Record<string, React.ElementType> = {
   electricityJirama: FaPlugCircleBolt,
@@ -285,6 +286,9 @@ export default function TikTokCard({
           }`}
         >
           {property.type === 'rent' ? 'Location' : 'Vente'}
+        </span>
+        <span className="px-2.5 py-1 rounded-full bg-black/50 backdrop-blur-md border border-white/15 text-white text-[11px] font-bold">
+          {getHouseTypeLabel(property.houseType, { compact: true, floor: property.floor })}
         </span>
         {property.propertyNumber && (
           <span className="px-2.5 py-1 rounded-lg bg-black/50 backdrop-blur-md border border-white/20 text-white text-[10px] font-bold">

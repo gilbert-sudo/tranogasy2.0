@@ -13,7 +13,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Navigation,
+  Grid2X2,
 } from 'lucide-react';
+import { getHouseTypeLabel, isCommercialHouseType } from '@/lib/propertyTypes';
 import { useFavorite } from '@/hooks/useFavorite';
 import { useUserStore } from '@/store/userStore';
 import { useModalStore } from '@/store/modalStore';
@@ -263,6 +265,13 @@ function MapPropertyPreviewCarouselComponent({
                   </h4>
 
                   <div className="flex items-center gap-1 text-[11px] font-light text-zinc-500 dark:text-zinc-400 mt-0.5 truncate">
+                    <span className="font-medium text-zinc-700 dark:text-zinc-300 shrink-0">
+                      {getHouseTypeLabel(property.houseType, {
+                        compact: true,
+                        floor: property.floor,
+                      })}
+                    </span>
+                    <span>•</span>
                     <MapPin className="w-3 h-3 text-brand-green shrink-0" />
                     <span className="capitalize truncate">
                       {property.city?.fokontany}, {property.city?.commune}
@@ -273,20 +282,35 @@ function MapPropertyPreviewCarouselComponent({
                 {/* Bottom Specs + Big-Padding Rounded Action Pill */}
                 <div className="flex items-center justify-between gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800/80">
                   <div className="flex items-center gap-2.5 text-[11px] font-light text-zinc-500 dark:text-zinc-400">
-                    <span className="flex items-center gap-1">
-                      <BedDouble className="w-3.5 h-3.5" />
-                      {property.rooms || 0}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Bath className="w-3.5 h-3.5" />
-                      {property.bathrooms || 0}
-                    </span>
-                    {property.area > 0 && (
+                    {!isCommercialHouseType(property.houseType) ? (
+                      <>
+                        <span className="flex items-center gap-1">
+                          <BedDouble className="w-3.5 h-3.5" />
+                          {property.rooms || 0}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Bath className="w-3.5 h-3.5" />
+                          {property.bathrooms || 0}
+                        </span>
+                      </>
+                    ) : (
+                      (property.toilet > 0 || property.features?.insideToilet) && (
+                        <span className="flex items-center gap-1">
+                          <Grid2X2 className="w-3.5 h-3.5" />
+                          {property.toilet > 0 ? property.toilet : 1}
+                        </span>
+                      )
+                    )}
+                    {property.area > 0 ? (
                       <span className="flex items-center gap-1">
                         <Maximize className="w-3 h-3" />
                         {property.area}m²
                       </span>
-                    )}
+                    ) : isCommercialHouseType(property.houseType) && !(property.toilet > 0 || property.features?.insideToilet) ? (
+                      <span className="truncate font-medium text-zinc-600 dark:text-zinc-300">
+                        {property.floor || getHouseTypeLabel(property.houseType, { compact: true })}
+                      </span>
+                    ) : null}
                   </div>
 
                   <span className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-full bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 text-[11px] font-light tracking-wider">

@@ -31,6 +31,7 @@ import {
   SearchViewMode,
   SearchSortBy,
 } from '@/store/searchStore';
+import { SEARCH_CATEGORY_OPTIONS } from '@/lib/propertyTypes';
 import {
   formatCompactPrice,
   formatNumberWithSpaces,
@@ -553,15 +554,7 @@ function AdvancedFilterModalComponent({
                 Nature du bien
               </span>
               <div className="flex flex-wrap gap-1.5 sm:gap-2">
-                {(
-                  [
-                    { id: 'all', label: 'Tous' },
-                    { id: 'appartement', label: 'Appartement' },
-                    { id: 'maison', label: 'Maison' },
-                    { id: 'villa', label: 'Villa' },
-                    { id: 'bureau', label: 'Bureau' },
-                  ] as Array<{ id: HouseCategoryFilter; label: string }>
-                ).map((cat) => {
+                {SEARCH_CATEGORY_OPTIONS.map((cat) => {
                   const isActive = filters.houseType === cat.id;
                   return (
                     <button

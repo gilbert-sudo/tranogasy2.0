@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { HouseCategoryFilter } from '@/lib/propertyTypes';
 
 export interface TopPropertiesCacheEntry {
   properties: any[];
@@ -18,6 +19,7 @@ interface PropertyStore {
   isTopPropertiesLoaded: boolean;
   topPropertiesCache: Record<string, TopPropertiesCacheEntry>;
   activeTab: 'location' | 'vente';
+  activeCategory: HouseCategoryFilter;
   sortBy: string;
 
   // Actions for top properties
@@ -33,6 +35,7 @@ interface PropertyStore {
   ) => void;
   getTopPropertiesData: (cacheKey: string) => TopPropertiesCacheEntry | undefined;
   setActiveTab: (tab: 'location' | 'vente') => void;
+  setActiveCategory: (category: HouseCategoryFilter) => void;
   setSortBy: (sort: string) => void;
   clearTopPropertiesCache: () => void;
 
@@ -107,6 +110,7 @@ export const usePropertyStore = create<PropertyStore>((set, get) => ({
   isTopPropertiesLoaded: false,
   topPropertiesCache: {},
   activeTab: 'location',
+  activeCategory: 'all',
   sortBy: 'Trier par',
 
   setTopPropertiesData: (cacheKey, data) => {
@@ -166,6 +170,7 @@ export const usePropertyStore = create<PropertyStore>((set, get) => ({
   },
 
   setActiveTab: (tab) => set({ activeTab: tab }),
+  setActiveCategory: (category) => set({ activeCategory: category }),
   setSortBy: (sort) => set({ sortBy: sort }),
 
   clearTopPropertiesCache: () => {

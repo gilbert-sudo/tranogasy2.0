@@ -54,6 +54,7 @@ import EditPropertyModal from '@/components/dashboard/EditPropertyModal';
 import DeleteConfirmModal from '@/components/dashboard/DeleteConfirmModal';
 import PropertyStatsModal from '@/components/dashboard/PropertyStatsModal';
 import ClaimableListingsBanner from '@/components/dashboard/ClaimableListingsBanner';
+import { getHouseTypeLabel, normalizeHouseType } from '@/lib/propertyTypes';
 
 const isMockProperty = (p: any) => {
   const id = p?.id || p?._id;
@@ -209,17 +210,15 @@ function DashboardContent() {
                 title: p.title,
                 description: p.description,
                 type: p.type || (p.rent ? 'rent' : 'sale'),
-                houseType:
-                  p.houseType
-                    ? p.houseType.charAt(0).toUpperCase() + p.houseType.slice(1)
-                    : 'Villa',
+                houseType: getHouseTypeLabel(p.houseType, { compact: true }),
+                floor: p.floor ?? null,
                 price: p.price || p.rent || 0,
                 rent: p.rent || p.price || 0,
                 city: p.city,
                 neighborhood: p.city?.fokontany || '',
-                area: p.area || 0,
-                rooms: p.rooms || 1,
-                bathrooms: p.bathrooms || 1,
+                area: p.area ?? 0,
+                rooms: p.rooms ?? 0,
+                bathrooms: p.bathrooms ?? 0,
                 toilet:
                   p.toilet !== undefined && p.toilet !== null
                     ? p.toilet
@@ -433,10 +432,12 @@ function DashboardContent() {
             price: updatedProp.price,
             rent: updatedProp.rent,
             type: updatedProp.type,
-            houseType: updatedProp.houseType?.toLowerCase(),
+            houseType: normalizeHouseType(updatedProp.houseType) || updatedProp.houseType?.toLowerCase(),
+            floor: updatedProp.floor ?? null,
             area: updatedProp.area,
             rooms: updatedProp.rooms,
             bathrooms: updatedProp.bathrooms,
+            toilet: updatedProp.toilet,
             status:
               updatedProp.status === 'active'
                 ? 'available'
@@ -503,9 +504,8 @@ function DashboardContent() {
           title: newProp.title,
           description: newProp.description || '',
           type: newProp.type || (newProp.rent ? 'rent' : 'sale'),
-          houseType: newProp.houseType
-            ? newProp.houseType.charAt(0).toUpperCase() + newProp.houseType.slice(1)
-            : 'Villa',
+          houseType: getHouseTypeLabel(newProp.houseType, { compact: true }),
+          floor: newProp.floor ?? null,
           price: newProp.price || 0,
           rent: newProp.rent || 0,
           city:
@@ -514,9 +514,10 @@ function DashboardContent() {
               ? newProp.city
               : 'Antananarivo'),
           neighborhood: newProp.city?.fokontany || '',
-          area: newProp.area || 0,
-          rooms: newProp.rooms || 1,
-          bathrooms: newProp.bathrooms || 1,
+          area: newProp.area ?? 0,
+          rooms: newProp.rooms ?? 0,
+          bathrooms: newProp.bathrooms ?? 0,
+          toilet: newProp.toilet ?? 0,
           images: newProp.images?.length > 0 ? newProp.images : ['/hero-bg.jpg'],
           status: 'active',
           views: 1,

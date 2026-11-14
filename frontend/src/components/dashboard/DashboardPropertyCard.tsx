@@ -20,6 +20,7 @@ import {
   Check,
   Grid2X2,
 } from 'lucide-react';
+import { getHouseTypeLabel, isCommercialHouseType } from '@/lib/propertyTypes';
 import {
   FaCar,
   FaMotorcycle,
@@ -138,6 +139,7 @@ export interface DashboardProperty {
   description?: string;
   type?: 'sale' | 'rent' | string;
   houseType?: string;
+  floor?: string | null;
   price?: number;
   rent?: number;
   city?: any;
@@ -213,6 +215,12 @@ function DashboardPropertyCardComponent({
         .filter(([key, value]) => Boolean(value) && key !== '_id' && key !== '__v')
         .map(([key]) => key)
     : [];
+
+  const isCommercial = isCommercialHouseType(property.houseType);
+  const categoryLabel = getHouseTypeLabel(property.houseType, {
+    compact: true,
+    floor: property.floor,
+  });
 
   const toiletCount =
     property.toilet !== undefined && property.toilet !== null && Number(property.toilet) > 0
@@ -458,7 +466,7 @@ function DashboardPropertyCardComponent({
         {/* Second line: House Type & Location */}
         <div className="mt-1 flex items-center gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
           <span className="font-semibold">
-            {property.houseType ? property.houseType.charAt(0).toUpperCase() + property.houseType.slice(1) : 'Propriété'}
+            {categoryLabel}
           </span>
           <span>•</span>
           <MapPin className="h-3 w-3 text-brand-green shrink-0" />
@@ -474,14 +482,18 @@ function DashboardPropertyCardComponent({
         <div className="mt-1 flex items-center pt-1.5 border-t border-zinc-100 dark:border-zinc-700/60 overflow-hidden text-zinc-500 dark:text-zinc-400">
           {/* Core Stats */}
           <div className="flex items-center gap-2.5 shrink-0 pr-3 border-r border-zinc-200 dark:border-zinc-700">
-            <span className="flex items-center gap-1 text-[11px]" title="Chambres">
-              <BedDouble className="h-3.5 w-3.5" />
-              {property.rooms || 0}
-            </span>
-            <span className="flex items-center gap-1 text-[11px]" title="Salles de bain">
-              <Bath className="h-3.5 w-3.5" />
-              {property.bathrooms || 0}
-            </span>
+            {!isCommercial && (
+              <>
+                <span className="flex items-center gap-1 text-[11px]" title="Chambres">
+                  <BedDouble className="h-3.5 w-3.5" />
+                  {property.rooms || 0}
+                </span>
+                <span className="flex items-center gap-1 text-[11px]" title="Salles de bain">
+                  <Bath className="h-3.5 w-3.5" />
+                  {property.bathrooms || 0}
+                </span>
+              </>
+            )}
             {toiletCount > 0 && (
               <span className="flex items-center gap-1 text-[11px]" title="W.C / Toilettes">
                 <Grid2X2 className="h-3.5 w-3.5" />
