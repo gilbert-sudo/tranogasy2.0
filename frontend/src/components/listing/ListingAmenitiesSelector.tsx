@@ -31,6 +31,7 @@ import {
   FaBed,
 } from 'react-icons/fa';
 import {
+  FaBucket,
   FaFaucetDrip,
   FaPlugCircleBolt,
   FaPlugCircleCheck,
@@ -57,8 +58,9 @@ export const AMENITIES_CATEGORIES: AmenityCategory[] = [
       { key: 'electricityJirama', label: 'Électricité JIRAMA', icon: FaPlugCircleBolt },
       { key: 'waterPumpSupplyJirama', label: 'Pompe JIRAMA', icon: FaFaucetDrip },
       { key: 'waterWellSupply', label: "Puits d'eau", icon: GiWell },
+      { key: 'waterFetchExternal', label: 'Maka rano (Eau à puiser)', icon: FaBucket },
       { key: 'electricityPower', label: 'Électricité privée (Groupe)', icon: FaPlugCircleCheck },
-      { key: 'waterPumpSupply', label: 'Pompe à eau privée', icon: FaOilWell },
+      { key: 'waterPumpSupply', label: 'Moto-pompe / Surpresseur / Citerne', icon: FaOilWell },
       { key: 'solarPanels', label: 'Panneaux solaires', icon: GiSolarPower },
     ],
   },

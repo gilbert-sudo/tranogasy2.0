@@ -279,7 +279,18 @@ export function usePropertySearch(initialProperties?: any[]) {
         descNorm,
       );
 
-      const searchBlob = `${titleNorm} ${descNorm} ${propNumNorm} ${fokontanyNorm} ${communeNorm} ${districtNorm} ${regionNorm}`;
+      const featTerms = [
+        prop.features?.waterFetchExternal ? 'maka rano matsaka eau exterieur' : '',
+        prop.features?.waterWellSupply ? 'vovo puits' : '',
+        prop.features?.waterPumpSupply
+          ? 'moto-pompe motopompe surpresseur citerne chateau eau'
+          : '',
+        prop.features?.solarPanels ? 'solaire panneau solaire photovoltaique' : '',
+        prop.features?.electricityJirama || prop.features?.waterPumpSupplyJirama ? 'jirama' : '',
+      ]
+        .filter(Boolean)
+        .join(' ');
+      const searchBlob = `${titleNorm} ${descNorm} ${propNumNorm} ${fokontanyNorm} ${communeNorm} ${districtNorm} ${regionNorm} ${featTerms}`;
       const roomsNum = Number(prop.rooms) || 0;
       const totalRoomsNum = roomsNum + (Number(prop.livingRoom) || 0);
       const bathroomsNum = Number(prop.bathrooms) || 0;
@@ -431,6 +442,10 @@ export function usePropertySearch(initialProperties?: any[]) {
           }
         } else if (key === 'waterPumpSupply') {
           if (!(feat.waterPumpSupply || feat.waterPumpSupplyJirama)) {
+            return false;
+          }
+        } else if (key === 'motoAccess') {
+          if (!(feat.motoAccess || feat.carAccess)) {
             return false;
           }
         } else if (!feat[key]) {

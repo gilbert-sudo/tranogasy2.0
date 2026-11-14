@@ -6,14 +6,20 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  Copy,
   ExternalLink,
   ImagePlus,
   Loader2,
   MapPin,
+  PhoneCall,
+  RefreshCw,
+  RotateCcw,
   Save,
   Sparkles,
+  Star,
   Trash2,
   X,
+  ZoomIn,
 } from 'lucide-react';
 import { cityService, CityLocation } from '@/services/city.service';
 import { imageService } from '@/services/image.service';
@@ -27,6 +33,7 @@ import {
   MISSING_FIELD_LABELS,
   PROPERTY_FEATURE_GROUPS,
 } from './featureLabels';
+import { AdminPhotoGalleryModal } from './AdminPhotoGalleryModal';
 import {
   HouseCategoryFilter,
   HouseType,
@@ -36,6 +43,8 @@ import {
   isCommercialHouseType,
   normalizeHouseType,
 } from '@/lib/propertyTypes';
+
+type AccessVerificationState = 'yes' | 'no' | 'unknown';
 
 interface CandidateDraft {
   title: string;
@@ -58,13 +67,69 @@ interface CandidateDraft {
   matchedCityLabel: string;
   gcsImages: string[];
   features: Record<string, boolean>;
+  featureVerification: {
+    carAccess: AccessVerificationState;
+    motoAccess: AccessVerificationState;
+    waterSupply: AccessVerificationState;
+    electricitySupply: AccessVerificationState;
+    furnishedProperty: AccessVerificationState;
+  };
+}
+
+function normalizeDescriptionLayout(text: string): string {
+  return String(text || '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/^\n+|\n+$/g, '');
 }
 
 function toDraft(c: FbIngestedCandidate): CandidateDraft {
   const ex = c.extracted;
+  const features = { ...(ex?.features || {}) };
+  const fv = c.featureVerification || {};
+  const carAccess: AccessVerificationState = features.carAccess
+    ? 'yes'
+    : fv.carAccess === 'no'
+      ? 'no'
+      : 'unknown';
+  const motoAccess: AccessVerificationState = features.motoAccess
+    ? 'yes'
+    : carAccess === 'yes'
+      ? 'yes'
+      : fv.motoAccess === 'no'
+        ? 'no'
+        : 'unknown';
+  if (carAccess === 'yes') {
+    features.motoAccess = true;
+  }
+
+  const waterSupply: AccessVerificationState =
+    fv.waterSupply === 'yes' || fv.waterSupply === 'no' || fv.waterSupply === 'unknown'
+      ? fv.waterSupply
+      : features.waterPumpSupply || features.waterWellSupply || features.waterFetchExternal
+        ? 'yes'
+        : 'unknown';
+
+  const electricitySupply: AccessVerificationState =
+    fv.electricitySupply === 'yes' ||
+    fv.electricitySupply === 'no' ||
+    fv.electricitySupply === 'unknown'
+      ? fv.electricitySupply
+      : features.solarPanels
+        ? 'yes'
+        : 'unknown';
+
+  const furnishedProperty: AccessVerificationState =
+    fv.furnishedProperty === 'yes' ||
+    fv.furnishedProperty === 'no' ||
+    fv.furnishedProperty === 'unknown'
+      ? fv.furnishedProperty
+      : features.furnishedProperty
+        ? 'yes'
+        : 'unknown';
+
   return {
     title: ex?.title || '',
-    description: ex?.description || c.rawContent || '',
+    description: normalizeDescriptionLayout(ex?.description || c.rawContent || ''),
     type: ex?.type || null,
     houseType: normalizeHouseType(ex?.houseType) || 'maison',
     price: ex?.price != null ? String(ex.price) : '',
@@ -82,7 +147,14 @@ function toDraft(c: FbIngestedCandidate): CandidateDraft {
     matchedCityId: c.matchedCityId || '',
     matchedCityLabel: c.matchedCityLabel || '',
     gcsImages: Array.isArray(c.gcsImages) ? [...c.gcsImages] : [],
-    features: { ...(ex?.features || {}) },
+    features,
+    featureVerification: {
+      carAccess,
+      motoAccess,
+      waterSupply,
+      electricitySupply,
+      furnishedProperty,
+    },
   };
 }
 
@@ -97,7 +169,7 @@ function buildPatchFromDraft(d: CandidateDraft): Record<string, unknown> {
   const commercial = isCommercialHouseType(d.houseType);
   return {
     title: d.title.trim(),
-    description: d.description.trim(),
+    description: normalizeDescriptionLayout(d.description),
     type: d.type,
     houseType: d.houseType,
     price: d.type === 'sale' ? toNumOrNull(d.price) : null,
@@ -115,7 +187,25 @@ function buildPatchFromDraft(d: CandidateDraft): Record<string, unknown> {
     matchedCityId: d.matchedCityId || null,
     gcsImages: d.gcsImages,
     features: d.features,
+    featureVerification: d.featureVerification,
   };
+}
+
+function hasKnownWaterSupply(features: Record<string, boolean>): boolean {
+  return Boolean(
+    features.waterPumpSupplyJirama ||
+      features.waterPumpSupply ||
+      features.waterWellSupply ||
+      features.waterFetchExternal,
+  );
+}
+
+function hasKnownElectricitySupply(features: Record<string, boolean>): boolean {
+  return Boolean(
+    features.electricityJirama ||
+      features.electricityPower ||
+      features.solarPanels,
+  );
 }
 
 function computeLiveMissing(d: CandidateDraft): string[] {
@@ -130,7 +220,54 @@ function computeLiveMissing(d: CandidateDraft): string[] {
   if (requiredSpecs.includes('bathrooms') && d.bathrooms === '') missing.push('bathrooms');
   if (requiredSpecs.includes('area') && d.area === '') missing.push('area');
   if (!d.phone1.trim()) missing.push('phone1');
+  if (d.featureVerification.carAccess === 'unknown') missing.push('carAccess');
+  if (d.featureVerification.motoAccess === 'unknown') missing.push('motoAccess');
+  if (!isCommercialHouseType(d.houseType)) {
+    if (
+      d.featureVerification.waterSupply === 'unknown' ||
+      (d.featureVerification.waterSupply !== 'no' &&
+        !hasKnownWaterSupply(d.features))
+    ) {
+      missing.push('waterSupply');
+    }
+    if (
+      d.featureVerification.electricitySupply === 'unknown' ||
+      (d.featureVerification.electricitySupply !== 'no' &&
+        !hasKnownElectricitySupply(d.features))
+    ) {
+      missing.push('electricitySupply');
+    }
+    if (d.featureVerification.furnishedProperty === 'unknown') {
+      missing.push('furnishedProperty');
+    }
+  }
   return missing;
+}
+
+function buildCallQuestionsText(title: string, missingKeys: string[]): string {
+  const questionMap: Record<string, string> = {
+    type: 'S’agit-il d’une location ou d’une vente ?',
+    price: 'Quel est le prix de vente exact ?',
+    rent: 'Quel est le loyer mensuel exact ?',
+    city: 'Dans quel Fokontany / quartier exact se situe le bien ?',
+    rooms: 'Combien de chambres y a-t-il ?',
+    toilet: 'Combien de WC y a-t-il (intérieur ou extérieur) ?',
+    bathrooms: 'Combien de douches / salles d’eau y a-t-il ?',
+    area: 'Quelle est la superficie approximative (en m²) ?',
+    carAccess: 'Est-ce qu’il y a un accès voiture (fiara miditra) ou parking ?',
+    motoAccess: 'Est-ce qu’il y a au moins un accès moto (moto miditra) ?',
+    waterSupply:
+      'D’où vient l’eau ? (JIRAMA probable, moto-pompe / surpresseur, puits / vovo, maka rano, ou pas d’eau)',
+    electricitySupply:
+      'D’où vient l’électricité ? (JIRAMA probable, panneau solaire, ou pas d’électricité)',
+    furnishedProperty:
+      'La maison est-elle meublée (misy fanaka) ou non meublée ?',
+  };
+  const lines = missingKeys
+    .filter((k) => k !== 'phone1' && questionMap[k])
+    .map((k) => `- ${questionMap[k]}`);
+  const header = `Bonjour, concernant votre annonce "${title || 'Trano'}" sur Facebook, pourriez-vous confirmer :`;
+  return lines.length > 0 ? `${header}\n${lines.join('\n')}` : header;
 }
 
 interface CandidateCardProps {
@@ -138,16 +275,27 @@ interface CandidateCardProps {
   userId: string;
   onActionDone: (message: string) => void;
   onError: (message: string) => void;
+  onCandidateUpdated: (updated: FbIngestedCandidate) => void;
 }
 
-function CandidateReviewCard({ candidate, userId, onActionDone, onError }: CandidateCardProps) {
+function CandidateReviewCard({
+  candidate,
+  userId,
+  onActionDone,
+  onError,
+  onCandidateUpdated,
+}: CandidateCardProps) {
   const [draft, setDraft] = useState<CandidateDraft>(() => toDraft(candidate));
   const [cityQuery, setCityQuery] = useState('');
   const [cityResults, setCityResults] = useState<CityLocation[]>([]);
   const [isSearchingCity, setIsSearchingCity] = useState(false);
   const [showAllFeatures, setShowAllFeatures] = useState(false);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
-  const [busyAction, setBusyAction] = useState<'save' | 'approve' | 'reject' | null>(null);
+  const [galleryIndex, setGalleryIndex] = useState<number | null>(null);
+  const [copiedKey, setCopiedKey] = useState<'questions' | 'phone1' | null>(null);
+  const [busyAction, setBusyAction] = useState<
+    'save' | 'approve' | 'reject' | 'reanalyze' | null
+  >(null);
 
   useEffect(() => {
     const clean = cityQuery.trim();
@@ -245,6 +393,219 @@ function CandidateReviewCard({ candidate, userId, onActionDone, onError }: Candi
     }
   };
 
+  const handleReanalyzeCard = async () => {
+    setBusyAction('reanalyze');
+    try {
+      const updated = await fbIngestionService.reanalyzeCandidate(userId, candidate._id);
+      onCandidateUpdated(updated);
+      setDraft(toDraft(updated));
+    } catch (err) {
+      onError((err as Error).message);
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const setAccessState = (
+    key: 'carAccess' | 'motoAccess',
+    state: AccessVerificationState,
+  ) => {
+    setDraft((prev) => {
+      const nextFeatures = { ...prev.features };
+      const nextVerif = { ...prev.featureVerification };
+      if (key === 'carAccess') {
+        nextVerif.carAccess = state;
+        nextFeatures.carAccess = state === 'yes';
+        if (state === 'yes') {
+          nextVerif.motoAccess = 'yes';
+          nextFeatures.motoAccess = true;
+        }
+      } else {
+        nextVerif.motoAccess = state;
+        nextFeatures.motoAccess = state === 'yes';
+        if (state === 'no') {
+          nextVerif.carAccess = 'no';
+          nextFeatures.carAccess = false;
+        } else if (state === 'unknown' && nextFeatures.carAccess) {
+          nextVerif.carAccess = 'unknown';
+          nextFeatures.carAccess = false;
+        }
+      }
+      return {
+        ...prev,
+        features: nextFeatures,
+        featureVerification: nextVerif,
+      };
+    });
+  };
+
+  const setFurnishedState = (state: AccessVerificationState) => {
+    setDraft((prev) => ({
+      ...prev,
+      features: {
+        ...prev.features,
+        furnishedProperty: state === 'yes',
+      },
+      featureVerification: {
+        ...prev.featureVerification,
+        furnishedProperty: state,
+      },
+    }));
+  };
+
+  const toggleWaterFeature = (
+    key:
+      | 'unknown'
+      | 'no'
+      | 'waterPumpSupplyJirama'
+      | 'waterPumpSupply'
+      | 'waterWellSupply'
+      | 'waterFetchExternal',
+  ) => {
+    setDraft((prev) => {
+      const nextFeatures = { ...prev.features };
+      const nextVerif = { ...prev.featureVerification };
+      if (key === 'unknown' || key === 'no') {
+        nextFeatures.waterPumpSupplyJirama = false;
+        nextFeatures.waterPumpSupply = false;
+        nextFeatures.waterWellSupply = false;
+        nextFeatures.waterFetchExternal = false;
+        nextVerif.waterSupply = key;
+      } else if (
+        key === 'waterPumpSupplyJirama' &&
+        Boolean(prev.features.waterPumpSupplyJirama) &&
+        prev.featureVerification.waterSupply === 'unknown'
+      ) {
+        // 1-click confirmation of pre-filled probable JIRAMA water
+        nextFeatures.waterPumpSupplyJirama = true;
+        nextFeatures.waterFetchExternal = false;
+        nextVerif.waterSupply = 'yes';
+      } else {
+        const nextVal = !Boolean(nextFeatures[key]);
+        nextFeatures[key] = nextVal;
+        if (
+          prev.featureVerification.waterSupply === 'unknown' &&
+          nextVal &&
+          key !== 'waterPumpSupplyJirama'
+        ) {
+          nextFeatures.waterPumpSupplyJirama = false;
+        }
+        if (nextVal && key === 'waterFetchExternal') {
+          nextFeatures.waterPumpSupplyJirama = false;
+          nextFeatures.waterPumpSupply = false;
+        } else if (
+          nextVal &&
+          (key === 'waterPumpSupplyJirama' || key === 'waterPumpSupply')
+        ) {
+          nextFeatures.waterFetchExternal = false;
+        }
+        nextVerif.waterSupply = hasKnownWaterSupply(nextFeatures)
+          ? 'yes'
+          : 'unknown';
+      }
+      return {
+        ...prev,
+        features: nextFeatures,
+        featureVerification: nextVerif,
+      };
+    });
+  };
+
+  const toggleElectricityFeature = (
+    key:
+      | 'unknown'
+      | 'no'
+      | 'electricityJirama'
+      | 'solarPanels'
+      | 'electricityPower',
+  ) => {
+    setDraft((prev) => {
+      const nextFeatures = { ...prev.features };
+      const nextVerif = { ...prev.featureVerification };
+      if (key === 'unknown' || key === 'no') {
+        nextFeatures.electricityJirama = false;
+        nextFeatures.electricityPower = false;
+        nextFeatures.solarPanels = false;
+        nextVerif.electricitySupply = key;
+      } else if (
+        key === 'electricityJirama' &&
+        Boolean(prev.features.electricityJirama) &&
+        prev.featureVerification.electricitySupply === 'unknown'
+      ) {
+        // 1-click confirmation of pre-filled probable JIRAMA power
+        nextFeatures.electricityJirama = true;
+        nextFeatures.electricityPower = true;
+        nextVerif.electricitySupply = 'yes';
+      } else {
+        const nextVal = !Boolean(nextFeatures[key]);
+        nextFeatures[key] = nextVal;
+        if (
+          prev.featureVerification.electricitySupply === 'unknown' &&
+          nextVal &&
+          key !== 'electricityJirama'
+        ) {
+          nextFeatures.electricityJirama = false;
+          if (key === 'solarPanels') {
+            nextFeatures.electricityPower = false;
+          }
+        }
+        if (key === 'electricityJirama') {
+          nextFeatures.electricityPower = nextVal;
+        }
+        nextVerif.electricitySupply = hasKnownElectricitySupply(nextFeatures)
+          ? 'yes'
+          : 'unknown';
+      }
+      return {
+        ...prev,
+        features: nextFeatures,
+        featureVerification: nextVerif,
+      };
+    });
+  };
+
+  const handleCopyText = async (
+    text: string,
+    key: 'questions' | 'phone1',
+  ) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey(null), 2000);
+    } catch {
+      onError('Impossible de copier dans le presse-papiers');
+    }
+  };
+
+  const promotePhotoToCover = (index: number) => {
+    setDraft((prev) => {
+      if (index <= 0 || index >= prev.gcsImages.length) return prev;
+      const copy = [...prev.gcsImages];
+      const [picked] = copy.splice(index, 1);
+      copy.unshift(picked);
+      return { ...prev, gcsImages: copy };
+    });
+  };
+
+  const removePhotoAt = (index: number) => {
+    setDraft((prev) => ({
+      ...prev,
+      gcsImages: prev.gcsImages.filter((_, i) => i !== index),
+    }));
+  };
+
+  const rawLinesCount = (candidate.rawContent || '')
+    .split(/\r?\n/)
+    .filter((l) => l.trim().length > 0).length;
+  const draftLinesCount = draft.description
+    .split('\n')
+    .filter((l) => l.trim().length > 0).length;
+  const descriptionLooksFlattened =
+    rawLinesCount >= 3 && draftLinesCount <= 1;
+  const primaryTelHref = draft.phone1.trim()
+    ? `tel:${draft.phone1.replace(/[^\d+]/g, '')}`
+    : null;
+
   const missingRing = (key: string) =>
     missing.includes(key)
       ? 'border-amber-400 bg-amber-50/40 dark:bg-amber-950/20 focus:ring-amber-400'
@@ -322,19 +683,48 @@ function CandidateReviewCard({ candidate, userId, onActionDone, onError }: Candi
         </div>
       </div>
 
-      {/* Missing fields highlight banner */}
+      {/* Missing fields highlight banner + Publisher call helper */}
       {missing.length > 0 && candidate.status === 'pending' && (
-        <div className="px-6 py-2.5 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200/70 dark:border-amber-900/50 flex flex-wrap items-center gap-2 text-xs text-amber-800 dark:text-amber-200">
-          <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
-          <span className="font-semibold">Champs non mentionnés ou à vérifier :</span>
-          {missing.map((m) => (
-            <span
-              key={m}
-              className="px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-900/60 font-medium"
+        <div className="px-6 py-2.5 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200/70 dark:border-amber-900/50 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-800 dark:text-amber-200">
+          <div className="flex flex-wrap items-center gap-2">
+            <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
+            <span className="font-semibold">Champs non mentionnés ou à vérifier :</span>
+            {missing.map((m) => (
+              <span
+                key={m}
+                className="px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-900/60 font-medium"
+              >
+                {MISSING_FIELD_LABELS[m] || m}
+              </span>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            {primaryTelHref && (
+              <a
+                href={primaryTelHref}
+                className="inline-flex items-center gap-1 rounded-full bg-amber-600 px-2.5 py-1 text-[11px] font-bold text-white shadow-sm hover:bg-amber-700 transition"
+                title="Appeler le propriétaire pour vérifier les infos manquantes"
+              >
+                <PhoneCall className="w-3 h-3" />
+                Appeler {draft.phone1.trim()}
+              </a>
+            )}
+            <button
+              type="button"
+              onClick={() =>
+                handleCopyText(
+                  buildCallQuestionsText(draft.title, missing),
+                  'questions',
+                )
+              }
+              className="inline-flex items-center gap-1 rounded-full border border-amber-300 dark:border-amber-700 bg-white/80 dark:bg-amber-900/40 px-2.5 py-1 text-[11px] font-semibold text-amber-900 dark:text-amber-100 hover:bg-white transition"
+              title="Copier les questions manquantes à poser lors de l’appel"
             >
-              {MISSING_FIELD_LABELS[m] || m}
-            </span>
-          ))}
+              <Copy className="w-3 h-3" />
+              {copiedKey === 'questions' ? 'Questions copiées !' : 'Copier questions d’appel'}
+            </button>
+          </div>
         </div>
       )}
 
@@ -360,7 +750,12 @@ function CandidateReviewCard({ candidate, userId, onActionDone, onError }: Candi
           <div>
             <div className="flex items-center justify-between mb-2">
               <p className="text-xs font-bold uppercase tracking-wider text-zinc-400">
-                Photos GCS ({draft.gcsImages.length})
+                Photos GCS ({draft.gcsImages.length}){' '}
+                {draft.gcsImages.length > 0 && (
+                  <span className="normal-case font-normal text-zinc-400">
+                    • cliquer pour agrandir
+                  </span>
+                )}
               </p>
               <label className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-green hover:underline cursor-pointer">
                 {isUploadingPhoto ? (
@@ -388,22 +783,57 @@ function CandidateReviewCard({ candidate, userId, onActionDone, onError }: Candi
                 {draft.gcsImages.map((imgUrl, idx) => (
                   <div
                     key={imgUrl + idx}
-                    className="relative group aspect-square rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-800"
+                    className={`relative group aspect-square rounded-xl overflow-hidden border bg-zinc-100 dark:bg-zinc-800 ${
+                      idx === 0
+                        ? 'border-[#7cbd1e] ring-2 ring-[#7cbd1e]/25'
+                        : 'border-zinc-200 dark:border-zinc-800'
+                    }`}
                   >
-                    <img
-                      src={imgUrl}
-                      alt={`Photo ${idx + 1}`}
-                      className="w-full h-full object-cover"
-                    />
+                    <button
+                      type="button"
+                      onClick={() => setGalleryIndex(idx)}
+                      className="block w-full h-full cursor-zoom-in focus:outline-none"
+                      title={`Inspecter photo ${idx + 1} sur ${draft.gcsImages.length}`}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={imgUrl}
+                        alt={`Photo ${idx + 1}`}
+                        className="w-full h-full object-cover transition duration-200 group-hover:scale-105"
+                      />
+                      <span className="pointer-events-none absolute inset-0 bg-black/0 group-hover:bg-black/25 transition flex items-center justify-center">
+                        <span className="opacity-0 group-hover:opacity-100 transition inline-flex items-center gap-1 rounded-full bg-black/75 px-2.5 py-1 text-[11px] font-semibold text-white shadow">
+                          <ZoomIn className="w-3.5 h-3.5" />
+                          Aperçu
+                        </span>
+                      </span>
+                    </button>
+
+                    <span className="pointer-events-none absolute bottom-1.5 left-1.5 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                      {idx === 0 ? '#1 Couv.' : `#${idx + 1}`}
+                    </span>
+
+                    {idx > 0 && (
+                      <button
+                        type="button"
+                        title="Définir en photo principale (#1)"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          promotePhotoToCover(idx);
+                        }}
+                        className="absolute top-1.5 left-1.5 w-6 h-6 rounded-full bg-black/70 text-amber-300 flex items-center justify-center opacity-0 group-hover:opacity-100 transition hover:bg-[#7cbd1e] hover:text-white"
+                      >
+                        <Star className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+
                     <button
                       type="button"
                       title="Retirer cette photo"
-                      onClick={() =>
-                        setDraft((prev) => ({
-                          ...prev,
-                          gcsImages: prev.gcsImages.filter((u) => u !== imgUrl),
-                        }))
-                      }
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removePhotoAt(idx);
+                      }}
                       className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/70 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition hover:bg-red-600"
                     >
                       <X className="w-3.5 h-3.5" />
@@ -412,6 +842,16 @@ function CandidateReviewCard({ candidate, userId, onActionDone, onError }: Candi
                 ))}
               </div>
             )}
+
+            <AdminPhotoGalleryModal
+              isOpen={galleryIndex !== null}
+              images={draft.gcsImages}
+              initialIndex={galleryIndex ?? 0}
+              title={draft.title || candidate.authorName || 'Annonce Facebook'}
+              onClose={() => setGalleryIndex(null)}
+              onRemoveImage={removePhotoAt}
+              onSetCoverImage={promotePhotoToCover}
+            />
           </div>
         </div>
 
@@ -654,7 +1094,7 @@ function CandidateReviewCard({ candidate, userId, onActionDone, onError }: Candi
             );
           })()}
 
-          {/* Phones */}
+          {/* Phones with quick Call & Copy */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             {(
               [
@@ -662,37 +1102,357 @@ function CandidateReviewCard({ candidate, userId, onActionDone, onError }: Candi
                 { key: 'phone2', label: 'Téléphone 2' },
                 { key: 'phone3', label: 'Téléphone 3' },
               ] as const
-            ).map((p) => (
-              <div key={p.key}>
-                <label className="block text-[11px] font-semibold text-zinc-500 mb-1">
-                  {p.label}
-                </label>
-                <input
-                  type="text"
-                  value={draft[p.key]}
-                  onChange={(e) =>
-                    setDraft((prev) => ({ ...prev, [p.key]: e.target.value }))
-                  }
-                  placeholder="034..."
-                  className={`w-full px-3 py-1.5 rounded-xl border text-xs focus:outline-none focus:ring-2 ${missingRing(
-                    p.key,
-                  )}`}
-                />
-              </div>
-            ))}
+            ).map((p) => {
+              const rawVal = draft[p.key].trim();
+              const telHref = rawVal ? `tel:${rawVal.replace(/[^\d+]/g, '')}` : null;
+              return (
+                <div key={p.key}>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[11px] font-semibold text-zinc-500">
+                      {p.label}
+                    </label>
+                    {telHref && (
+                      <div className="flex items-center gap-1.5">
+                        {p.key === 'phone1' && (
+                          <button
+                            type="button"
+                            onClick={() => handleCopyText(rawVal, 'phone1')}
+                            className="text-[10px] font-semibold text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+                            title="Copier le numéro"
+                          >
+                            {copiedKey === 'phone1' ? 'Copié' : 'Copier'}
+                          </button>
+                        )}
+                        <a
+                          href={telHref}
+                          className="inline-flex items-center gap-0.5 text-[10px] font-bold text-brand-green hover:underline"
+                          title={`Appeler ${rawVal}`}
+                        >
+                          <PhoneCall className="w-2.5 h-2.5" /> Appeler
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                  <input
+                    type="text"
+                    value={draft[p.key]}
+                    onChange={(e) =>
+                      setDraft((prev) => ({ ...prev, [p.key]: e.target.value }))
+                    }
+                    placeholder="034..."
+                    className={`w-full px-3 py-1.5 rounded-xl border text-xs focus:outline-none focus:ring-2 ${missingRing(
+                      p.key,
+                    )}`}
+                  />
+                </div>
+              );
+            })}
           </div>
 
-          {/* Description */}
+          {/* Description preserving layout (spaces, newlines, returns) */}
           <div>
-            <label className="block text-xs font-semibold text-zinc-500 mb-1">
-              Description nettoyée
-            </label>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+              <label className="block text-xs font-semibold text-zinc-500">
+                Description nettoyée (mise en page conservée)
+              </label>
+              <button
+                type="button"
+                onClick={() =>
+                  setDraft((prev) => ({
+                    ...prev,
+                    description: normalizeDescriptionLayout(candidate.rawContent || ''),
+                  }))
+                }
+                className="inline-flex items-center gap-1 text-[11px] font-semibold text-zinc-600 dark:text-zinc-300 hover:text-brand-green transition"
+                title="Copier exactement le texte original Facebook avec sa mise en page (retours à la ligne et espaces)"
+              >
+                <RotateCcw className="w-3 h-3" />
+                Reprendre mise en page originale
+              </button>
+            </div>
+            {descriptionLooksFlattened && (
+              <p className="mb-1.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+                Le texte original Facebook comporte plusieurs lignes mais la description a été aplatie : cliquez « Reprendre mise en page originale » ou « Ré-analyser ».
+              </p>
+            )}
             <textarea
-              rows={3}
+              rows={Math.min(14, Math.max(5, draft.description.split('\n').length + 1))}
               value={draft.description}
               onChange={(e) => setDraft((prev) => ({ ...prev, description: e.target.value }))}
-              className="w-full px-3.5 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs focus:outline-none focus:ring-2 focus:ring-brand-green"
+              className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs leading-relaxed font-sans whitespace-pre-wrap focus:outline-none focus:ring-2 focus:ring-brand-green"
             />
+          </div>
+
+          {/* Critical Access, Water, Electricity & Furnished Verification */}
+          <div className="p-3.5 rounded-2xl bg-zinc-50/90 dark:bg-zinc-800/30 border border-zinc-200/80 dark:border-zinc-800 space-y-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-bold text-zinc-700 dark:text-zinc-200">
+                Vérification critique : Accès, Eau, Électricité &amp; Meublé
+              </span>
+              <button
+                type="button"
+                disabled={busyAction !== null}
+                onClick={handleReanalyzeCard}
+                className="inline-flex items-center gap-1 rounded-full border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2.5 py-1 text-[11px] font-semibold text-zinc-700 dark:text-zinc-200 hover:border-brand-green hover:text-brand-green transition disabled:opacity-50"
+                title="Ré-analyser le texte (FR / MG / EN) pour détecter terrasse, parking, accès, JIRAMA, moto-pompe, solaire, maka rano, meublé et restaurer la mise en page"
+              >
+                {busyAction === 'reanalyze' ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-3 h-3" />
+                )}
+                Ré-analyser texte &amp; équipements
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {(
+                [
+                  { key: 'carAccess', label: 'Accès voiture' },
+                  { key: 'motoAccess', label: 'Accès moto' },
+                ] as const
+              ).map((item) => {
+                const cur = draft.featureVerification[item.key];
+                const isUnknown = cur === 'unknown';
+                return (
+                  <div
+                    key={item.key}
+                    className={`flex items-center justify-between gap-2 rounded-xl border px-3 py-2 ${
+                      isUnknown
+                        ? 'border-amber-400 bg-amber-50/60 dark:bg-amber-950/25'
+                        : 'border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900'
+                    }`}
+                  >
+                    <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">
+                      {item.label}
+                    </span>
+                    <div className="inline-flex rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden text-[11px] font-bold">
+                      {(
+                        [
+                          { val: 'unknown', text: '? Vérifier', activeClass: 'bg-amber-500 text-white' },
+                          { val: 'yes', text: 'Oui', activeClass: 'bg-brand-green text-white' },
+                          { val: 'no', text: 'Non', activeClass: 'bg-red-600 text-white' },
+                        ] as const
+                      ).map((opt) => (
+                        <button
+                          key={opt.val}
+                          type="button"
+                          onClick={() => setAccessState(item.key, opt.val)}
+                          className={`px-2 py-1 transition ${
+                            cur === opt.val
+                              ? opt.activeClass
+                              : 'bg-white dark:bg-zinc-900 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                          }`}
+                        >
+                          {opt.text}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Water source verification (JIRAMA probable / Moto-pompe / Puits / Maka rano / Pas d'eau) */}
+            <div
+              className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 ${
+                missing.includes('waterSupply')
+                  ? 'border-amber-400 bg-amber-50/60 dark:bg-amber-950/25'
+                  : 'border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900'
+              }`}
+            >
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">
+                  Source d&apos;eau
+                </span>
+                {draft.featureVerification.waterSupply === 'unknown' &&
+                  Boolean(draft.features.waterPumpSupplyJirama) && (
+                    <span className="text-[10px] font-semibold text-amber-700 dark:text-amber-300">
+                      (JIRAMA probable)
+                    </span>
+                  )}
+              </div>
+              <div className="inline-flex flex-wrap rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden text-[11px] font-bold">
+                {(
+                  [
+                    {
+                      key: 'unknown',
+                      text: '? Vérifier',
+                      active:
+                        draft.featureVerification.waterSupply === 'unknown' &&
+                        !hasKnownWaterSupply(draft.features),
+                      activeClass: 'bg-amber-500 text-white',
+                    },
+                    {
+                      key: 'waterPumpSupplyJirama',
+                      text:
+                        draft.featureVerification.waterSupply === 'unknown' &&
+                        Boolean(draft.features.waterPumpSupplyJirama)
+                          ? 'JIRAMA (à confirmer)'
+                          : 'JIRAMA',
+                      active: Boolean(draft.features.waterPumpSupplyJirama),
+                      activeClass:
+                        draft.featureVerification.waterSupply === 'unknown'
+                          ? 'bg-amber-100 text-amber-900 dark:bg-amber-900/50 dark:text-amber-100'
+                          : 'bg-brand-green text-white',
+                    },
+                    {
+                      key: 'waterPumpSupply',
+                      text: 'Moto-pompe / Citerne',
+                      active: Boolean(draft.features.waterPumpSupply),
+                      activeClass: 'bg-brand-green text-white',
+                    },
+                    {
+                      key: 'waterWellSupply',
+                      text: 'Puits / Vovo',
+                      active: Boolean(draft.features.waterWellSupply),
+                      activeClass: 'bg-brand-green text-white',
+                    },
+                    {
+                      key: 'waterFetchExternal',
+                      text: 'Maka rano',
+                      active: Boolean(draft.features.waterFetchExternal),
+                      activeClass: 'bg-amber-600 text-white',
+                    },
+                    {
+                      key: 'no',
+                      text: "Pas d'eau",
+                      active: draft.featureVerification.waterSupply === 'no',
+                      activeClass: 'bg-red-600 text-white',
+                    },
+                  ] as const
+                ).map((opt) => (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => toggleWaterFeature(opt.key)}
+                    className={`px-2 py-1 transition ${
+                      opt.active
+                        ? opt.activeClass
+                        : 'bg-white dark:bg-zinc-900 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                    }`}
+                  >
+                    {opt.text}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Electricity source verification (JIRAMA probable / Solaire / Autre / Pas d'électricité) */}
+            <div
+              className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 ${
+                missing.includes('electricitySupply')
+                  ? 'border-amber-400 bg-amber-50/60 dark:bg-amber-950/25'
+                  : 'border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900'
+              }`}
+            >
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">
+                  Électricité
+                </span>
+                {draft.featureVerification.electricitySupply === 'unknown' &&
+                  Boolean(draft.features.electricityJirama) && (
+                    <span className="text-[10px] font-semibold text-amber-700 dark:text-amber-300">
+                      (JIRAMA probable)
+                    </span>
+                  )}
+              </div>
+              <div className="inline-flex flex-wrap rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden text-[11px] font-bold">
+                {(
+                  [
+                    {
+                      key: 'unknown',
+                      text: '? Vérifier',
+                      active:
+                        draft.featureVerification.electricitySupply === 'unknown' &&
+                        !hasKnownElectricitySupply(draft.features),
+                      activeClass: 'bg-amber-500 text-white',
+                    },
+                    {
+                      key: 'electricityJirama',
+                      text:
+                        draft.featureVerification.electricitySupply === 'unknown' &&
+                        Boolean(draft.features.electricityJirama)
+                          ? 'JIRAMA (à confirmer)'
+                          : 'JIRAMA',
+                      active: Boolean(draft.features.electricityJirama),
+                      activeClass:
+                        draft.featureVerification.electricitySupply === 'unknown'
+                          ? 'bg-amber-100 text-amber-900 dark:bg-amber-900/50 dark:text-amber-100'
+                          : 'bg-brand-green text-white',
+                    },
+                    {
+                      key: 'solarPanels',
+                      text: 'Solaire',
+                      active: Boolean(draft.features.solarPanels),
+                      activeClass: 'bg-brand-green text-white',
+                    },
+                    {
+                      key: 'electricityPower',
+                      text: 'Compteur / Groupe',
+                      active:
+                        Boolean(draft.features.electricityPower) &&
+                        !Boolean(draft.features.electricityJirama),
+                      activeClass: 'bg-brand-green text-white',
+                    },
+                    {
+                      key: 'no',
+                      text: "Pas d'élec.",
+                      active: draft.featureVerification.electricitySupply === 'no',
+                      activeClass: 'bg-red-600 text-white',
+                    },
+                  ] as const
+                ).map((opt) => (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => toggleElectricityFeature(opt.key)}
+                    className={`px-2 py-1 transition ${
+                      opt.active
+                        ? opt.activeClass
+                        : 'bg-white dark:bg-zinc-900 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                    }`}
+                  >
+                    {opt.text}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Furnished status verification */}
+            <div
+              className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 ${
+                missing.includes('furnishedProperty')
+                  ? 'border-amber-400 bg-amber-50/60 dark:bg-amber-950/25'
+                  : 'border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900'
+              }`}
+            >
+              <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">
+                Meublé (Misy fanaka)
+              </span>
+              <div className="inline-flex rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden text-[11px] font-bold">
+                {(
+                  [
+                    { val: 'unknown', text: '? Vérifier', activeClass: 'bg-amber-500 text-white' },
+                    { val: 'yes', text: 'Meublé', activeClass: 'bg-brand-green text-white' },
+                    { val: 'no', text: 'Non meublé', activeClass: 'bg-red-600 text-white' },
+                  ] as const
+                ).map((opt) => (
+                  <button
+                    key={opt.val}
+                    type="button"
+                    onClick={() => setFurnishedState(opt.val)}
+                    className={`px-2 py-1 transition ${
+                      draft.featureVerification.furnishedProperty === opt.val
+                        ? opt.activeClass
+                        : 'bg-white dark:bg-zinc-900 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                    }`}
+                  >
+                    {opt.text}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
           {/* Equipment / Features pills */}
@@ -706,7 +1466,9 @@ function CandidateReviewCard({ candidate, userId, onActionDone, onError }: Candi
                 onClick={() => setShowAllFeatures((v) => !v)}
                 className="inline-flex items-center gap-1 text-xs font-semibold text-brand-green hover:underline"
               >
-                {showAllFeatures ? 'Réduire la liste' : 'Modifier les 36 équipements'}
+                {showAllFeatures
+                  ? 'Réduire la liste'
+                  : `Modifier les ${Object.keys(ALL_FEATURE_LABELS).length} équipements`}
                 {showAllFeatures ? (
                   <ChevronUp className="w-3.5 h-3.5" />
                 ) : (
@@ -723,7 +1485,11 @@ function CandidateReviewCard({ candidate, userId, onActionDone, onError }: Candi
                   enabledFeatureKeys.map((k) => (
                     <span
                       key={k}
-                      className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-brand-green/15 text-brand-green"
+                      className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
+                        k === 'waterFetchExternal'
+                          ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                          : 'bg-brand-green/15 text-brand-green'
+                      }`}
                     >
                       {ALL_FEATURE_LABELS[k] || k}
                     </span>
@@ -746,15 +1512,45 @@ function CandidateReviewCard({ candidate, userId, onActionDone, onError }: Candi
                           <button
                             key={item.key}
                             type="button"
-                            onClick={() =>
+                            onClick={() => {
+                              if (item.key === 'carAccess' || item.key === 'motoAccess') {
+                                setAccessState(
+                                  item.key,
+                                  active ? 'unknown' : 'yes',
+                                );
+                                return;
+                              }
+                              if (
+                                item.key === 'waterPumpSupplyJirama' ||
+                                item.key === 'waterPumpSupply' ||
+                                item.key === 'waterWellSupply' ||
+                                item.key === 'waterFetchExternal'
+                              ) {
+                                toggleWaterFeature(item.key);
+                                return;
+                              }
+                              if (
+                                item.key === 'electricityJirama' ||
+                                item.key === 'electricityPower' ||
+                                item.key === 'solarPanels'
+                              ) {
+                                toggleElectricityFeature(item.key);
+                                return;
+                              }
+                              if (item.key === 'furnishedProperty') {
+                                setFurnishedState(active ? 'unknown' : 'yes');
+                                return;
+                              }
                               setDraft((prev) => ({
                                 ...prev,
                                 features: { ...prev.features, [item.key]: !active },
-                              }))
-                            }
+                              }));
+                            }}
                             className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition ${
                               active
-                                ? 'bg-brand-green text-white border-brand-green'
+                                ? item.key === 'waterFetchExternal'
+                                  ? 'bg-amber-600 text-white border-amber-600'
+                                  : 'bg-brand-green text-white border-brand-green'
                                 : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700'
                             }`}
                           >
@@ -852,6 +1648,8 @@ export default function ValidationQueueTab({ userId, groups, onRefreshAll, onNot
   const [items, setItems] = useState<FbIngestedCandidate[]>([]);
   const [counts, setCounts] = useState({ pending: 0, approved: 0, rejected: 0 });
   const [loading, setLoading] = useState(true);
+  const [reanalyzingAll, setReanalyzingAll] = useState(false);
+  const [reanalyzeTick, setReanalyzeTick] = useState(0);
   const [feedback, setFeedback] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
   const loadCandidates = useCallback(async () => {
@@ -872,6 +1670,23 @@ export default function ValidationQueueTab({ userId, groups, onRefreshAll, onNot
       setLoading(false);
     }
   }, [userId, statusFilter, typeFilter, houseTypeFilter, groupFilter]);
+
+  const handleReanalyzePending = async () => {
+    setReanalyzingAll(true);
+    try {
+      const res = await fbIngestionService.reanalyzePending(userId);
+      setFeedback({
+        kind: 'ok',
+        text: `Ré-analyse terminée (${res.analyzed} examinée(s), ${res.updated} mise(s) à jour : équipements, accès & mise en page).`,
+      });
+      await loadCandidates();
+      setReanalyzeTick((t) => t + 1);
+    } catch (err) {
+      setFeedback({ kind: 'err', text: (err as Error).message });
+    } finally {
+      setReanalyzingAll(false);
+    }
+  };
 
   useEffect(() => {
     let active = true;
@@ -962,6 +1777,23 @@ export default function ValidationQueueTab({ userId, groups, onRefreshAll, onNot
               </option>
             ))}
           </select>
+
+          {statusFilter === 'pending' && counts.pending > 0 && (
+            <button
+              type="button"
+              disabled={reanalyzingAll}
+              onClick={handleReanalyzePending}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-xs font-bold text-zinc-700 dark:text-zinc-200 hover:border-brand-green hover:text-brand-green transition disabled:opacity-50"
+              title="Ré-analyser toutes les annonces en attente (0 crédit IA) pour détecter les équipements FR/MG/EN, les accès manquants et restaurer la mise en page"
+            >
+              {reanalyzingAll ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="w-3.5 h-3.5" />
+              )}
+              Ré-analyser la file ({counts.pending})
+            </button>
+          )}
         </div>
       </div>
 
@@ -997,9 +1829,17 @@ export default function ValidationQueueTab({ userId, groups, onRefreshAll, onNot
         <div className="space-y-6">
           {items.map((candidate) => (
             <CandidateReviewCard
-              key={`${candidate._id}_${candidate.updated_at || ''}`}
+              key={`${candidate._id}_${reanalyzeTick}`}
               candidate={candidate}
               userId={userId}
+              onCandidateUpdated={(updated) => {
+                setItems((prev) =>
+                  prev.map((it) => (it._id === updated._id ? updated : it)),
+                );
+                const msg = `Annonce ré-analysée (${Object.values(updated.extracted?.features || {}).filter(Boolean).length} équipements détectés)`;
+                setFeedback({ kind: 'ok', text: msg });
+                onNotify?.({ kind: 'ok', text: msg });
+              }}
               onActionDone={async (msg) => {
                 setFeedback({ kind: 'ok', text: msg });
                 onNotify?.({ kind: 'ok', text: msg });

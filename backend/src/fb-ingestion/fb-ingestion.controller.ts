@@ -136,6 +136,16 @@ export class FbIngestionController {
     });
   }
 
+  @Post('candidates/reanalyze-pending')
+  reanalyzePendingCandidates() {
+    return this.fbIngestionService.reanalyzePendingCandidates();
+  }
+
+  @Post('candidates/:id/reanalyze')
+  reanalyzeCandidate(@Param('id') id: string) {
+    return this.fbIngestionService.reanalyzeCandidate(id);
+  }
+
   @Patch('candidates/:id')
   updateCandidate(@Param('id') id: string, @Body() body: Record<string, any>) {
     return this.fbIngestionService.updateCandidate(id, body);

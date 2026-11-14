@@ -60,6 +60,9 @@ export class FbIngestedCandidate {
   @Prop({ type: [String], default: [] })
   missingFields: string[];
 
+  @Prop({ type: Object, default: {} })
+  featureVerification: Record<string, 'yes' | 'no' | 'unknown'>;
+
   @Prop({ enum: ['high', 'medium', 'low'], default: 'medium' })
   aiConfidence: 'high' | 'medium' | 'low';
 

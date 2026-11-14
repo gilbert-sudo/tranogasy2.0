@@ -53,6 +53,7 @@ export interface PropertyFeatures {
   waterPumpSupply?: boolean;
   waterPumpSupplyJirama?: boolean;
   waterWellSupply?: boolean;
+  waterFetchExternal?: boolean;
   securitySystem?: boolean;
   wifiAvailability?: boolean;
   fiberOpticReady?: boolean;

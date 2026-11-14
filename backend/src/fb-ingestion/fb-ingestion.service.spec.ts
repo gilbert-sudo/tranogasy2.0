@@ -240,10 +240,190 @@ describe('FbIngestionService background job tracking & recovery', () => {
 
     await service.updateCandidate('cand-tsena-1', { houseType: 'tsena' });
     expect(mockCandidate.extracted.houseType).toBe('tsena');
-    expect(mockCandidate.missingFields).toEqual(['area']);
+    expect(mockCandidate.missingFields).toEqual(['area', 'carAccess', 'motoAccess']);
 
     await service.updateCandidate('cand-tsena-1', { houseType: 'maison' });
     expect(mockCandidate.extracted.houseType).toBe('maison');
-    expect(mockCandidate.missingFields).toEqual(['rooms', 'toilet', 'bathrooms', 'area']);
+    expect(mockCandidate.missingFields).toEqual([
+      'rooms',
+      'toilet',
+      'bathrooms',
+      'area',
+      'carAccess',
+      'motoAccess',
+      'waterSupply',
+      'electricitySupply',
+      'furnishedProperty',
+    ]);
+  });
+
+  it('tracks carAccess, motoAccess, waterSupply, electricitySupply, and furnishedProperty in missingFields', async () => {
+    const formattedDesc = [
+      '  Villa T4 avec jardin',
+      '  ✔️ Living lumineux',
+      '',
+      '✔️ 3 Chambres à l’étage',
+    ].join('\n');
+
+    const mockCandidate: any = {
+      _id: 'cand-access-1',
+      status: 'pending',
+      matchedCityId: 'city-1',
+      gcsImages: [],
+      rawContent: 'Villa T4 avec jardin\n3 Chambres',
+      extracted: {
+        title: 'Villa T4',
+        description: 'Villa T4 avec jardin',
+        type: 'rent',
+        houseType: 'villa',
+        rent: 1500000,
+        rooms: 3,
+        toilet: 2,
+        bathrooms: 2,
+        area: 180,
+        phone1: '0341234567',
+        features: {
+          carAccess: false,
+          motoAccess: false,
+          waterPumpSupplyJirama: true,
+          electricityJirama: true,
+          electricityPower: true,
+        },
+      },
+      featureVerification: {
+        carAccess: 'unknown',
+        motoAccess: 'unknown',
+        waterSupply: 'unknown',
+        electricitySupply: 'unknown',
+        furnishedProperty: 'unknown',
+      },
+      missingFields: [
+        'carAccess',
+        'motoAccess',
+        'waterSupply',
+        'electricitySupply',
+        'furnishedProperty',
+      ],
+      save: jest.fn().mockResolvedValue(true),
+    };
+
+    const { service, candidateModel } = createHarness();
+    candidateModel.findById = jest.fn().mockResolvedValue(mockCandidate);
+
+    // Admin confirms carAccess='no', motoAccess='yes', Maka rano (replacing unconfirmed JIRAMA), no electricity, furnished
+    await service.updateCandidate('cand-access-1', {
+      description: `\n${formattedDesc}\n`,
+      featureVerification: {
+        carAccess: 'no',
+        motoAccess: 'yes',
+        electricitySupply: 'no',
+        furnishedProperty: 'yes',
+      },
+      features: {
+        waterPumpSupplyJirama: false,
+        waterFetchExternal: true,
+      },
+    });
+
+    expect(mockCandidate.extracted.description).toBe(formattedDesc);
+    expect(mockCandidate.extracted.features.carAccess).toBe(false);
+    expect(mockCandidate.extracted.features.motoAccess).toBe(true);
+    expect(mockCandidate.extracted.features.waterPumpSupplyJirama).toBe(false);
+    expect(mockCandidate.extracted.features.waterFetchExternal).toBe(true);
+    expect(mockCandidate.extracted.features.electricityJirama).toBe(false);
+    expect(mockCandidate.extracted.features.electricityPower).toBe(false);
+    expect(mockCandidate.extracted.features.furnishedProperty).toBe(true);
+    expect(mockCandidate.featureVerification).toEqual({
+      carAccess: 'no',
+      motoAccess: 'yes',
+      waterSupply: 'yes',
+      electricitySupply: 'no',
+      furnishedProperty: 'yes',
+    });
+    expect(mockCandidate.missingFields).toEqual([]);
+
+    // Confirming carAccess='yes' automatically implies motoAccess='yes'
+    await service.updateCandidate('cand-access-1', {
+      featureVerification: { carAccess: 'yes' },
+    });
+    expect(mockCandidate.extracted.features.carAccess).toBe(true);
+    expect(mockCandidate.extracted.features.motoAccess).toBe(true);
+    expect(mockCandidate.featureVerification).toEqual({
+      carAccess: 'yes',
+      motoAccess: 'yes',
+      waterSupply: 'yes',
+      electricitySupply: 'no',
+      furnishedProperty: 'yes',
+    });
+
+    // Setting motoAccess='no' automatically implies carAccess='no'
+    await service.updateCandidate('cand-access-1', {
+      featureVerification: { motoAccess: 'no' },
+    });
+    expect(mockCandidate.extracted.features.carAccess).toBe(false);
+    expect(mockCandidate.extracted.features.motoAccess).toBe(false);
+    expect(mockCandidate.featureVerification).toEqual({
+      carAccess: 'no',
+      motoAccess: 'no',
+      waterSupply: 'yes',
+      electricitySupply: 'no',
+      furnishedProperty: 'yes',
+    });
+    expect(mockCandidate.missingFields).toEqual([]);
+  });
+
+  it('deterministically re-analyzes pending candidates to restore layout and recover missed features', async () => {
+    const rawMultiLine = [
+      'Trano AMIDY Andoharanofotsy bord de route principal',
+      '2 étages + terrasse',
+      'terrasse farany ambony',
+      'avec parking 2 voitures',
+      'misy jiro sy rano',
+    ].join('\n');
+
+    const staleCandidate: any = {
+      _id: 'cand-reanalyze-1',
+      status: 'pending',
+      matchedCityId: 'city-1',
+      rawContent: rawMultiLine,
+      extracted: {
+        title: 'Trano AMIDY Andoharanofotsy',
+        description:
+          'Trano AMIDY Andoharanofotsy bord de route, 2 étages, électricité et eau.',
+        type: 'sale',
+        houseType: 'maison',
+        price: 200000000,
+        rooms: 5,
+        toilet: 2,
+        bathrooms: 2,
+        area: 200,
+        phone1: '0345464167',
+        features: { electricityJirama: true, waterPumpSupplyJirama: true },
+      },
+      featureVerification: {},
+      missingFields: [],
+      save: jest.fn().mockResolvedValue(true),
+    };
+
+    const { service, candidateModel } = createHarness();
+    candidateModel.find = jest.fn().mockResolvedValue([staleCandidate]);
+
+    const res = await service.reanalyzePendingCandidates();
+    expect(res).toEqual({ analyzed: 1, updated: 1 });
+    expect(staleCandidate.save).toHaveBeenCalledTimes(1);
+    expect(staleCandidate.extracted.description).toBe(rawMultiLine);
+    expect(staleCandidate.extracted.features.roofTop).toBe(true);
+    expect(staleCandidate.extracted.features.balcony).toBe(true);
+    expect(staleCandidate.extracted.features.parkingSpaceAvailable).toBe(true);
+    expect(staleCandidate.extracted.features.carAccess).toBe(true);
+    expect(staleCandidate.extracted.features.motoAccess).toBe(true);
+    expect(staleCandidate.featureVerification).toEqual({
+      carAccess: 'yes',
+      motoAccess: 'yes',
+      waterSupply: 'yes',
+      electricitySupply: 'yes',
+      furnishedProperty: 'unknown',
+    });
+    expect(staleCandidate.missingFields).toEqual(['furnishedProperty']);
   });
 });

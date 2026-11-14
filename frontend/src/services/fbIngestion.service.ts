@@ -154,6 +154,13 @@ export interface FbIngestedCandidate {
   matchedCityLabel: string | null;
   cityCandidates: Array<{ _id: string; label: string; score: number }>;
   missingFields: string[];
+  featureVerification?: {
+    carAccess?: 'yes' | 'no' | 'unknown';
+    motoAccess?: 'yes' | 'no' | 'unknown';
+    waterSupply?: 'yes' | 'no' | 'unknown';
+    electricitySupply?: 'yes' | 'no' | 'unknown';
+    furnishedProperty?: 'yes' | 'no' | 'unknown';
+  } & Record<string, 'yes' | 'no' | 'unknown'>;
   aiConfidence: 'high' | 'medium' | 'low';
   aiNotes: string | null;
   publishedPropertyId: string | null;
@@ -416,6 +423,18 @@ export const fbIngestionService = {
         method: 'PATCH',
         body: JSON.stringify(patch),
       }),
+    ),
+
+  reanalyzeCandidate: (userId: string, id: string) =>
+    apiFetch<FbIngestedCandidate>(
+      `/fb-ingestion/candidates/${encodeURIComponent(id)}/reanalyze`,
+      withAdminHeaders(userId, { method: 'POST', body: JSON.stringify({}) }),
+    ),
+
+  reanalyzePending: (userId: string) =>
+    apiFetch<{ analyzed: number; updated: number }>(
+      `/fb-ingestion/candidates/reanalyze-pending`,
+      withAdminHeaders(userId, { method: 'POST', body: JSON.stringify({}) }),
     ),
 
   approveCandidate: (userId: string, id: string, edits?: Record<string, unknown>) =>

@@ -21,6 +21,7 @@ import {
   FaBed,
 } from 'react-icons/fa';
 import {
+  FaBucket,
   FaFaucetDrip,
   FaPlugCircleBolt,
   FaPlugCircleCheck,
@@ -53,6 +54,7 @@ const HUD_FEATURE_ICONS: Record<string, React.ElementType> = {
   electricityJirama: FaPlugCircleBolt,
   waterPumpSupplyJirama: FaFaucetDrip,
   waterWellSupply: GiWell,
+  waterFetchExternal: FaBucket,
   electricityPower: FaPlugCircleCheck,
   waterPumpSupply: FaOilWell,
   solarPanels: GiSolarPower,

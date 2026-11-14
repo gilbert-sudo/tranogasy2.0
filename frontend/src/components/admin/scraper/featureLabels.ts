@@ -13,6 +13,11 @@ export const MISSING_FIELD_LABELS: Record<string, string> = {
   bathrooms: 'Douches / SDB',
   area: 'Surface (m²)',
   phone1: 'Téléphone',
+  carAccess: 'Accès voiture',
+  motoAccess: 'Accès moto',
+  waterSupply: "Source d'eau (JIRAMA / Moto-pompe / Puits / Maka rano)",
+  electricitySupply: 'Source électricité (JIRAMA / Solaire)',
+  furnishedProperty: 'Statut meublé (Meublé / Non meublé)',
 };
 
 export const PROPERTY_FEATURE_GROUPS: FeatureGroup[] = [
@@ -28,7 +33,7 @@ export const PROPERTY_FEATURE_GROUPS: FeatureGroup[] = [
       { key: 'surroundedByWalls', label: 'Clôturée / Tamboho' },
       { key: 'independentHouse', label: 'Maison indépendante' },
       { key: 'guardianHouse', label: 'Maison gardien' },
-      { key: 'balcony', label: 'Balcon / Véranda' },
+      { key: 'balcony', label: 'Balcon / Véranda / Terrasse' },
       { key: 'roofTop', label: 'Toit-terrasse' },
       { key: 'swimmingPool', label: 'Piscine' },
       { key: 'elevator', label: 'Ascenseur' },
@@ -53,8 +58,9 @@ export const PROPERTY_FEATURE_GROUPS: FeatureGroup[] = [
       { key: 'electricityJirama', label: 'Électricité Jirama' },
       { key: 'electricityPower', label: 'Compteur individuel' },
       { key: 'waterPumpSupplyJirama', label: 'Eau Jirama' },
-      { key: 'waterPumpSupply', label: 'Pompe / Surpresseur' },
+      { key: 'waterPumpSupply', label: 'Moto-pompe / Surpresseur / Citerne' },
       { key: 'waterWellSupply', label: 'Puits / Vovo' },
+      { key: 'waterFetchExternal', label: 'Maka rano (Eau à puiser)' },
       { key: 'solarPanels', label: 'Panneaux solaires' },
       { key: 'furnishedProperty', label: 'Meublé' },
       { key: 'airConditionerAvailable', label: 'Climatisation' },

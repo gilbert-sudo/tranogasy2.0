@@ -34,6 +34,7 @@ export class Feature {
   @Prop({ default: false }) waterPumpSupply: boolean;
   @Prop({ default: false }) waterPumpSupplyJirama: boolean;
   @Prop({ default: false }) waterWellSupply: boolean;
+  @Prop({ default: false }) waterFetchExternal: boolean;
   @Prop({ default: false }) securitySystem: boolean;
   @Prop({ default: false }) wifiAvailability: boolean;
   @Prop({ default: false }) fiberOpticReady: boolean;

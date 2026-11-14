@@ -63,7 +63,7 @@ export class PropertiesService {
       'insideToilet', 'insideBathroom', 'bathtub', 'fireplace',
       'airConditionerAvailable', 'hotWaterAvailable', 'furnishedProperty',
       'electricityPower', 'electricityJirama', 'waterPumpSupply',
-      'waterPumpSupplyJirama', 'waterWellSupply', 'securitySystem',
+      'waterPumpSupplyJirama', 'waterWellSupply', 'waterFetchExternal', 'securitySystem',
       'wifiAvailability', 'fiberOpticReady', 'seaView', 'mountainView',
       'panoramicView', 'solarPanels'
     ];
@@ -76,6 +76,11 @@ export class PropertiesService {
     featureFields.forEach(field => {
       featureObj[field] = Boolean(sourceFeatures[field] ?? data[field] ?? false);
     });
+
+    // Physical invariant: a property accessible by car is also accessible by motorcycle
+    if (featureObj.carAccess) {
+      featureObj.motoAccess = true;
+    }
 
     const savedFeature = await new this.featureModel(featureObj).save();
     data.features = savedFeature._id;
@@ -345,12 +350,16 @@ export class PropertiesService {
           if (!(feat.waterPumpSupply || feat.waterPumpSupplyJirama)) {
             return false;
           }
+        } else if (reqFeat === 'motoAccess') {
+          if (!(feat.motoAccess || feat.carAccess)) {
+            return false;
+          }
         } else if (!feat[reqFeat]) {
           return false;
         }
       }
 
-      // Keyword / PropertyNumber / City search
+      // Keyword / PropertyNumber / City / Key feature search
       if (keyword) {
         const title = (prop.title || '').toLowerCase();
         const desc = (prop.description || '').toLowerCase();
@@ -359,6 +368,15 @@ export class PropertiesService {
         const commune = (prop.city?.commune || '').toLowerCase();
         const district = (prop.city?.district || '').toLowerCase();
         const region = (prop.city?.region || '').toLowerCase();
+        const featureTags = [
+          feat.waterFetchExternal ? 'maka rano matsaka eau exterieur' : '',
+          feat.waterWellSupply ? 'puits vovo' : '',
+          feat.waterPumpSupply
+            ? 'moto-pompe motopompe surpresseur citerne chateau eau'
+            : '',
+          feat.solarPanels ? 'solaire panneau solaire photovoltaique' : '',
+          feat.electricityJirama || feat.waterPumpSupplyJirama ? 'jirama' : '',
+        ].join(' ');
 
         const matchesKeyword =
           title.includes(keyword) ||
@@ -367,7 +385,8 @@ export class PropertiesService {
           fokontany.includes(keyword) ||
           commune.includes(keyword) ||
           district.includes(keyword) ||
-          region.includes(keyword);
+          region.includes(keyword) ||
+          featureTags.includes(keyword);
 
         if (!matchesKeyword) return false;
       }

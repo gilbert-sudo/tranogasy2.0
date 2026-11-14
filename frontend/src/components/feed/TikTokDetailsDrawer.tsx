@@ -9,7 +9,7 @@ import {
   FaCar, FaMotorcycle, FaWifi, FaParking, FaShieldAlt, FaSwimmingPool, FaHotTub, FaBed
 } from "react-icons/fa";
 import {
-  FaFaucetDrip, FaPlugCircleBolt, FaPlugCircleCheck, FaOilWell, FaKitchenSet
+  FaBucket, FaFaucetDrip, FaPlugCircleBolt, FaPlugCircleCheck, FaOilWell, FaKitchenSet
 } from "react-icons/fa6";
 import {
   GiWell, GiBrickWall, GiFireplace, GiBathtub, GiSolarPower, GiMountainCave, GiSeatedMouse, GiSeaDragon, GiCastle
@@ -26,6 +26,7 @@ const FEATURE_DEFINITIONS: Record<string, { icon: React.ElementType; label: stri
   electricityJirama: { icon: FaPlugCircleBolt, label: "Électricité JIRAMA" },
   waterPumpSupplyJirama: { icon: FaFaucetDrip, label: "Pompe JIRAMA" },
   waterWellSupply: { icon: GiWell, label: "Puits d'eau" },
+  waterFetchExternal: { icon: FaBucket, label: "Maka rano (Eau à l'extérieur)" },
   electricityPower: { icon: FaPlugCircleCheck, label: "Électricité privée" },
   waterPumpSupply: { icon: FaOilWell, label: "Pompe à eau privée" },
   solarPanels: { icon: GiSolarPower, label: "Panneaux solaires" },
@@ -430,12 +431,17 @@ export default function TikTokDetailsDrawer({
               const def = FEATURE_DEFINITIONS[key];
               if (!def) return null;
               const Icon = def.icon;
+              const isExternalWater = key === "waterFetchExternal";
               return (
                 <div
                   key={key}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 text-xs font-medium text-zinc-700 dark:text-zinc-200 shadow-xs"
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium shadow-xs ${
+                    isExternalWater
+                      ? "bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800/80 text-amber-800 dark:text-amber-200"
+                      : "bg-zinc-100 dark:bg-zinc-800/80 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200"
+                  }`}
                 >
-                  <Icon className="w-3.5 h-3.5 text-zinc-500 dark:text-zinc-400" />
+                  <Icon className={`w-3.5 h-3.5 ${isExternalWater ? "text-amber-600 dark:text-amber-400" : "text-zinc-500 dark:text-zinc-400"}`} />
                   <span>{def.label}</span>
                 </div>
               );

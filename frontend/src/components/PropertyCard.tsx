@@ -10,7 +10,7 @@ import {
   FaCar, FaMotorcycle, FaWifi, FaParking, FaShieldAlt, FaSwimmingPool, FaHotTub, FaBed, FaShower
 } from "react-icons/fa";
 import {
-  FaFaucetDrip, FaPlugCircleBolt, FaPlugCircleCheck, FaOilWell, FaKitchenSet
+  FaBucket, FaFaucetDrip, FaPlugCircleBolt, FaPlugCircleCheck, FaOilWell, FaKitchenSet
 } from "react-icons/fa6";
 import {
   GiWell, GiBrickWall, GiFireplace, GiBathtub, GiSolarPower, GiMountainCave, GiSeatedMouse, GiSeaDragon, GiCastle
@@ -29,6 +29,7 @@ const FEATURE_ICONS: Record<string, React.ElementType> = {
   electricityJirama: FaPlugCircleBolt,
   waterPumpSupplyJirama: FaFaucetDrip,
   waterWellSupply: GiWell,
+  waterFetchExternal: FaBucket,
   electricityPower: FaPlugCircleCheck,
   waterPumpSupply: FaOilWell,
   solarPanels: GiSolarPower,

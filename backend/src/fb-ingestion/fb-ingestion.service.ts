@@ -14,6 +14,7 @@ import { Model, Types } from 'mongoose';
 import { normalizeMalagasyPhone } from '../common/phone.util';
 import {
   getRequiredMissingSpecs,
+  isCommercialHouseType,
   normalizeHouseType,
 } from '../common/property-types.util';
 import { sanitizePropertyForViewer } from '../common/property-sanitizer.util';
@@ -33,6 +34,17 @@ import {
 } from './fb-dedup.util';
 import { unwrapBrightDataPost } from './fb-dedup.util';
 import { FbGcsService } from './fb-gcs.service';
+import {
+  AccessVerificationState,
+  deriveFeatureVerification,
+  FeatureVerificationMap,
+  getMissingFeatureVerificationFields,
+  hasKnownElectricitySupply,
+  hasKnownWaterSupply,
+  mergeGeminiAndDeterministicFeatures,
+  normalizePreservingLayout,
+  preserveDescriptionLayout,
+} from './fb-feature-analyzer.util';
 import { FbGeminiService, PROPERTY_FEATURE_KEYS } from './fb-gemini.service';
 import { INITIAL_FB_GROUP_TARGETS } from './fb-seed.data';
 import {
@@ -959,6 +971,9 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       bathrooms: parsedResult.bathrooms,
       area: parsedResult.area,
       phones: parsedResult.phones,
+      features: parsedResult.features,
+      featureVerification: parsedResult.featureVerification,
+      rawContent: post.content,
     });
 
     try {
@@ -1003,6 +1018,7 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
           score: c.score,
         })),
         missingFields,
+        featureVerification: parsedResult.featureVerification,
         aiConfidence: parsedResult.aiConfidence,
         aiNotes,
       });
@@ -1322,6 +1338,9 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
     bathrooms?: number | null;
     area?: number | null;
     phones?: Array<string | null | undefined>;
+    features?: Record<string, any> | null;
+    featureVerification?: Partial<FeatureVerificationMap> | null;
+    rawContent?: string | null;
   }): string[] {
     const missing: string[] = [];
     if (data.type !== 'rent' && data.type !== 'sale') missing.push('type');
@@ -1348,6 +1367,19 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
 
     const hasPhone = (data.phones || []).some((p) => Boolean(p && String(p).trim()));
     if (!hasPhone) missing.push('phone1');
+
+    const verification = deriveFeatureVerification(
+      data.features,
+      data.rawContent,
+      data.featureVerification,
+    );
+    missing.push(
+      ...getMissingFeatureVerificationFields({
+        isCommercial: isCommercialHouseType(data.houseType),
+        features: data.features,
+        verification,
+      }),
+    );
     return missing;
   }
 
@@ -1391,8 +1423,39 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       this.candidateModel.countDocuments({ status: 'rejected' }),
     ]);
 
+    const CRITICAL_MISSING_SET = new Set([
+      'carAccess',
+      'motoAccess',
+      'waterSupply',
+      'electricitySupply',
+      'furnishedProperty',
+    ]);
+    const hydratedItems = items.map((item: any) => {
+      const ex = item.extracted || {};
+      const verification = deriveFeatureVerification(
+        ex.features,
+        item.rawContent,
+        item.featureVerification,
+      );
+      const baseMissing = Array.isArray(item.missingFields)
+        ? item.missingFields.filter((f: string) => !CRITICAL_MISSING_SET.has(f))
+        : [];
+      baseMissing.push(
+        ...getMissingFeatureVerificationFields({
+          isCommercial: isCommercialHouseType(ex.houseType),
+          features: ex.features,
+          verification,
+        }),
+      );
+      return {
+        ...item,
+        featureVerification: verification,
+        missingFields: baseMissing,
+      };
+    });
+
     return {
-      items,
+      items: hydratedItems,
       total,
       page,
       limit,
@@ -1436,21 +1499,151 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
           extracted[key] = val ? normalizeMalagasyPhone(val) || val : null;
         } else if (key === 'houseType') {
           extracted[key] = patch[key] ? normalizeHouseType(patch[key]) || null : null;
+        } else if (key === 'description') {
+          extracted[key] = normalizePreservingLayout(String(patch[key] ?? ''));
         } else {
           extracted[key] = patch[key];
         }
       }
     }
 
+    const mergedFeatures: Record<string, boolean> = { ...(extracted.features || {}) };
     if (patch.features && typeof patch.features === 'object') {
-      const mergedFeatures: Record<string, boolean> = { ...(extracted.features || {}) };
       for (const feat of PROPERTY_FEATURE_KEYS) {
         if (feat in patch.features) {
           mergedFeatures[feat] = Boolean(patch.features[feat]);
         }
       }
-      extracted.features = mergedFeatures;
     }
+
+    const isVerificationState = (
+      value: unknown,
+    ): value is AccessVerificationState =>
+      value === 'yes' || value === 'no' || value === 'unknown';
+
+    const nextVerification = deriveFeatureVerification(
+      mergedFeatures,
+      candidate.rawContent,
+      (candidate as any).featureVerification,
+    );
+
+    if (patch.features && typeof patch.features === 'object') {
+      if ('carAccess' in patch.features) {
+        if (patch.features.carAccess) {
+          nextVerification.carAccess = 'yes';
+          if (
+            patch.features.motoAccess !== false &&
+            patch.featureVerification?.motoAccess !== 'no'
+          ) {
+            mergedFeatures.motoAccess = true;
+            nextVerification.motoAccess = 'yes';
+          }
+        } else if (!patch.featureVerification?.carAccess) {
+          nextVerification.carAccess = 'unknown';
+        }
+      }
+      if ('motoAccess' in patch.features) {
+        if (patch.features.motoAccess) {
+          nextVerification.motoAccess = 'yes';
+        } else if (!patch.featureVerification?.motoAccess) {
+          nextVerification.motoAccess = 'unknown';
+          if (mergedFeatures.carAccess) {
+            mergedFeatures.carAccess = false;
+            if (!patch.featureVerification?.carAccess) {
+              nextVerification.carAccess = 'unknown';
+            }
+          }
+        }
+      }
+      if (
+        ('waterPumpSupplyJirama' in patch.features ||
+          'waterPumpSupply' in patch.features ||
+          'waterWellSupply' in patch.features ||
+          'waterFetchExternal' in patch.features) &&
+        !patch.featureVerification?.waterSupply
+      ) {
+        nextVerification.waterSupply = hasKnownWaterSupply(mergedFeatures)
+          ? 'yes'
+          : 'unknown';
+      }
+      if (
+        ('electricityJirama' in patch.features ||
+          'electricityPower' in patch.features ||
+          'solarPanels' in patch.features) &&
+        !patch.featureVerification?.electricitySupply
+      ) {
+        nextVerification.electricitySupply = hasKnownElectricitySupply(
+          mergedFeatures,
+        )
+          ? 'yes'
+          : 'unknown';
+      }
+      if (
+        'furnishedProperty' in patch.features &&
+        !patch.featureVerification?.furnishedProperty
+      ) {
+        nextVerification.furnishedProperty = mergedFeatures.furnishedProperty
+          ? 'yes'
+          : 'unknown';
+      }
+    }
+
+    if (patch.featureVerification && typeof patch.featureVerification === 'object') {
+      const incoming = patch.featureVerification as Record<string, unknown>;
+      if (isVerificationState(incoming.carAccess)) {
+        nextVerification.carAccess = incoming.carAccess;
+        mergedFeatures.carAccess = incoming.carAccess === 'yes';
+        if (incoming.carAccess === 'yes' && incoming.motoAccess !== 'no') {
+          nextVerification.motoAccess = 'yes';
+          mergedFeatures.motoAccess = true;
+        }
+      }
+      if (isVerificationState(incoming.motoAccess)) {
+        nextVerification.motoAccess = incoming.motoAccess;
+        mergedFeatures.motoAccess = incoming.motoAccess === 'yes';
+        if (incoming.motoAccess === 'no') {
+          nextVerification.carAccess = 'no';
+          mergedFeatures.carAccess = false;
+        } else if (
+          incoming.motoAccess === 'unknown' &&
+          incoming.carAccess !== 'yes' &&
+          mergedFeatures.carAccess
+        ) {
+          nextVerification.carAccess = 'unknown';
+          mergedFeatures.carAccess = false;
+        }
+      }
+      if (isVerificationState(incoming.waterSupply)) {
+        nextVerification.waterSupply = incoming.waterSupply;
+        if (incoming.waterSupply === 'no') {
+          mergedFeatures.waterPumpSupplyJirama = false;
+          mergedFeatures.waterPumpSupply = false;
+          mergedFeatures.waterWellSupply = false;
+          mergedFeatures.waterFetchExternal = false;
+        }
+      }
+      if (isVerificationState(incoming.electricitySupply)) {
+        nextVerification.electricitySupply = incoming.electricitySupply;
+        if (incoming.electricitySupply === 'no') {
+          mergedFeatures.electricityJirama = false;
+          mergedFeatures.electricityPower = false;
+          mergedFeatures.solarPanels = false;
+        }
+      }
+      if (isVerificationState(incoming.furnishedProperty)) {
+        nextVerification.furnishedProperty = incoming.furnishedProperty;
+        mergedFeatures.furnishedProperty = incoming.furnishedProperty === 'yes';
+      }
+    }
+
+    // Physical invariant: car access always implies moto access
+    if (mergedFeatures.carAccess) {
+      mergedFeatures.motoAccess = true;
+      nextVerification.motoAccess = 'yes';
+    }
+
+    extracted.features = mergedFeatures;
+    (candidate as any).featureVerification = nextVerification;
 
     if (Array.isArray(patch.gcsImages)) {
       const removedUrls = (candidate.gcsImages || []).filter(
@@ -1490,7 +1683,127 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       bathrooms: extracted.bathrooms,
       area: extracted.area,
       phones: [extracted.phone1, extracted.phone2, extracted.phone3],
+      features: extracted.features,
+      featureVerification: nextVerification,
+      rawContent: candidate.rawContent,
     });
+  }
+
+  private applyDeterministicReanalysis(candidate: FbIngestedCandidateDocument): boolean {
+    const extracted = { ...(candidate.extracted || {}) };
+    const existingFeatures = extracted.features || {};
+    const existingVerification = (candidate as any).featureVerification || {};
+
+    const restoredDesc = preserveDescriptionLayout(
+      candidate.rawContent || '',
+      typeof extracted.description === 'string' ? extracted.description : null,
+    );
+    const { features: mergedFeatures, featureVerification } =
+      mergeGeminiAndDeterministicFeatures(
+        existingFeatures,
+        candidate.rawContent || '',
+        restoredDesc,
+        {
+          isCommercial: isCommercialHouseType(extracted.houseType),
+          existingVerification,
+        },
+      );
+
+    // Preserve explicit admin-confirmed "no" when the post text itself is silent
+    if (
+      existingVerification.carAccess === 'no' &&
+      featureVerification.carAccess === 'unknown'
+    ) {
+      featureVerification.carAccess = 'no';
+      mergedFeatures.carAccess = false;
+    }
+    if (
+      existingVerification.motoAccess === 'no' &&
+      featureVerification.motoAccess === 'unknown'
+    ) {
+      featureVerification.motoAccess = 'no';
+      mergedFeatures.motoAccess = false;
+      featureVerification.carAccess = 'no';
+      mergedFeatures.carAccess = false;
+    }
+    if (
+      existingVerification.waterSupply === 'no' &&
+      featureVerification.waterSupply !== 'yes'
+    ) {
+      featureVerification.waterSupply = 'no';
+      mergedFeatures.waterPumpSupplyJirama = false;
+      mergedFeatures.waterPumpSupply = false;
+      mergedFeatures.waterWellSupply = false;
+      mergedFeatures.waterFetchExternal = false;
+    }
+    if (
+      existingVerification.electricitySupply === 'no' &&
+      featureVerification.electricitySupply !== 'yes'
+    ) {
+      featureVerification.electricitySupply = 'no';
+      mergedFeatures.electricityJirama = false;
+      mergedFeatures.electricityPower = false;
+      mergedFeatures.solarPanels = false;
+    }
+    if (
+      existingVerification.furnishedProperty === 'no' &&
+      featureVerification.furnishedProperty === 'unknown'
+    ) {
+      featureVerification.furnishedProperty = 'no';
+      mergedFeatures.furnishedProperty = false;
+    }
+
+    const nextMissing = this.computeMissingFields({
+      type: extracted.type,
+      houseType: extracted.houseType,
+      price: extracted.price,
+      rent: extracted.rent,
+      matchedCityId: candidate.matchedCityId,
+      rooms: extracted.rooms,
+      toilet: extracted.toilet,
+      bathrooms: extracted.bathrooms,
+      area: extracted.area,
+      phones: [extracted.phone1, extracted.phone2, extracted.phone3],
+      features: mergedFeatures,
+      featureVerification,
+      rawContent: candidate.rawContent,
+    });
+
+    const changed =
+      restoredDesc !== extracted.description ||
+      JSON.stringify(mergedFeatures) !== JSON.stringify(existingFeatures) ||
+      JSON.stringify(featureVerification) !== JSON.stringify(existingVerification) ||
+      JSON.stringify(nextMissing) !== JSON.stringify(candidate.missingFields || []);
+
+    extracted.description = restoredDesc;
+    extracted.features = mergedFeatures;
+    candidate.extracted = extracted;
+    (candidate as any).featureVerification = featureVerification;
+    candidate.missingFields = nextMissing;
+    return changed;
+  }
+
+  async reanalyzeCandidate(id: string) {
+    const candidate = await this.candidateModel.findById(id);
+    if (!candidate) {
+      throw new NotFoundException('Candidate not found');
+    }
+    this.applyDeterministicReanalysis(candidate);
+    await candidate.save();
+    return candidate;
+  }
+
+  async reanalyzePendingCandidates() {
+    const candidates = await this.candidateModel.find({ status: 'pending' });
+    let updated = 0;
+    for (const candidate of candidates) {
+      const changed = this.applyDeterministicReanalysis(candidate);
+      if (changed) {
+        await candidate.save();
+        updated++;
+      }
+    }
+    return { analyzed: candidates.length, updated };
   }
 
   async updateCandidate(id: string, patch: Record<string, any>) {
@@ -1585,7 +1898,9 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
 
     const propertyPayload = {
       title: String(ex.title || 'Propriété').trim(),
-      description: String(ex.description || candidate.rawContent).trim(),
+      description: normalizePreservingLayout(
+        String(ex.description || candidate.rawContent),
+      ),
       city: String(cityDoc._id),
       type: ex.type,
       houseType: normalizeHouseType(ex.houseType) || 'maison',

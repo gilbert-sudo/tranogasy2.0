@@ -3,49 +3,19 @@ import { ConfigService } from '@nestjs/config';
 import {
   HOUSE_TYPE_VALUES,
   HouseType,
+  isCommercialHouseType,
   normalizeHouseType,
 } from '../common/property-types.util';
+import {
+  FeatureVerificationMap,
+  PROPERTY_FEATURE_KEYS,
+  PropertyFeatureKey,
+  mergeGeminiAndDeterministicFeatures,
+  preserveDescriptionLayout,
+} from './fb-feature-analyzer.util';
 
-export const PROPERTY_FEATURE_KEYS = [
-  'motoAccess',
-  'carAccess',
-  'parkingSpaceAvailable',
-  'elevator',
-  'garden',
-  'courtyard',
-  'balcony',
-  'roofTop',
-  'swimmingPool',
-  'surroundedByWalls',
-  'independentHouse',
-  'garage',
-  'guardianHouse',
-  'bassin',
-  'kitchenFacilities',
-  'placardKitchen',
-  'openKitchen',
-  'insideToilet',
-  'insideBathroom',
-  'bathtub',
-  'fireplace',
-  'airConditionerAvailable',
-  'hotWaterAvailable',
-  'furnishedProperty',
-  'electricityPower',
-  'electricityJirama',
-  'waterPumpSupply',
-  'waterPumpSupplyJirama',
-  'waterWellSupply',
-  'securitySystem',
-  'wifiAvailability',
-  'fiberOpticReady',
-  'seaView',
-  'mountainView',
-  'panoramicView',
-  'solarPanels',
-] as const;
-
-export type PropertyFeatureKey = (typeof PROPERTY_FEATURE_KEYS)[number];
+export { PROPERTY_FEATURE_KEYS, PropertyFeatureKey };
+export type { FeatureVerificationMap };
 
 export interface GeminiParsedListing {
   category: 'house_or_apartment' | 'land' | 'seeker_request' | 'spam_or_other';
@@ -65,6 +35,7 @@ export interface GeminiParsedListing {
   locationHints: string[];
   phones: string[];
   features: Record<PropertyFeatureKey, boolean>;
+  featureVerification: FeatureVerificationMap;
   aiConfidence: 'high' | 'medium' | 'low';
   aiNotes: string;
 }
@@ -162,20 +133,31 @@ export class FbGeminiService {
       '- area: integer m² if mentioned, otherwise null.',
       '- floor: string such as "RDC", "Rez-de-chaussée", "1er étage", "Villa basse", etc., or null.',
       '- locationHints: neighborhoods/fokontany/communes mentioned (e.g. ["Ivandry", "Alarobia", "Ambatobe", "Itaosy", "67ha"]).',
-      '- features: set booleans ONLY when explicitly mentioned or strongly implied:',
-      '  * "acces moto" / "moto miditra" -> motoAccess=true',
-      '  * "acces voiture" / "fiara miditra" / "garage" / "parking" -> carAccess=true',
-      '  * "tamboho" / "clôturée" / "mure" -> surroundedByWalls=true',
-      '  * "mitokana" / "indépendante" -> independentHouse=true',
-      '  * "douche wc anatiny" / "interieur" -> insideToilet=true, insideBathroom=true',
-      '  * "jirama" / "jiro sy rano jirama" -> electricityJirama=true, waterPumpSupplyJirama=true, electricityPower=true',
-      '  * "rano paompy" / "pompe" -> waterPumpSupply=true; "vovo" / "puits" -> waterWellSupply=true; "bassin" / "dalle" / "fantsakana" -> bassin=true',
-      '  * "meublé" / "meublée" / "misy fanaka" -> furnishedProperty=true',
-      '  * "eau chaude" / "chauffe-eau" -> hotWaterAvailable=true; "clim" -> airConditionerAvailable=true',
-      '  * "solaire" / "panneau solaire" -> solarPanels=true; "fibre" -> fiberOpticReady=true, wifiAvailability=true',
-      '  * "cuisine équipée" -> kitchenFacilities=true; "placard" -> placardKitchen=true; "cuisine américaine/ouverte" -> openKitchen=true',
-      '  * "cour" / "tokontany" -> courtyard=true; "jardin" / "zaridaina" -> garden=true; "gardien" / "mpiaro" -> guardianHouse=true',
-      '- Write a clean, factual French/Malagasy title (max 70 chars) and clean readable description.',
+      '- features: carefully scan EVERY line in French, Malagasy, and English and set booleans ONLY when mentioned or clearly implied (never ignore Malagasy or FR synonyms; respect negations like "tsy miditra fiara" / "sans parking" / "tsisy"):',
+      '  * "acces moto" / "moto miditra" / "tafiditra moto" / "2 roues" -> motoAccess=true',
+      '  * "acces voiture" / "fiara miditra" / "tafiditra fiara" / "bord de route" / "bord de goudron" / "amoron-dalana" -> carAccess=true AND motoAccess=true (unless "moto ihany" / "sans acces voiture" -> carAccess=false)',
+      '  * "parking" / "place de parking" / "stationnement" / "fijanonan\'ny fiara" / "mahazaka fiara" -> parkingSpaceAvailable=true, carAccess=true, motoAccess=true (unless "sans parking" / "tsisy parking")',
+      '  * "garage" / "garazy" / "box fermé" -> garage=true, carAccess=true, motoAccess=true',
+      '  * "toit-terrasse" / "rooftop" / "terrasse sur le toit" / "terrasse farany ambony" / "terrasse ambony" -> roofTop=true',
+      '  * "balcon" / "véranda" / "lavarangana" / "terrasse" / "varangue" -> balcony=true',
+      '  * "ascenseur" -> elevator=true; "piscine" -> swimmingPool=true; "baignoire" / "jacuzzi" -> bathtub=true; "cheminée" -> fireplace=true',
+      '  * "tamboho" / "clôturée" / "voafefy" / "murée" -> surroundedByWalls=true',
+      '  * "trano mitokana" / "maison indépendante" / "villa indépendante" -> independentHouse=true (do NOT confuse with "kaontera mitokana" / separate meter)',
+      '  * "douche wc anatiny" / "salle d\'eau intérieure" / "wc visiteur" -> insideToilet=true, insideBathroom=true (if "ivelany" / "extérieur" keep false)',
+      '  * "jiro sy rano" / "misy jiro sy rano" / "jirama" (both electricity & water) -> electricityJirama=true, waterPumpSupplyJirama=true, electricityPower=true',
+      '  * "maka rano" / "matsaka rano" / "tsy misy rano ao an-trano" / "borne fontaine" / "paompim-pokonolona" / "akaiky paompy" / "pas de robinet" (residents must fetch water outside because there is no water tap inside) -> waterFetchExternal=true, waterPumpSupplyJirama=false, waterPumpSupply=false (if "misy jiro" / "jiro ihany" also appears, set electricityJirama=true, electricityPower=true!)',
+      '  * "moto-pompe" / "motopompe" / "surpresseur" / "pompe à eau" / "rano paompy" / "citerne" / "château d\'eau" -> waterPumpSupply=true; "vovo" / "puits" / "forage" -> waterWellSupply=true; "bassin" / "lavoir" / "fantsakana" -> bassin=true',
+      '  * "panneau solaire" / "énergie solaire" / "kit solaire" / "photovoltaïque" -> solarPanels=true (do NOT set electricityJirama=true unless "jirama" / "jiro" is also explicitly written)',
+      '  * Rare explicit absence: bare "pas d\'eau" / "sans eau" / "tsisy rano" (without well/pump/maka rano) -> keep water booleans false; "pas d\'électricité" / "sans électricité" / "tsisy jiro" -> keep electricity booleans false',
+      '  * "meublé" / "meublée" / "misy fanaka" -> furnishedProperty=true (if "non meublé" / "tsisy fanaka" / "vide" keep false)',
+      '  * Do NOT guess unmentioned electricityJirama, waterPumpSupplyJirama, or furnishedProperty; leave unmentioned booleans false',
+      '  * "eau chaude" / "chauffe-eau" / "rano mafana" -> hotWaterAvailable=true; "clim" / "climatisation" / "climatisée" -> airConditionerAvailable=true',
+      '  * "solaire" / "panneau solaire" -> solarPanels=true; "fibre" -> fiberOpticReady=true, wifiAvailability=true; "wifi" / "internet" -> wifiAvailability=true',
+      '  * "cuisine équipée" / "aménagée" -> kitchenFacilities=true; "cuisine placardée" / "cuisine avec placard" -> placardKitchen=true (NOT bedroom closets); "cuisine américaine" / "ouverte" -> openKitchen=true',
+      '  * "cour" / "tokontany" / "tokotany" -> courtyard=true; "jardin" / "zaridaina" -> garden=true; "dépendance gardien" / "maison gardien" -> guardianHouse=true; "gardien" / "mpiambina" / "sécurisé" / "caméra" -> securitySystem=true',
+      '  * "vue mer" -> seaView=true; "vue montagne" -> mountainView=true; "vue panoramique" / "vue dégagée" / "tsara fijery" -> panoramicView=true',
+      '- Write a clean, factual French/Malagasy title (max 70 chars).',
+      '- For description: STRICTLY preserve the original line breaks (\\n), blank lines (\\n\\n), spaces/indentation, and bullet structure of the post. NEVER collapse multiple lines into one single paragraph. Keep all property details.',
       '- Set null instead of guessing 0 when room counts or area are not stated.',
     ].join('\n');
 
@@ -313,6 +295,19 @@ export class FbGeminiService {
     const listingType =
       rawParsed.type === 'rent' || rawParsed.type === 'sale' ? rawParsed.type : null;
 
+    const preservedDescription = preserveDescriptionLayout(
+      params.content,
+      typeof rawParsed.description === 'string' ? rawParsed.description : null,
+    );
+    const normalizedHouseType = normalizeHouseType(rawParsed.houseType);
+    const { features: mergedFeatures, featureVerification } =
+      mergeGeminiAndDeterministicFeatures(
+        rawParsed.features,
+        params.content,
+        preservedDescription,
+        { isCommercial: isCommercialHouseType(normalizedHouseType) },
+      );
+
     const parsed: GeminiParsedListing = {
       category: ['house_or_apartment', 'land', 'seeker_request', 'spam_or_other'].includes(
         rawParsed.category,
@@ -320,9 +315,9 @@ export class FbGeminiService {
         ? rawParsed.category
         : 'spam_or_other',
       type: listingType,
-      houseType: normalizeHouseType(rawParsed.houseType),
+      houseType: normalizedHouseType,
       title: String(rawParsed.title || 'Propriété à Antananarivo').slice(0, 120),
-      description: String(rawParsed.description || params.content),
+      description: preservedDescription,
       priceAriary:
         listingType === 'sale' && typeof rawParsed.priceAriary === 'number' && rawParsed.priceAriary > 0
           ? Math.round(rawParsed.priceAriary)
@@ -350,7 +345,8 @@ export class FbGeminiService {
         ? rawParsed.locationHints.map(String).filter(Boolean)
         : [],
       phones: mergedPhones,
-      features: this.sanitizeFeatures(rawParsed.features),
+      features: mergedFeatures,
+      featureVerification,
       aiConfidence: ['high', 'medium', 'low'].includes(rawParsed.aiConfidence)
         ? rawParsed.aiConfidence
         : 'medium',

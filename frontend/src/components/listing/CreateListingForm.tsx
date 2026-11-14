@@ -138,6 +138,7 @@ export default function CreateListingForm({
     electricityJirama: true,
     waterPumpSupplyJirama: true,
     waterWellSupply: false,
+    waterFetchExternal: false,
     electricityPower: false,
     waterPumpSupply: false,
     solarPanels: false,
@@ -191,13 +192,58 @@ export default function CreateListingForm({
   const toggleFeature = useCallback((key: string) => {
     setFeatures((prev) => {
       const updated = { ...prev, [key]: !prev[key] };
-      // Linked auto-toggles from old version
+      // Linked auto-toggles: car access implies moto access
       if (key === 'carAccess' && updated.carAccess) {
         updated.motoAccess = true;
+      } else if (key === 'motoAccess' && !updated.motoAccess) {
+        updated.carAccess = false;
+      }
+      if (key === 'waterFetchExternal' && updated.waterFetchExternal) {
+        updated.waterPumpSupplyJirama = false;
+        updated.waterPumpSupply = false;
+      } else if (
+        (key === 'waterPumpSupplyJirama' ||
+          key === 'waterPumpSupply' ||
+          key === 'waterWellSupply') &&
+        updated[key]
+      ) {
+        updated.waterFetchExternal = false;
       }
       return updated;
     });
   }, []);
+
+  const handleSelectAllCategory = useCallback(
+    (category: { items: Array<{ key: string }> }) => {
+      setFeatures((prev) => {
+        const allSelected = category.items.every((item) =>
+          Boolean(prev[item.key]),
+        );
+        const updated = { ...prev };
+        category.items.forEach((item) => {
+          updated[item.key] = !allSelected;
+        });
+        if (
+          !allSelected &&
+          category.items.some(
+            (item) =>
+              item.key === 'waterPumpSupplyJirama' ||
+              item.key === 'waterPumpSupply',
+          )
+        ) {
+          updated.waterFetchExternal = false;
+        }
+        if (updated.carAccess) {
+          updated.motoAccess = true;
+        }
+        if (!updated.motoAccess) {
+          updated.carAccess = false;
+        }
+        return updated;
+      });
+    },
+    [],
+  );
 
   const handlePriceChange = (valStr: string) => {
     const cleanNum = parseInt(valStr.replace(/\D/g, ''), 10) || null;
@@ -1211,6 +1257,7 @@ export default function CreateListingForm({
                 <ListingAmenitiesSelector
                   features={features}
                   onToggleFeature={toggleFeature}
+                  onSelectAllCategory={handleSelectAllCategory}
                 />
               </section>
 
