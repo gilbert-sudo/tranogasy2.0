@@ -20,6 +20,7 @@ import { TbAirConditioning, TbBuildingCastle, TbWash } from "react-icons/tb";
 import { TfiLayoutSidebarLeft } from "react-icons/tfi";
 
 import PropertyLocationDisplayer from '@/components/map/PropertyLocationDisplayer';
+import PropertyEntryFees from '@/components/property/PropertyEntryFees';
 import { FeedProperty } from './types';
 import { resolveProfileHref } from '@/services/user.service';
 
@@ -270,32 +271,6 @@ export default function TikTokDetailsDrawer({
     ? 0
     : 1;
 
-  const hasVisitFee = property.visitFee !== undefined && property.visitFee !== null;
-  const resolvedCautionPercent =
-    property.cautionPercent !== undefined && property.cautionPercent !== null
-      ? Number(property.cautionPercent)
-      : null;
-  const resolvedCautionAmount =
-    property.cautionAmount !== undefined && property.cautionAmount !== null
-      ? Number(property.cautionAmount)
-      : resolvedCautionPercent !== null && displayPrice
-      ? Math.round((Number(displayPrice) * resolvedCautionPercent) / 100)
-      : null;
-  const hasCaution = resolvedCautionPercent !== null || resolvedCautionAmount !== null;
-
-  const resolvedCommissionPercent =
-    property.commissionPercent !== undefined && property.commissionPercent !== null
-      ? Number(property.commissionPercent)
-      : null;
-  const resolvedCommissionAmount =
-    property.commissionAmount !== undefined && property.commissionAmount !== null
-      ? Number(property.commissionAmount)
-      : resolvedCommissionPercent !== null && displayPrice
-      ? Math.round((Number(displayPrice) * resolvedCommissionPercent) / 100)
-      : null;
-  const hasCommission = resolvedCommissionPercent !== null || resolvedCommissionAmount !== null;
-  const hasAnyAgencyFee = hasVisitFee || hasCaution || hasCommission;
-
   const specs = isCommercial
     ? [
         ...(property.floor
@@ -482,96 +457,12 @@ export default function TikTokDetailsDrawer({
       </div>
 
       {/* Dedicated Agency & Entry Fees Card (Only when mentioned) */}
-      {hasAnyAgencyFee && (
-        <div
-          className={`rounded-2xl border border-amber-200/80 dark:border-amber-800/50 bg-amber-50/50 dark:bg-amber-950/20 p-3.5 space-y-2.5 ${animClass}`}
-          style={{ animationDelay: '20ms' }}
-        >
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] font-extrabold uppercase tracking-wider text-amber-800 dark:text-amber-300">
-              Conditions &amp; Frais d&apos;entrée mentionnés
-            </span>
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-800 dark:text-amber-200">
-              À prévoir
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            {hasVisitFee && (
-              <div className="rounded-xl bg-white dark:bg-zinc-900 border border-amber-200/70 dark:border-zinc-800 p-2.5 flex flex-col justify-between">
-                <div className="flex items-center justify-between gap-1 mb-0.5">
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                    Droit de visite
-                  </span>
-                  {Number(property.visitFee) > 0 && (
-                    <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300">
-                      {(Number(property.visitFee) * 5).toLocaleString('fr-FR')} FMG
-                    </span>
-                  )}
-                </div>
-                <div className="text-sm font-black text-zinc-900 dark:text-white leading-tight">
-                  {Number(property.visitFee) === 0
-                    ? 'Gratuit (0 Ar)'
-                    : `${Number(property.visitFee).toLocaleString('fr-FR')} Ar`}
-                </div>
-                <p className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-0.5 leading-snug">
-                  Pour visiter les lieux
-                </p>
-              </div>
-            )}
-
-            {hasCaution && (
-              <div className="rounded-xl bg-white dark:bg-zinc-900 border border-amber-200/70 dark:border-zinc-800 p-2.5 flex flex-col justify-between">
-                <div className="flex items-center justify-between gap-1 mb-0.5">
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                    Caution
-                  </span>
-                  {resolvedCautionPercent !== null && (
-                    <span className="px-1.5 py-0.5 rounded-md text-[10px] font-extrabold bg-brand-green/15 text-brand-green">
-                      {resolvedCautionPercent === 100
-                        ? '1 mois'
-                        : `${resolvedCautionPercent}%`}
-                    </span>
-                  )}
-                </div>
-                <div className="text-sm font-black text-zinc-900 dark:text-white leading-tight">
-                  {resolvedCautionAmount !== null
-                    ? `${resolvedCautionAmount.toLocaleString('fr-FR')} Ar`
-                    : `${resolvedCautionPercent}% du loyer`}
-                </div>
-                <p className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-0.5 leading-snug">
-                  Payable 1 fois au propriétaire
-                </p>
-              </div>
-            )}
-
-            {hasCommission && (
-              <div className="rounded-xl bg-white dark:bg-zinc-900 border border-amber-200/70 dark:border-zinc-800 p-2.5 flex flex-col justify-between">
-                <div className="flex items-center justify-between gap-1 mb-0.5">
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                    Commission
-                  </span>
-                  {resolvedCommissionPercent !== null && (
-                    <span className="px-1.5 py-0.5 rounded-md text-[10px] font-extrabold bg-amber-500/15 text-amber-800 dark:text-amber-300">
-                      {resolvedCommissionPercent === 100
-                        ? '1 mois'
-                        : `${resolvedCommissionPercent}%`}
-                    </span>
-                  )}
-                </div>
-                <div className="text-sm font-black text-zinc-900 dark:text-white leading-tight">
-                  {resolvedCommissionAmount !== null
-                    ? `${resolvedCommissionAmount.toLocaleString('fr-FR')} Ar`
-                    : `${resolvedCommissionPercent}% du loyer`}
-                </div>
-                <p className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-0.5 leading-snug">
-                  À régler à l&apos;agent immobilier
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      <PropertyEntryFees
+        property={property}
+        displayPrice={displayPrice}
+        className={animClass}
+        style={{ animationDelay: '20ms' }}
+      />
 
       {/* Specifications Grid */}
       <div

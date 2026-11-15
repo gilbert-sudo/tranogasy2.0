@@ -45,6 +45,10 @@ export interface FbIngestionConfig {
   activeHourStart: number;
   activeHourEnd: number;
   geminiModel: string;
+  autoApproveEnabled?: boolean;
+  autoApproveMinQualityScore?: number;
+  autoApproveAllowEstimatedPrice?: boolean;
+  totalAutoApproved?: number;
   lastPollStatus: string;
   lastPollPhase: string | null;
   lastPollMessage: string | null;
@@ -191,6 +195,11 @@ export interface FbIngestedCandidate {
   aiConfidence: 'high' | 'medium' | 'low';
   aiNotes: string | null;
   publishedPropertyId: string | null;
+  workflowLane?: 'auto_published' | 'fast_check' | 'call_queue';
+  autoApproved?: boolean;
+  autoApproveReason?: string | null;
+  contactFollowUpStatus?: 'none' | 'called' | 'messaged_waiting' | 'answered';
+  contactFollowUpAt?: string | null;
   reviewedAt: string | null;
   created_at?: string;
   updated_at?: string;
@@ -206,6 +215,7 @@ export interface RunSummary {
   landSkipped: number;
   spamSkipped: number;
   candidatesCreated: number;
+  autoApprovedCount?: number;
   geminiCalls: number;
   placesApiCalls?: number;
   placesCacheHits?: number;
@@ -253,6 +263,10 @@ export interface CandidateListResponse {
     pending: number;
     approved: number;
     rejected: number;
+    autoApproved?: number;
+    fastCheck?: number;
+    callQueue?: number;
+    waitingReply?: number;
   };
 }
 
@@ -356,6 +370,9 @@ export const fbIngestionService = {
       activeHourStart: number;
       activeHourEnd: number;
       geminiModel: string;
+      autoApproveEnabled: boolean;
+      autoApproveMinQualityScore: number;
+      autoApproveAllowEstimatedPrice: boolean;
       lastError: string | null;
     }>,
   ) =>
@@ -500,6 +517,12 @@ export const fbIngestionService = {
       withAdminHeaders(userId, { method: 'POST', body: JSON.stringify({}) }),
     ),
 
+  autoApproveEligible: (userId: string) =>
+    apiFetch<{ scanned: number; autoApproved: number }>(
+      `/fb-ingestion/candidates/auto-approve-eligible`,
+      withAdminHeaders(userId, { method: 'POST', body: JSON.stringify({}) }),
+    ),
+
   approveCandidate: (userId: string, id: string, edits?: Record<string, unknown>) =>
     apiFetch<{ candidate: FbIngestedCandidate; property: Record<string, unknown> }>(
       `/fb-ingestion/candidates/${encodeURIComponent(id)}/approve`,
@@ -507,6 +530,12 @@ export const fbIngestionService = {
         method: 'POST',
         body: JSON.stringify(edits ? { edits } : {}),
       }),
+    ),
+
+  unpublishCandidate: (userId: string, id: string) =>
+    apiFetch<{ candidate: FbIngestedCandidate }>(
+      `/fb-ingestion/candidates/${encodeURIComponent(id)}/unpublish`,
+      withAdminHeaders(userId, { method: 'POST', body: JSON.stringify({}) }),
     ),
 
   rejectCandidate: (userId: string, id: string) =>

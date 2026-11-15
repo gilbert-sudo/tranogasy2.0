@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { X, Phone, Copy, Check, MessageSquare, ShieldCheck, MapPin, ChevronRight, Lock, Coins, Loader2 } from 'lucide-react';
 import { FeedProperty } from './types';
 import { resolveProfileHref } from '@/services/user.service';
+import { propertyService } from '@/services/property.service';
 import { useUserStore } from '@/store/userStore';
 import { useModalStore } from '@/store/modalStore';
 import { usePropertyStore } from '@/store/propertyStore';
@@ -53,23 +54,15 @@ export default function TikTokContactModal({ property, onClose }: TikTokContactM
 
     setIsUnlocking(true);
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
       const token =
         userStore?.authToken ||
         currentUser?.authToken ||
         (typeof window !== 'undefined' ? localStorage.getItem('authToken') : null);
-      const res = await fetch(`${apiUrl}/api/properties/${property._id}/unlock-contact`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}`, 'x-auth-token': token } : {}),
-        },
-        body: JSON.stringify({ userId: currentUser._id }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.message || 'Impossible de débloquer ce contact.');
-      }
+      const data = await propertyService.unlockPropertyContact(
+        property._id,
+        currentUser._id,
+        token,
+      );
 
       if (typeof data.balance === 'number') {
         updateBalance(data.balance);

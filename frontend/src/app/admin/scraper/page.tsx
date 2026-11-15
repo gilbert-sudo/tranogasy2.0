@@ -21,6 +21,7 @@ import {
   ShieldCheck,
   Sparkles,
   X,
+  Zap,
 } from 'lucide-react';
 import Header from '@/components/Header';
 import { useUserStore } from '@/store/userStore';
@@ -538,6 +539,10 @@ export default function AdminScraperPage() {
           ? patch.onlyActiveHours
             ? 'Heures actives activées'
             : 'Mode 24h/24 activé'
+          : typeof patch.autoApproveEnabled === 'boolean'
+          ? patch.autoApproveEnabled
+            ? 'Auto-publication IA activée'
+            : 'Auto-publication IA désactivée'
           : 'Configuration enregistrée';
 
       try {
@@ -1386,6 +1391,87 @@ export default function AdminScraperPage() {
             </div>
           )}
 
+          {/* Zero-Touch Auto-Validation Control Row */}
+          {config && (
+            <div className="p-3.5 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200/80 dark:border-emerald-900/60 flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-brand-green/15 text-brand-green flex items-center justify-center shrink-0">
+                  <Zap className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-bold text-zinc-900 dark:text-white">
+                      Validation Automatique IA (&laquo; Zero-Touch &raquo;)
+                    </span>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        (config.autoApproveEnabled ?? true)
+                          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200'
+                          : 'bg-zinc-200 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'
+                      }`}
+                    >
+                      {(config.autoApproveEnabled ?? true) ? 'ACTIF' : 'MANUEL'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                    Publie automatiquement les annonces complètes (téléphone, photo, Fokontany fiable et score suffisant).
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="inline-flex items-center gap-1.5 font-semibold text-zinc-600 dark:text-zinc-300">
+                  <span>Score min :</span>
+                  <select
+                    value={config.autoApproveMinQualityScore ?? 75}
+                    onChange={(e) =>
+                      void updateConfigPatch({
+                        autoApproveMinQualityScore: Number(e.target.value),
+                      })
+                    }
+                    className="px-2.5 py-1 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 font-bold text-xs"
+                  >
+                    <option value={65}>65 / 100 (Large)</option>
+                    <option value={75}>75 / 100 (Recommandé)</option>
+                    <option value={85}>85 / 100 (Strict)</option>
+                  </select>
+                </label>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    void updateConfigPatch({
+                      autoApproveAllowEstimatedPrice: !(
+                        config.autoApproveAllowEstimatedPrice ?? true
+                      ),
+                    })
+                  }
+                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-[11px] font-bold transition cursor-pointer ${
+                    (config.autoApproveAllowEstimatedPrice ?? true)
+                      ? 'bg-brand-green/15 border-brand-green/40 text-brand-green'
+                      : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700 text-zinc-500'
+                  }`}
+                  title="Auto-publier aussi les annonces complètes sans prix explicite en affichant l'Estimation TranoGasy"
+                >
+                  <span>
+                    {(config.autoApproveAllowEstimatedPrice ?? true) ? '✓' : '○'} Inclure Prix Estimé IA
+                  </span>
+                </button>
+
+                <AsyncToggleSwitch
+                  checked={config.autoApproveEnabled ?? true}
+                  size="sm"
+                  label="Activer l'auto-publication IA des annonces fiables"
+                  onToggle={() =>
+                    void updateConfigPatch({
+                      autoApproveEnabled: !(config.autoApproveEnabled ?? true),
+                    })
+                  }
+                />
+              </div>
+            </div>
+          )}
+
           {/* Telemetry Footer */}
           {config && (
             <div className="space-y-3 pt-1">
@@ -1397,6 +1483,9 @@ export default function AdminScraperPage() {
                 <span>Runs : {config.totalRuns}</span>
                 <span>Posts récupérés : {config.totalBrightDataRecords}</span>
                 <span>Appels Gemini : {config.totalGeminiCalls}</span>
+                <span className="inline-flex items-center gap-1 font-semibold text-brand-green">
+                  <Zap className="w-3 h-3" /> Auto-publiés : {config.totalAutoApproved ?? 0}
+                </span>
                 {typeof config.placesApiConfigured === 'boolean' && (
                   <span
                     className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
@@ -1544,6 +1633,11 @@ export default function AdminScraperPage() {
             <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold">
               +{displayedSummary.candidatesCreated} créés
             </span>
+            {(displayedSummary.autoApprovedCount ?? 0) > 0 && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-brand-green/15 text-brand-green font-bold">
+                <Zap className="w-3 h-3" /> {displayedSummary.autoApprovedCount} auto-publiés
+              </span>
+            )}
             <span className="px-2.5 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800">
               {displayedSummary.duplicateSkipped} doublons ({displayedSummary.crossGroupOverlaps}{' '}
               inter-groupes)

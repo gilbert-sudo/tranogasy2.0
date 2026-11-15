@@ -1,4 +1,4 @@
-import { apiFetch } from './api';
+import { apiFetch, getStoredSessionAuth } from './api';
 
 export interface SearchPropertiesParams {
   page?: string | number;
@@ -23,11 +23,19 @@ export interface SearchPropertiesParams {
 
 export const propertyService = {
   getPropertyById: (id: string) => {
-    return apiFetch<any>(`/properties/${id}`);
+    const { userId } = getStoredSessionAuth();
+    return apiFetch<any>(`/properties/${encodeURIComponent(id)}`, {
+      params: userId ? { viewerId: userId } : undefined,
+    });
   },
   
   getProperties: (params?: any) => {
-    return apiFetch<any>('/properties', { params });
+    const { userId } = getStoredSessionAuth();
+    const mergedParams =
+      userId && !params?.viewerId
+        ? { ...params, viewerId: userId }
+        : params;
+    return apiFetch<any>('/properties', { params: mergedParams });
   },
 
   searchProperties: async (params?: SearchPropertiesParams) => {
@@ -39,6 +47,10 @@ export const propertyService = {
         }
       });
     }
+    const { userId } = getStoredSessionAuth();
+    if (userId && !cleanParams.viewerId) {
+      cleanParams.viewerId = userId;
+    }
     try {
       return await apiFetch<any>('/properties/search', { params: cleanParams });
     } catch {
@@ -47,6 +59,7 @@ export const propertyService = {
         params: {
           page: cleanParams.page || '1',
           limit: cleanParams.limit || '200',
+          ...(cleanParams.viewerId ? { viewerId: cleanParams.viewerId } : {}),
         },
       });
     }
@@ -126,6 +139,32 @@ export const propertyService = {
         'x-auth-token': authToken,
       },
       body: JSON.stringify(payload),
+    });
+  },
+
+  unlockPropertyContact: (
+    propertyId: string,
+    userId: string,
+    authToken?: string | null,
+  ) => {
+    return apiFetch<{
+      unlocked: boolean;
+      alreadyUnlocked?: boolean;
+      costJp?: number;
+      balance?: number;
+      phone1?: string | null;
+      phone2?: string | null;
+      phone3?: string | null;
+      description?: string;
+    }>(`/properties/${encodeURIComponent(propertyId)}/unlock-contact`, {
+      method: 'POST',
+      headers: authToken
+        ? {
+            'x-auth-token': authToken,
+            Authorization: `Bearer ${authToken}`,
+          }
+        : undefined,
+      body: JSON.stringify({ userId }),
     });
   },
 };

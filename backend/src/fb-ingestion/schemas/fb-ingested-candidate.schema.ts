@@ -97,6 +97,29 @@ export class FbIngestedCandidate {
   @Prop({ type: String, default: null })
   publishedPropertyId: string | null;
 
+  @Prop({
+    type: String,
+    enum: ['auto_published', 'fast_check', 'call_queue'],
+    default: 'fast_check',
+  })
+  workflowLane?: 'auto_published' | 'fast_check' | 'call_queue';
+
+  @Prop({ type: Boolean, default: false })
+  autoApproved?: boolean;
+
+  @Prop({ type: String, default: null })
+  autoApproveReason?: string | null;
+
+  @Prop({
+    type: String,
+    enum: ['none', 'called', 'messaged_waiting', 'answered'],
+    default: 'none',
+  })
+  contactFollowUpStatus?: 'none' | 'called' | 'messaged_waiting' | 'answered';
+
+  @Prop({ type: Date, default: null })
+  contactFollowUpAt?: Date | null;
+
   @Prop({ type: Date, default: null })
   reviewedAt: Date | null;
 }

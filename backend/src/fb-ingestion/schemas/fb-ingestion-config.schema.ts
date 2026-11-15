@@ -59,6 +59,18 @@ export class FbIngestionConfig {
   @Prop({ default: 'gemini-3.5-flash-lite' })
   geminiModel: string;
 
+  @Prop({ default: true })
+  autoApproveEnabled: boolean;
+
+  @Prop({ default: 75, min: 40, max: 98 })
+  autoApproveMinQualityScore: number;
+
+  @Prop({ default: true })
+  autoApproveAllowEstimatedPrice: boolean;
+
+  @Prop({ default: 0 })
+  totalAutoApproved: number;
+
   @Prop({ default: 'idle' })
   lastPollStatus: string;
 

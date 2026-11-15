@@ -13,6 +13,7 @@ import {
   ImagePlus,
   Loader2,
   MapPin,
+  MessageCircle,
   PhoneCall,
   RefreshCw,
   RotateCcw,
@@ -21,12 +22,16 @@ import {
   Sparkles,
   Star,
   Trash2,
+  Undo2,
+  Users,
   X,
+  Zap,
   ZoomIn,
 } from 'lucide-react';
 import { cityService, CityLocation } from '@/services/city.service';
 import { imageService } from '@/services/image.service';
 import {
+  CandidateListResponse,
   FbGroupTarget,
   FbIngestedCandidate,
   fbIngestionService,
@@ -407,6 +412,105 @@ function buildCallQuestionsText(title: string, missingKeys: string[]): string {
   return lines.length > 0 ? `${header}\n${lines.join('\n')}` : header;
 }
 
+function toWhatsAppUrl(phone: string | null | undefined, message: string): string | null {
+  if (!phone) return null;
+  let digits = String(phone).replace(/\D/g, '');
+  if (!digits) return null;
+  if (digits.startsWith('0') && digits.length >= 9) {
+    digits = `261${digits.slice(1)}`;
+  } else if (!digits.startsWith('261') && digits.length === 9) {
+    digits = `261${digits}`;
+  }
+  if (digits.length < 11) return null;
+  return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
+}
+
+function formatMalagasyMissingQuestions(missingKeys: string[]): string[] {
+  const mgMap: Record<string, string> = {
+    city: 'aiza ho aiza marina ny toerana / fokontany na repère akaiky',
+    rent: 'ohatrinona ny hofany isam-bolana',
+    price: 'ohatrinona ny vidiny',
+    rooms: 'firy ny efitra fandriana (chambres)',
+    toilet: 'anatiny sa ivelany ny WC',
+    bathrooms: 'anatiny sa ivelany ny douche',
+    carAccess: 'miditra ve ny fiara',
+    motoAccess: 'miditra ve ny moto',
+    waterSupply: 'misy rano JIRAMA ve sa vovo / maka rano',
+    electricitySupply: 'misy jiro JIRAMA ve sa panneau solaire',
+    furnishedProperty: 'misy fanaka ve sa tsia',
+  };
+  return Array.from(
+    new Set(
+      missingKeys
+        .filter((k) => k !== 'phone1' && mgMap[k])
+        .map((k) => mgMap[k]),
+    ),
+  );
+}
+
+function buildMalagasyFollowUpMessage(
+  title: string,
+  type: 'rent' | 'sale' | null | undefined,
+  missingKeys: string[],
+): string {
+  const txLabel = type === 'sale' ? 'amidy' : 'ahofa';
+  const questions = formatMalagasyMissingQuestions(missingKeys);
+  const intro = `Salama tompoko, avy ao amin'ny TranoGasy. Mahakasika ilay trano ${txLabel} "${title || 'tao amin’ny Facebook'}"`;
+  if (questions.length === 0) {
+    return `${intro}, mba saika hanamarina ny mombamomba ilay trano azafady (toerana marina, hofany/vidiny, sy ny fidirana). Misaotra betsaka tompoko.`;
+  }
+  return `${intro}, mba saika hanontany azafady : ${questions.join(' ? ')} ? Misaotra betsaka tompoko.`;
+}
+
+function buildGroupedMalagasyMessage(
+  authorName: string,
+  entries: Array<{ title: string; type: 'rent' | 'sale' | null; missingKeys: string[] }>,
+): string {
+  const greeting = authorName && !authorName.toLowerCase().includes('facebook')
+    ? `Salama tompoko ${authorName}`
+    : 'Salama tompoko';
+  const lines = entries.slice(0, 6).map((entry, idx) => {
+    const tx = entry.type === 'sale' ? 'amidy' : 'ahofa';
+    const qs = formatMalagasyMissingQuestions(entry.missingKeys);
+    const ask = qs.length > 0 ? qs.join(', ') : 'toerana sy mombamomba azy';
+    return `${idx + 1}) ${entry.title || `Trano ${tx}`} -> ${ask}`;
+  });
+  return `${greeting}, avy ao amin'ny TranoGasy. Mba saika hanontany momba ireo trano ${entries.length} navoakanao tao amin'ny Facebook azafady :\n${lines.join('\n')}\nMisaotra betsaka tompoko.`;
+}
+
+function normalizeMalagasyPhone(phone: string | null | undefined): string {
+  if (!phone) return '';
+  let digits = String(phone).replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.startsWith('261') && digits.length >= 12) {
+    digits = `0${digits.slice(3)}`;
+  } else if (!digits.startsWith('0') && digits.length === 9) {
+    digits = `0${digits}`;
+  }
+  return digits;
+}
+
+function getEffectivePendingLane(c: FbIngestedCandidate): 'fast_check' | 'call_queue' {
+  if (c.workflowLane === 'fast_check') return 'fast_check';
+  if (c.workflowLane === 'call_queue') return 'call_queue';
+  const liveMissing = computeLiveMissing(toDraft(c));
+  const hasEstimatedFallback =
+    c.extracted?.type === 'sale'
+      ? Number(c.extracted?.estimatedPrice || 0) > 0
+      : Number(c.extracted?.estimatedRent || 0) > 0;
+  const hasAmount =
+    c.extracted?.type === 'sale'
+      ? Number(c.extracted?.price || 0) > 0 || hasEstimatedFallback
+      : Number(c.extracted?.rent || 0) > 0 || hasEstimatedFallback;
+  const ready =
+    liveMissing.length === 0 &&
+    Boolean(c.matchedCityId) &&
+    Boolean(c.extracted?.type) &&
+    hasAmount &&
+    Boolean(c.extracted?.phone1 || c.extracted?.phone2 || c.extracted?.phone3);
+  return ready ? 'fast_check' : 'call_queue';
+}
+
 interface CandidateCardProps {
   candidate: FbIngestedCandidate;
   userId: string;
@@ -423,9 +527,14 @@ interface CandidateCardProps {
     draft: CandidateDraft,
     patch: Record<string, unknown>,
   ) => void;
+  onUnpublishOptimistic: (candidate: FbIngestedCandidate) => void;
   onRejectOptimistic: (
     candidate: FbIngestedCandidate,
     draft: CandidateDraft,
+  ) => void;
+  onUpdateFollowUpStatus: (
+    candidate: FbIngestedCandidate,
+    status: 'none' | 'called' | 'messaged_waiting' | 'answered',
   ) => void;
   onCandidateReanalyzed: (updated: FbIngestedCandidate) => void;
   onToastError: (title: string, text: string) => void;
@@ -439,7 +548,9 @@ const CandidateReviewCard = React.memo(function CandidateReviewCard({
   onDirtyChange,
   onSaveDraft,
   onApproveOptimistic,
+  onUnpublishOptimistic,
   onRejectOptimistic,
+  onUpdateFollowUpStatus,
   onCandidateReanalyzed,
   onToastError,
 }: CandidateCardProps) {
@@ -467,7 +578,7 @@ const CandidateReviewCard = React.memo(function CandidateReviewCard({
   const [showAllFeatures, setShowAllFeatures] = useState(false);
   const [uploadingPhotos, setUploadingPhotos] = useState<UploadingPhotoPreview[]>([]);
   const [galleryIndex, setGalleryIndex] = useState<number | null>(null);
-  const [copiedKey, setCopiedKey] = useState<'questions' | 'phone1' | null>(null);
+  const [copiedKey, setCopiedKey] = useState<'questions' | 'phone1' | 'sms_mg' | null>(null);
 
   const saveSeqRef = useRef(0);
   const savedBadgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -855,7 +966,7 @@ const CandidateReviewCard = React.memo(function CandidateReviewCard({
 
   const handleCopyText = async (
     text: string,
-    key: 'questions' | 'phone1',
+    key: 'questions' | 'phone1' | 'sms_mg',
   ) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -1002,19 +1113,70 @@ const CandidateReviewCard = React.memo(function CandidateReviewCard({
               </span>
             )}
 
-          {candidate.status === 'pending' && (
+          {candidate.autoApproved && (
             <span
-              className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
-                missing.length === 0 && canPublish
-                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
-                  : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
-              }`}
+              title={
+                candidate.autoApproveReason ||
+                'Annonce validée et publiée automatiquement par le système (Zero-Touch)'
+              }
+              className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-violet-100 text-violet-800 dark:bg-violet-950/60 dark:text-violet-200 border border-violet-300/60 dark:border-violet-800"
             >
-              {missing.length === 0 && canPublish
-                ? 'Prêt à publier ✓'
-                : `${missing.length} à vérifier`}
+              <Zap className="w-3 h-3" />
+              Auto-validé IA
             </span>
           )}
+
+          {candidate.status === 'pending' && (() => {
+            const effectiveLane =
+              candidate.workflowLane ||
+              (missing.length > 0 || !canPublish ? 'call_queue' : 'fast_check');
+            const followUp = candidate.contactFollowUpStatus || 'none';
+            return (
+              <>
+                <span
+                  className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                    effectiveLane === 'call_queue'
+                      ? 'bg-orange-100 text-orange-800 dark:bg-orange-950/60 dark:text-orange-200'
+                      : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-950/60 dark:text-yellow-200'
+                  }`}
+                >
+                  {effectiveLane === 'call_queue'
+                    ? "🟠 File d'appel"
+                    : '🟡 Validation 1-Clic'}
+                </span>
+
+                <span
+                  className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                    missing.length === 0 && canPublish
+                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
+                      : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                  }`}
+                >
+                  {missing.length === 0 && canPublish
+                    ? 'Prêt à publier ✓'
+                    : `${missing.length} à vérifier`}
+                </span>
+
+                {followUp !== 'none' && (
+                  <span
+                    className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                      followUp === 'answered'
+                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
+                        : followUp === 'messaged_waiting'
+                        ? 'bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-200'
+                        : 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-200'
+                    }`}
+                  >
+                    {followUp === 'answered'
+                      ? '✅ Répondu'
+                      : followUp === 'messaged_waiting'
+                      ? '⏳ Relancé'
+                      : '📞 Appelé'}
+                  </span>
+                )}
+              </>
+            );
+          })()}
 
           {isDirty ? (
             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-700 dark:text-amber-300">
@@ -1114,50 +1276,280 @@ const CandidateReviewCard = React.memo(function CandidateReviewCard({
 
       {!isCollapsed && (
         <>
-          {/* Missing fields highlight banner + Publisher call helper */}
-          {missing.length > 0 && candidate.status === 'pending' && (
-            <div className="px-6 py-2.5 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200/70 dark:border-amber-900/50 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-800 dark:text-amber-200">
-              <div className="flex flex-wrap items-center gap-2">
-                <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
-                <span className="font-semibold">Champs non mentionnés ou à vérifier :</span>
-                {missing.map((m) => (
-                  <span
-                    key={m}
-                    className="px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-900/60 font-medium"
-                  >
-                    {MISSING_FIELD_LABELS[m] || m}
-                  </span>
-                ))}
-              </div>
+          {/* Missing fields highlight banner + Smart Call Cockpit & Malagasy WhatsApp */}
+          {candidate.status === 'pending' &&
+            (missing.length > 0 || candidate.workflowLane === 'call_queue') && (() => {
+              const mgMessage = buildMalagasyFollowUpMessage(
+                draft.title || candidate.extracted?.title || '',
+                draft.type,
+                missing,
+              );
+              const waHref = toWhatsAppUrl(
+                draft.phone1 ||
+                  candidate.extracted?.phone1 ||
+                  draft.phone2 ||
+                  draft.phone3,
+                mgMessage,
+              );
+              const followUp = candidate.contactFollowUpStatus || 'none';
+              const isCarActive = draft.featureVerification.carAccess === 'yes';
+              const isMotoOnlyActive =
+                draft.featureVerification.carAccess !== 'yes' &&
+                draft.featureVerification.motoAccess === 'yes';
+              const isFootActive =
+                draft.featureVerification.carAccess === 'no' &&
+                draft.featureVerification.motoAccess === 'no';
+              const isAllJiramaActive =
+                draft.featureVerification.waterSupply === 'yes' &&
+                draft.featureVerification.electricitySupply === 'yes' &&
+                Boolean(draft.features.waterPumpSupplyJirama) &&
+                Boolean(draft.features.electricityJirama);
+              const isFurnishedActive =
+                draft.featureVerification.furnishedProperty === 'yes';
+              const isUnfurnishedActive =
+                draft.featureVerification.furnishedProperty === 'no';
 
-              <div className="flex flex-wrap items-center gap-1.5">
-                {primaryTelHref && (
-                  <a
-                    href={primaryTelHref}
-                    className="inline-flex items-center gap-1 rounded-full bg-amber-600 px-2.5 py-1 text-[11px] font-bold text-white shadow-sm hover:bg-amber-700 transition"
-                    title="Appeler le propriétaire pour vérifier les infos manquantes"
-                  >
-                    <PhoneCall className="w-3 h-3" />
-                    Appeler {draft.phone1.trim()}
-                  </a>
-                )}
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleCopyText(
-                      buildCallQuestionsText(draft.title, missing),
-                      'questions',
-                    )
-                  }
-                  className="inline-flex items-center gap-1 rounded-full border border-amber-300 dark:border-amber-700 bg-white/80 dark:bg-amber-900/40 px-2.5 py-1 text-[11px] font-semibold text-amber-900 dark:text-amber-100 hover:bg-white transition cursor-pointer"
-                  title="Copier les questions manquantes à poser lors de l’appel"
-                >
-                  <Copy className="w-3 h-3" />
-                  {copiedKey === 'questions' ? 'Questions copiées !' : 'Copier questions d’appel'}
-                </button>
-              </div>
-            </div>
-          )}
+              return (
+                <div className="px-6 py-3 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200/70 dark:border-amber-900/50 space-y-2.5 text-xs text-amber-800 dark:text-amber-200">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
+                      {missing.length > 0 ? (
+                        <>
+                          <span className="font-semibold">
+                            Champs non mentionnés ou à vérifier :
+                          </span>
+                          {missing.map((m) => (
+                            <span
+                              key={m}
+                              className="px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-900/60 font-medium"
+                            >
+                              {MISSING_FIELD_LABELS[m] || m}
+                            </span>
+                          ))}
+                        </>
+                      ) : (
+                        <span className="font-semibold">
+                          File d’appel / Vérification directe avec l’annonceur :
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {primaryTelHref && (
+                        <a
+                          href={primaryTelHref}
+                          onClick={() => {
+                            if (followUp === 'none') {
+                              onUpdateFollowUpStatus(candidate, 'called');
+                            }
+                          }}
+                          className="inline-flex items-center gap-1 rounded-full bg-amber-600 px-2.5 py-1 text-[11px] font-bold text-white shadow-sm hover:bg-amber-700 transition"
+                          title="Appeler le propriétaire pour vérifier les infos manquantes"
+                        >
+                          <PhoneCall className="w-3 h-3" />
+                          Appeler {draft.phone1.trim()}
+                        </a>
+                      )}
+
+                      {waHref && (
+                        <a
+                          href={waHref}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() =>
+                            onUpdateFollowUpStatus(candidate, 'messaged_waiting')
+                          }
+                          className="inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-white shadow-sm hover:bg-emerald-700 transition"
+                          title="Ouvrir WhatsApp avec le message en malagasy ciblant les infos manquantes"
+                        >
+                          <MessageCircle className="w-3 h-3" />
+                          💬 WhatsApp (MG)
+                        </a>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => void handleCopyText(mgMessage, 'sms_mg')}
+                        className="inline-flex items-center gap-1 rounded-full border border-emerald-300 dark:border-emerald-700 bg-white/85 dark:bg-emerald-950/40 px-2.5 py-1 text-[11px] font-semibold text-emerald-900 dark:text-emerald-100 hover:bg-white transition cursor-pointer"
+                        title="Copier le SMS pré-rempli en malagasy pour relancer le vendeur/bailleur"
+                      >
+                        <Copy className="w-3 h-3" />
+                        {copiedKey === 'sms_mg'
+                          ? 'SMS (MG) copié !'
+                          : '📩 Copier SMS (MG)'}
+                      </button>
+
+                      {missing.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void handleCopyText(
+                              buildCallQuestionsText(draft.title, missing),
+                              'questions',
+                            )
+                          }
+                          className="inline-flex items-center gap-1 rounded-full border border-amber-300 dark:border-amber-700 bg-white/80 dark:bg-amber-900/40 px-2.5 py-1 text-[11px] font-semibold text-amber-900 dark:text-amber-100 hover:bg-white transition cursor-pointer"
+                          title="Copier les questions manquantes à poser lors de l’appel"
+                        >
+                          <Copy className="w-3 h-3" />
+                          {copiedKey === 'questions'
+                            ? 'Questions copiées !'
+                            : 'Copier questions d’appel'}
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onUpdateFollowUpStatus(
+                            candidate,
+                            followUp === 'messaged_waiting'
+                              ? 'none'
+                              : 'messaged_waiting',
+                          )
+                        }
+                        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold border transition cursor-pointer ${
+                          followUp === 'messaged_waiting'
+                            ? 'bg-sky-600 text-white border-sky-600'
+                            : 'bg-white/80 dark:bg-zinc-900 text-sky-800 dark:text-sky-200 border-sky-300 dark:border-sky-800 hover:bg-sky-50'
+                        }`}
+                        title="Marquer comme relancé (en attente de réponse)"
+                      >
+                        ⏳ En attente
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onUpdateFollowUpStatus(
+                            candidate,
+                            followUp === 'answered' ? 'none' : 'answered',
+                          )
+                        }
+                        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold border transition cursor-pointer ${
+                          followUp === 'answered'
+                            ? 'bg-emerald-600 text-white border-emerald-600'
+                            : 'bg-white/80 dark:bg-zinc-900 text-emerald-800 dark:text-emerald-200 border-emerald-300 dark:border-emerald-800 hover:bg-emerald-50'
+                        }`}
+                        title="Marquer comme répondu par l'annonceur"
+                      >
+                        ✅ Répondu
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Zero-Keyboard Call Cockpit */}
+                  <div className="pt-2 border-t border-amber-200/70 dark:border-amber-900/50 flex flex-wrap items-center gap-1.5">
+                    <span className="text-[11px] font-bold text-amber-900/80 dark:text-amber-200/80 mr-1">
+                      Cockpit appel (1 clic) :
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={() => setAccessState('carAccess', 'yes')}
+                      className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition cursor-pointer ${
+                        isCarActive
+                          ? 'bg-emerald-600 text-white border-emerald-600'
+                          : 'bg-white/85 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 border-amber-300/80 dark:border-amber-800 hover:border-emerald-500'
+                      }`}
+                    >
+                      🚗 Voiture
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setDraft((prev) => ({
+                          ...prev,
+                          features: {
+                            ...prev.features,
+                            carAccess: false,
+                            motoAccess: true,
+                          },
+                          featureVerification: {
+                            ...prev.featureVerification,
+                            carAccess: 'no',
+                            motoAccess: 'yes',
+                          },
+                        }))
+                      }
+                      className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition cursor-pointer ${
+                        isMotoOnlyActive
+                          ? 'bg-amber-600 text-white border-amber-600'
+                          : 'bg-white/85 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 border-amber-300/80 dark:border-amber-800 hover:border-amber-500'
+                      }`}
+                    >
+                      🏍️ Moto seul
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setAccessState('motoAccess', 'no')}
+                      className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition cursor-pointer ${
+                        isFootActive
+                          ? 'bg-zinc-800 text-white border-zinc-800 dark:bg-zinc-200 dark:text-zinc-900'
+                          : 'bg-white/85 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 border-amber-300/80 dark:border-amber-800 hover:border-zinc-500'
+                      }`}
+                    >
+                      🚶 À pied
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setDraft((prev) => ({
+                          ...prev,
+                          features: {
+                            ...prev.features,
+                            waterPumpSupplyJirama: true,
+                            waterFetchExternal: false,
+                            electricityJirama: true,
+                            electricityPower: true,
+                          },
+                          featureVerification: {
+                            ...prev.featureVerification,
+                            waterSupply: 'yes',
+                            electricitySupply: 'yes',
+                          },
+                        }))
+                      }
+                      className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition cursor-pointer ${
+                        isAllJiramaActive
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white/85 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 border-amber-300/80 dark:border-amber-800 hover:border-blue-500'
+                      }`}
+                    >
+                      ⚡💧 Tout JIRAMA
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setFurnishedState('yes')}
+                      className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition cursor-pointer ${
+                        isFurnishedActive
+                          ? 'bg-purple-600 text-white border-purple-600'
+                          : 'bg-white/85 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 border-amber-300/80 dark:border-amber-800 hover:border-purple-500'
+                      }`}
+                    >
+                      🛋️ Meublé
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setFurnishedState('no')}
+                      className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition cursor-pointer ${
+                        isUnfurnishedActive
+                          ? 'bg-zinc-700 text-white border-zinc-700'
+                          : 'bg-white/85 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 border-amber-300/80 dark:border-amber-800 hover:border-zinc-500'
+                      }`}
+                    >
+                      📦 Non meublé
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
 
           {/* Side-by-side split view */}
           <div className="grid grid-cols-1 lg:grid-cols-12 divide-y lg:divide-y-0 lg:divide-x divide-zinc-200/70 dark:divide-zinc-800">
@@ -2456,18 +2848,42 @@ const CandidateReviewCard = React.memo(function CandidateReviewCard({
                   </button>
                 </div>
               ) : (
-                <div className="pt-3 border-t border-zinc-200/70 dark:border-zinc-800 flex items-center justify-between text-xs text-emerald-700 dark:text-emerald-300">
-                  <span>Annonce publiée dans Tranogasy</span>
-                  {candidate.publishedPropertyId && (
-                    <a
-                      href={`/properties/${candidate.publishedPropertyId}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-bold underline inline-flex items-center gap-1"
+                <div className="pt-3 border-t border-zinc-200/70 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-2 text-xs text-emerald-700 dark:text-emerald-300">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold">
+                      {candidate.autoApproved
+                        ? '⚡ Auto-publiée dans TranoGasy'
+                        : 'Annonce publiée dans Tranogasy'}
+                    </span>
+                    {candidate.autoApproved && candidate.autoApproveReason && (
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-violet-100 text-violet-800 dark:bg-violet-950/60 dark:text-violet-200">
+                        {candidate.autoApproveReason}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => onUnpublishOptimistic(candidate)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-950/70 transition cursor-pointer"
+                      title="Retirer cette annonce du site public et la renvoyer dans la file d'attente pour correction"
                     >
-                      Voir la fiche publiée <ExternalLink className="w-3.5 h-3.5" />
-                    </a>
-                  )}
+                      <Undo2 className="w-3.5 h-3.5" />
+                      ↩️ Dépublier &amp; Corriger
+                    </button>
+
+                    {candidate.publishedPropertyId && (
+                      <a
+                        href={`/properties/${candidate.publishedPropertyId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-bold underline inline-flex items-center gap-1"
+                      >
+                        Voir la fiche publiée <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -2505,6 +2921,10 @@ export default function ValidationQueueTab({
   onUpdateToast,
 }: Props) {
   const [statusFilter, setStatusFilter] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
+  const [pendingLaneFilter, setPendingLaneFilter] = useState<
+    'all' | 'fast_check' | 'call_queue' | 'waiting_reply'
+  >('all');
+  const [groupByPhone, setGroupByPhone] = useState(false);
   const [typeFilter, setTypeFilter] = useState<'all' | 'rent' | 'sale'>('all');
   const [houseTypeFilter, setHouseTypeFilter] = useState<HouseCategoryFilter>('all');
   const [groupFilter, setGroupFilter] = useState('');
@@ -2513,13 +2933,18 @@ export default function ValidationQueueTab({
   const [items, setItems] = useState<FbIngestedCandidate[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [counts, setCounts] = useState({ pending: 0, approved: 0, rejected: 0 });
+  const [counts, setCounts] = useState<CandidateListResponse['counts']>({
+    pending: 0,
+    approved: 0,
+    rejected: 0,
+  });
   const [initialLoading, setInitialLoading] = useState(true);
   const [isFetching, setIsFetching] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [reanalyzingAll, setReanalyzingAll] = useState(false);
+  const [autoApprovingAll, setAutoApprovingAll] = useState(false);
   const [cardVersions, setCardVersions] = useState<Record<string, number>>({});
   const [restoredDrafts, setRestoredDrafts] = useState<Record<string, CandidateDraft>>({});
   const [collapseSignal, setCollapseSignal] = useState<{ collapsed: boolean; seq: number }>({
@@ -2898,10 +3323,205 @@ export default function ValidationQueueTab({
     }
   };
 
+  const handleUnpublishOptimistic = useCallback(
+    (candidate: FbIngestedCandidate) => {
+      if (candidate.status !== 'approved') return;
+      const originalIndex = items.findIndex((it) => it._id === candidate._id);
+      const activeFilter = statusFilterRef.current;
+
+      if (activeFilter === 'approved') {
+        setItems((prev) => prev.filter((it) => it._id !== candidate._id));
+        setTotal((t) => Math.max(0, t - 1));
+      } else {
+        setItems((prev) =>
+          prev.map((it) =>
+            it._id === candidate._id
+              ? {
+                  ...it,
+                  status: 'pending',
+                  publishedPropertyId: null,
+                  autoApproved: false,
+                  autoApproveReason: null,
+                }
+              : it,
+          ),
+        );
+      }
+
+      setCounts((c) => ({
+        ...c,
+        approved: Math.max(0, c.approved - 1),
+        pending: c.pending + 1,
+      }));
+      onCandidateCountDelta?.(candidate.groupId, { approvedCount: -1 });
+
+      const toastId = onPushToast({
+        kind: 'pending',
+        title: 'Dépublication en cours...',
+        text: candidate.extracted?.title || candidate.groupName,
+      });
+
+      void fbIngestionService
+        .unpublishCandidate(userId, candidate._id)
+        .then((res) => {
+          if (activeFilter !== 'approved') {
+            setItems((prev) =>
+              prev.map((it) => (it._id === candidate._id ? res.candidate : it)),
+            );
+          }
+          onUpdateToast(
+            toastId,
+            {
+              kind: 'ok',
+              title: 'Annonce dépubliée',
+              text: "Retirée du site public et renvoyée dans la file d'attente.",
+            },
+            5000,
+          );
+        })
+        .catch((err) => {
+          setCounts((c) => ({
+            ...c,
+            approved: c.approved + 1,
+            pending: Math.max(0, c.pending - 1),
+          }));
+          onCandidateCountDelta?.(candidate.groupId, { approvedCount: 1 });
+
+          if (activeFilter === 'approved') {
+            setItems((prev) => {
+              if (prev.some((it) => it._id === candidate._id)) return prev;
+              const copy = [...prev];
+              const insertAt = originalIndex >= 0 ? Math.min(originalIndex, copy.length) : 0;
+              copy.splice(insertAt, 0, candidate);
+              return copy;
+            });
+            setTotal((t) => t + 1);
+          } else {
+            setItems((prev) =>
+              prev.map((it) => (it._id === candidate._id ? candidate : it)),
+            );
+          }
+
+          onUpdateToast(toastId, {
+            kind: 'err',
+            title: 'Échec de dépublication',
+            text: (err as Error).message,
+          });
+        });
+    },
+    [items, onCandidateCountDelta, onPushToast, onUpdateToast, userId],
+  );
+
+  const handleUpdateFollowUpStatus = useCallback(
+    (
+      candidate: FbIngestedCandidate,
+      status: 'none' | 'called' | 'messaged_waiting' | 'answered',
+    ) => {
+      const prevStatus = candidate.contactFollowUpStatus || 'none';
+      const prevAt = candidate.contactFollowUpAt || null;
+      const nextAt = status === 'none' ? null : new Date().toISOString();
+
+      setItems((prev) =>
+        prev.map((it) =>
+          it._id === candidate._id
+            ? { ...it, contactFollowUpStatus: status, contactFollowUpAt: nextAt }
+            : it,
+        ),
+      );
+
+      void fbIngestionService
+        .updateCandidate(userId, candidate._id, {
+          contactFollowUpStatus: status,
+        })
+        .then((updated) => {
+          setItems((prev) =>
+            prev.map((it) => (it._id === candidate._id ? updated : it)),
+          );
+        })
+        .catch((err) => {
+          setItems((prev) =>
+            prev.map((it) =>
+              it._id === candidate._id
+                ? {
+                    ...it,
+                    contactFollowUpStatus: prevStatus,
+                    contactFollowUpAt: prevAt,
+                  }
+                : it,
+            ),
+          );
+          onPushToast({
+            kind: 'err',
+            title: 'Erreur statut de relance',
+            text: (err as Error).message,
+          });
+        });
+    },
+    [onPushToast, userId],
+  );
+
+  const handleAutoApproveEligible = async () => {
+    if (autoApprovingAll) return;
+    setAutoApprovingAll(true);
+    const toastId = onPushToast({
+      kind: 'pending',
+      title: 'Auto-publication IA en cours...',
+      text: 'Vérification des annonces en attente éligibles (Zero-Touch)',
+    });
+    try {
+      const res = await fbIngestionService.autoApproveEligible(userId);
+      onUpdateToast(
+        toastId,
+        {
+          kind: 'ok',
+          title: 'Auto-publication terminée',
+          text: `${res.autoApproved} publiée(s) automatiquement sur ${res.scanned} examinée(s).`,
+        },
+        5500,
+      );
+      await fetchCandidatesPage({ pageNum: 1, bumpCleanCards: true });
+    } catch (err) {
+      onUpdateToast(toastId, {
+        kind: 'err',
+        title: 'Erreur auto-publication',
+        text: (err as Error).message,
+      });
+    } finally {
+      setAutoApprovingAll(false);
+    }
+  };
+
+  const laneBreakdown = useMemo(() => {
+    if (statusFilter !== 'pending') {
+      const cRecord = counts as unknown as Record<string, number | undefined>;
+      return {
+        fastCheck: cRecord.fastCheck ?? 0,
+        callQueue: cRecord.callQueue ?? 0,
+        waitingReply: cRecord.waitingReply ?? 0,
+      };
+    }
+    let fastCheck = 0;
+    let callQueue = 0;
+    let waitingReply = 0;
+    for (const c of items) {
+      if (getEffectivePendingLane(c) === 'fast_check') fastCheck += 1;
+      else callQueue += 1;
+      if (c.contactFollowUpStatus === 'messaged_waiting') waitingReply += 1;
+    }
+    return { fastCheck, callQueue, waitingReply };
+  }, [counts, items, statusFilter]);
+
   const filteredItems = useMemo(() => {
     const q = quickSearch.trim().toLowerCase();
-    if (!q) return items;
     return items.filter((c) => {
+      if (statusFilter === 'pending' && pendingLaneFilter !== 'all') {
+        if (pendingLaneFilter === 'waiting_reply') {
+          if (c.contactFollowUpStatus !== 'messaged_waiting') return false;
+        } else if (getEffectivePendingLane(c) !== pendingLaneFilter) {
+          return false;
+        }
+      }
+      if (!q) return true;
       const haystack = [
         c.extracted?.title,
         c.authorName,
@@ -2916,7 +3536,82 @@ export default function ValidationQueueTab({
         .toLowerCase();
       return haystack.includes(q);
     });
-  }, [items, quickSearch]);
+  }, [items, quickSearch, statusFilter, pendingLaneFilter]);
+
+  const phoneGroups = useMemo(() => {
+    if (!groupByPhone) return [];
+    const map = new Map<
+      string,
+      {
+        key: string;
+        displayPhone: string;
+        authorName: string;
+        telHref: string | null;
+        candidates: FbIngestedCandidate[];
+      }
+    >();
+
+    for (const c of filteredItems) {
+      const rawPhone =
+        c.extracted?.phone1 || c.extracted?.phone2 || c.extracted?.phone3 || '';
+      const normPhone = normalizeMalagasyPhone(rawPhone);
+      const groupKey = normPhone
+        ? `phone:${normPhone}`
+        : c.authorFbId
+        ? `fb:${c.authorFbId}`
+        : 'no_phone';
+
+      let group = map.get(groupKey);
+      if (!group) {
+        group = {
+          key: groupKey,
+          displayPhone: normPhone || rawPhone.trim() || 'Sans téléphone',
+          authorName: c.authorName || 'Annonceur Facebook',
+          telHref: normPhone
+            ? `tel:${normPhone}`
+            : rawPhone.trim()
+            ? `tel:${rawPhone.replace(/[^\d+]/g, '')}`
+            : null,
+          candidates: [],
+        };
+        map.set(groupKey, group);
+      }
+      if (
+        (!group.authorName || group.authorName.toLowerCase().includes('facebook')) &&
+        c.authorName &&
+        !c.authorName.toLowerCase().includes('facebook')
+      ) {
+        group.authorName = c.authorName;
+      }
+      group.candidates.push(c);
+    }
+
+    const groupsArr = Array.from(map.values()).map((g) => {
+      const entries = g.candidates.map((cand) => ({
+        title: cand.extracted?.title || cand.groupName || 'Trano',
+        type: (cand.extracted?.type as 'rent' | 'sale' | null) ?? null,
+        missingKeys: computeLiveMissing(toDraft(cand)),
+      }));
+      const groupedMsg = buildGroupedMalagasyMessage(g.authorName, entries);
+      const firstPhone =
+        g.candidates.find((cand) => cand.extracted?.phone1)?.extracted?.phone1 ||
+        g.candidates.find((cand) => cand.extracted?.phone2)?.extracted?.phone2 ||
+        g.candidates.find((cand) => cand.extracted?.phone3)?.extracted?.phone3 ||
+        (g.displayPhone !== 'Sans téléphone' ? g.displayPhone : null);
+      return {
+        ...g,
+        waHref: toWhatsAppUrl(firstPhone, groupedMsg),
+      };
+    });
+
+    groupsArr.sort((a, b) => {
+      if (a.key === 'no_phone' && b.key !== 'no_phone') return 1;
+      if (b.key === 'no_phone' && a.key !== 'no_phone') return -1;
+      return b.candidates.length - a.candidates.length;
+    });
+
+    return groupsArr;
+  }, [filteredItems, groupByPhone]);
 
   const toggleAllCollapsed = () => {
     setCollapseSignal((prev) => ({
@@ -3017,6 +3712,76 @@ export default function ValidationQueueTab({
             </button>
           </div>
         </div>
+
+        {statusFilter === 'pending' && (
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-zinc-200/70 dark:border-zinc-800">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {(
+                [
+                  { id: 'all', label: `Toutes (${counts.pending})` },
+                  {
+                    id: 'fast_check',
+                    label: `🟡 Validation 1-Clic (${laneBreakdown.fastCheck})`,
+                  },
+                  {
+                    id: 'call_queue',
+                    label: `🟠 File d'appel (${laneBreakdown.callQueue})`,
+                  },
+                  {
+                    id: 'waiting_reply',
+                    label: `⏳ En attente réponse (${laneBreakdown.waitingReply})`,
+                  },
+                ] as const
+              ).map((lane) => (
+                <button
+                  key={lane.id}
+                  type="button"
+                  onClick={() => setPendingLaneFilter(lane.id)}
+                  className={`px-3 py-1 rounded-full text-[11px] font-bold transition cursor-pointer ${
+                    pendingLaneFilter === lane.id
+                      ? 'bg-brand-green text-white shadow-sm'
+                      : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                  }`}
+                >
+                  {lane.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setGroupByPhone((v) => !v)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold border transition cursor-pointer ${
+                  groupByPhone
+                    ? 'bg-orange-600 text-white border-orange-600 shadow-sm'
+                    : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 border-zinc-200 dark:border-zinc-700 hover:border-orange-400'
+                }`}
+                title="Regrouper les annonces ayant le même numéro de téléphone ou annonceur pour passer un seul appel / WhatsApp groupé"
+              >
+                <Users className="w-3.5 h-3.5" />
+                📞 Grouper par annonceur
+              </button>
+
+              {counts.pending > 0 && (
+                <button
+                  type="button"
+                  disabled={autoApprovingAll}
+                  onClick={() => void handleAutoApproveEligible()}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-violet-600 text-white hover:bg-violet-700 shadow-sm transition disabled:opacity-50 cursor-pointer"
+                  title="Publier automatiquement toutes les annonces en attente qui remplissent les critères Zero-Touch"
+                >
+                  {autoApprovingAll ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Zap className="w-3.5 h-3.5" />
+                  )}
+                  ⚡ Auto-publier les éligibles
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="flex flex-wrap items-center gap-2">
           <select
@@ -3127,21 +3892,116 @@ export default function ValidationQueueTab({
             isFetching ? 'opacity-65' : 'opacity-100'
           }`}
         >
-          {filteredItems.map((candidate) => (
-            <CandidateReviewCard
-              key={`${candidate._id}_${cardVersions[candidate._id] || 0}`}
-              candidate={candidate}
-              userId={userId}
-              initialDraftOverride={restoredDrafts[candidate._id]}
-              collapseSignal={collapseSignal}
-              onDirtyChange={handleDirtyChange}
-              onSaveDraft={handleSaveDraft}
-              onApproveOptimistic={handleApproveOptimistic}
-              onRejectOptimistic={handleRejectOptimistic}
-              onCandidateReanalyzed={handleCandidateReanalyzed}
-              onToastError={handleToastError}
-            />
-          ))}
+          {groupByPhone ? (
+            <div className="space-y-6">
+              {phoneGroups.map((group) => (
+                <div
+                  key={group.key}
+                  className="rounded-[2rem] border border-orange-200/80 dark:border-orange-900/50 bg-orange-50/30 dark:bg-orange-950/10 p-3 sm:p-4 space-y-4"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-3 px-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Users className="w-4 h-4 text-orange-600" />
+                      <span className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
+                        {group.authorName}
+                      </span>
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200">
+                        {group.displayPhone}
+                      </span>
+                      <span
+                        className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                          group.candidates.length > 1
+                            ? 'bg-orange-600 text-white'
+                            : 'bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300'
+                        }`}
+                      >
+                        {group.candidates.length} annonce
+                        {group.candidates.length > 1 ? 's' : ''}
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      {group.telHref && (
+                        <a
+                          href={group.telHref}
+                          onClick={() => {
+                            for (const cand of group.candidates) {
+                              if (
+                                !cand.contactFollowUpStatus ||
+                                cand.contactFollowUpStatus === 'none'
+                              ) {
+                                handleUpdateFollowUpStatus(cand, 'called');
+                              }
+                            }
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-amber-600 text-white hover:bg-amber-700 shadow-sm transition"
+                        >
+                          <PhoneCall className="w-3.5 h-3.5" />
+                          📞 Appeler ({group.candidates.length})
+                        </a>
+                      )}
+
+                      {group.waHref && (
+                        <a
+                          href={group.waHref}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() => {
+                            for (const cand of group.candidates) {
+                              handleUpdateFollowUpStatus(cand, 'messaged_waiting');
+                            }
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm transition"
+                          title="Envoyer un message WhatsApp groupé en malagasy pour toutes les annonces de cet annonceur"
+                        >
+                          <MessageCircle className="w-3.5 h-3.5" />
+                          💬 WhatsApp groupé (MG)
+                        </a>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    {group.candidates.map((candidate) => (
+                      <CandidateReviewCard
+                        key={`${candidate._id}_${cardVersions[candidate._id] || 0}`}
+                        candidate={candidate}
+                        userId={userId}
+                        initialDraftOverride={restoredDrafts[candidate._id]}
+                        collapseSignal={collapseSignal}
+                        onDirtyChange={handleDirtyChange}
+                        onSaveDraft={handleSaveDraft}
+                        onApproveOptimistic={handleApproveOptimistic}
+                        onUnpublishOptimistic={handleUnpublishOptimistic}
+                        onRejectOptimistic={handleRejectOptimistic}
+                        onUpdateFollowUpStatus={handleUpdateFollowUpStatus}
+                        onCandidateReanalyzed={handleCandidateReanalyzed}
+                        onToastError={handleToastError}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            filteredItems.map((candidate) => (
+              <CandidateReviewCard
+                key={`${candidate._id}_${cardVersions[candidate._id] || 0}`}
+                candidate={candidate}
+                userId={userId}
+                initialDraftOverride={restoredDrafts[candidate._id]}
+                collapseSignal={collapseSignal}
+                onDirtyChange={handleDirtyChange}
+                onSaveDraft={handleSaveDraft}
+                onApproveOptimistic={handleApproveOptimistic}
+                onUnpublishOptimistic={handleUnpublishOptimistic}
+                onRejectOptimistic={handleRejectOptimistic}
+                onUpdateFollowUpStatus={handleUpdateFollowUpStatus}
+                onCandidateReanalyzed={handleCandidateReanalyzed}
+                onToastError={handleToastError}
+              />
+            ))
+          )}
 
           {items.length < total && !quickSearch && (
             <div className="flex justify-center pt-2">

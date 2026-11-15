@@ -80,6 +80,7 @@ export interface RunSummary {
   landSkipped: number;
   spamSkipped: number;
   candidatesCreated: number;
+  autoApprovedCount?: number;
   geminiCalls: number;
   placesApiCalls?: number;
   placesCacheHits?: number;
@@ -439,6 +440,18 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
     if (typeof patch.geminiModel === 'string' && patch.geminiModel.trim()) {
       allowed.geminiModel = patch.geminiModel.trim();
     }
+    if (typeof patch.autoApproveEnabled === 'boolean') {
+      allowed.autoApproveEnabled = patch.autoApproveEnabled;
+    }
+    if (typeof patch.autoApproveMinQualityScore === 'number') {
+      allowed.autoApproveMinQualityScore = Math.max(
+        40,
+        Math.min(98, Math.round(patch.autoApproveMinQualityScore)),
+      );
+    }
+    if (typeof patch.autoApproveAllowEstimatedPrice === 'boolean') {
+      allowed.autoApproveAllowEstimatedPrice = patch.autoApproveAllowEstimatedPrice;
+    }
     if (patch.lastError === null) {
       allowed.lastError = null;
     }
@@ -662,6 +675,10 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
 
   private async finalizeRunSuccess(summary: RunSummary): Promise<void> {
     const errNote = summary.errors.length > 0 ? ` (${summary.errors.length} erreur)` : '';
+    const autoNote =
+      (summary.autoApprovedCount || 0) > 0
+        ? ` (dont ${summary.autoApprovedCount} auto-publiée(s))`
+        : '';
     await this.configModel.updateOne(
       { key: 'default' },
       {
@@ -669,7 +686,7 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
           lastPollFinishedAt: new Date(),
           lastPollStatus: 'idle',
           lastPollPhase: 'completed',
-          lastPollMessage: `Terminé (${summary.snapshotId}) : +${summary.candidatesCreated} annonce(s), ${summary.duplicateSkipped} doublons${errNote}.`,
+          lastPollMessage: `Terminé (${summary.snapshotId}) : +${summary.candidatesCreated} annonce(s)${autoNote}, ${summary.duplicateSkipped} doublons${errNote}.`,
           lastRunProgress: null,
           lastRunSummary: summary,
           lastError: summary.errors.length > 0 ? summary.errors[0] : null,
@@ -1072,9 +1089,64 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       rawContent: post.content,
     });
 
-    try {
-      await this.candidateModel.create({
+    const extractedPayload = {
+      title: parsedResult.title,
+      description: parsedResult.description,
+      type: parsedResult.type,
+      houseType: parsedResult.houseType,
+      price: parsedResult.priceAriary,
+      rent: parsedResult.rentAriary,
+      estimatedPrice:
+        parsedResult.type === 'sale' ? priceEstimation.estimatedAmount : null,
+      estimatedRent:
+        parsedResult.type !== 'sale' ? priceEstimation.estimatedAmount : null,
+      estimatedPriceMin: priceEstimation.minAmount,
+      estimatedPriceMax: priceEstimation.maxAmount,
+      estimatedPriceConfidence: priceEstimation.confidence,
+      visualCondition: parsedResult.visualCondition || null,
+      qualityScore,
+      redactedPhotoCount: gcsUpload.redactedCount || 0,
+      rooms: parsedResult.rooms,
+      livingRoom: parsedResult.livingRoom,
+      kitchen: parsedResult.kitchen,
+      toilet: parsedResult.toilet,
+      bathrooms: parsedResult.bathrooms,
+      area: parsedResult.area,
+      estimatedArea: parsedResult.estimatedArea,
+      visitFee: parsedResult.visitFee,
+      cautionPercent: parsedResult.cautionPercent,
+      cautionAmount: parsedResult.cautionAmount,
+      commissionPercent: parsedResult.commissionPercent,
+      commissionAmount: parsedResult.commissionAmount,
+      floor: parsedResult.floor,
+      phone1: parsedResult.phones[0] || null,
+      phone2: parsedResult.phones[1] || null,
+      phone3: parsedResult.phones[2] || null,
+      features: parsedResult.features,
+      locationHints: parsedResult.locationHints,
+    };
+
+    const triage = this.evaluateCandidateWorkflowLane(
+      {
         status: 'pending',
+        matchedCityId: cityMatch.bestMatch?._id || null,
+        resolutionSource: cityMatch.resolutionSource || null,
+        cityCandidates: cityMatch.candidates,
+        gcsImages: gcsUpload.uploadedUrls,
+        aiConfidence: parsedResult.aiConfidence,
+        extracted: extractedPayload,
+      },
+      config,
+    );
+
+    try {
+      const createdCandidate = await this.candidateModel.create({
+        status: 'pending',
+        workflowLane: triage.eligibleForAutoApprove ? 'auto_published' : triage.workflowLane,
+        autoApproved: false,
+        autoApproveReason: null,
+        contactFollowUpStatus: 'none',
+        contactFollowUpAt: null,
         groupId: post.groupId,
         groupName: groupDoc.name || post.groupName,
         canonicalPostId: post.canonicalPostId,
@@ -1086,42 +1158,7 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
         datePosted: post.datePosted,
         rawContent: post.content,
         gcsImages: gcsUpload.uploadedUrls,
-        extracted: {
-          title: parsedResult.title,
-          description: parsedResult.description,
-          type: parsedResult.type,
-          houseType: parsedResult.houseType,
-          price: parsedResult.priceAriary,
-          rent: parsedResult.rentAriary,
-          estimatedPrice:
-            parsedResult.type === 'sale' ? priceEstimation.estimatedAmount : null,
-          estimatedRent:
-            parsedResult.type !== 'sale' ? priceEstimation.estimatedAmount : null,
-          estimatedPriceMin: priceEstimation.minAmount,
-          estimatedPriceMax: priceEstimation.maxAmount,
-          estimatedPriceConfidence: priceEstimation.confidence,
-          visualCondition: parsedResult.visualCondition || null,
-          qualityScore,
-          redactedPhotoCount: gcsUpload.redactedCount || 0,
-          rooms: parsedResult.rooms,
-          livingRoom: parsedResult.livingRoom,
-          kitchen: parsedResult.kitchen,
-          toilet: parsedResult.toilet,
-          bathrooms: parsedResult.bathrooms,
-          area: parsedResult.area,
-          estimatedArea: parsedResult.estimatedArea,
-          visitFee: parsedResult.visitFee,
-          cautionPercent: parsedResult.cautionPercent,
-          cautionAmount: parsedResult.cautionAmount,
-          commissionPercent: parsedResult.commissionPercent,
-          commissionAmount: parsedResult.commissionAmount,
-          floor: parsedResult.floor,
-          phone1: parsedResult.phones[0] || null,
-          phone2: parsedResult.phones[1] || null,
-          phone3: parsedResult.phones[2] || null,
-          features: parsedResult.features,
-          locationHints: parsedResult.locationHints,
-        },
+        extracted: extractedPayload,
         matchedCityId: cityMatch.bestMatch?._id || null,
         matchedCityLabel: cityMatch.bestMatch?.label || null,
         cityCandidates: cityMatch.candidates.map((c) => ({
@@ -1144,6 +1181,37 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
 
       summary.candidatesCreated++;
       groupDoc.uniqueAccepted = (groupDoc.uniqueAccepted || 0) + 1;
+
+      if (triage.eligibleForAutoApprove && createdCandidate?._id) {
+        try {
+          await this.approveCandidate(
+            String(createdCandidate._id),
+            'system_auto',
+            undefined,
+            {
+              isAutoApproved: true,
+              reason: triage.reason,
+            },
+          );
+          summary.autoApprovedCount = (summary.autoApprovedCount || 0) + 1;
+          await this.configModel.updateOne(
+            { key: 'default' },
+            { $inc: { totalAutoApproved: 1 } },
+          );
+        } catch (autoErr) {
+          this.logger.warn(
+            `Auto-approve failed for candidate ${String(createdCandidate._id)}: ${(autoErr as Error).message}`,
+          );
+          if (typeof this.candidateModel?.updateOne === 'function') {
+            await this.candidateModel
+              .updateOne(
+                { _id: createdCandidate._id },
+                { $set: { workflowLane: 'fast_check' } },
+              )
+              .catch(() => undefined);
+          }
+        }
+      }
     } catch (err: any) {
       if (err?.code === 11000) {
         summary.duplicateSkipped++;
@@ -1169,6 +1237,7 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       landSkipped: 0,
       spamSkipped: 0,
       candidatesCreated: 0,
+      autoApprovedCount: 0,
       geminiCalls: 0,
       placesApiCalls: 0,
       placesCacheHits: 0,
@@ -1505,8 +1574,134 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
   }
 
   // ---------------------------------------------------------------------------
-  // Human Fast Validation Queue & One-Click Approve / Reject
+  // Human Fast Validation Queue, 3-Tier Triage & One-Click Approve / Reject
   // ---------------------------------------------------------------------------
+
+  evaluateCandidateWorkflowLane(
+    candidateLike: {
+      status?: string;
+      autoApproved?: boolean;
+      matchedCityId?: string | null;
+      resolutionSource?: string | null;
+      cityCandidates?: Array<{ score?: number }>;
+      gcsImages?: string[];
+      aiConfidence?: 'high' | 'medium' | 'low' | string;
+      extracted?: Record<string, any>;
+    },
+    config?: Partial<FbIngestionConfig> | null,
+    options?: { forceAutoEnabled?: boolean },
+  ): {
+    workflowLane: 'auto_published' | 'fast_check' | 'call_queue';
+    eligibleForAutoApprove: boolean;
+    reason: string | null;
+  } {
+    const ex = candidateLike.extracted || {};
+    const hasType = ex.type === 'rent' || ex.type === 'sale';
+    const hasCity = Boolean(candidateLike.matchedCityId);
+    const hasPhone = Boolean(
+      (ex.phone1 && String(ex.phone1).trim()) ||
+        (ex.phone2 && String(ex.phone2).trim()) ||
+        (ex.phone3 && String(ex.phone3).trim()),
+    );
+    const hasImage =
+      Array.isArray(candidateLike.gcsImages) && candidateLike.gcsImages.length > 0;
+    const explicitAmount =
+      ex.type === 'sale' ? Number(ex.price || 0) : Number(ex.rent || 0);
+    const hasExplicitPrice = Number.isFinite(explicitAmount) && explicitAmount > 0;
+    const estimatedAmount =
+      ex.type === 'sale'
+        ? Number(ex.estimatedPrice || 0)
+        : Number(ex.estimatedRent || 0);
+    const hasEstimatedPrice = Number.isFinite(estimatedAmount) && estimatedAmount > 0;
+
+    if (
+      !hasType ||
+      !hasCity ||
+      !hasPhone ||
+      !hasImage ||
+      (!hasExplicitPrice && !hasEstimatedPrice)
+    ) {
+      return {
+        workflowLane: 'call_queue',
+        eligibleForAutoApprove: false,
+        reason: null,
+      };
+    }
+
+    const autoEnabled = options?.forceAutoEnabled
+      ? true
+      : config?.autoApproveEnabled ?? true;
+    const minScore =
+      typeof config?.autoApproveMinQualityScore === 'number'
+        ? config.autoApproveMinQualityScore
+        : 75;
+    const allowEstimatedPrice = config?.autoApproveAllowEstimatedPrice ?? true;
+    const qualityScore = Number(ex.qualityScore || 0);
+    const aiConfidence = candidateLike.aiConfidence || 'medium';
+    const confidenceOk =
+      aiConfidence === 'high' ||
+      (aiConfidence === 'medium' && qualityScore >= Math.max(82, minScore + 5));
+    const scoreOk = qualityScore >= minScore;
+    const topCityScore =
+      Array.isArray(candidateLike.cityCandidates) &&
+      candidateLike.cityCandidates.length > 0
+        ? Number(candidateLike.cityCandidates[0]?.score || 0)
+        : 0;
+    const locationReliable =
+      candidateLike.resolutionSource === 'google_places_api' ||
+      candidateLike.resolutionSource === 'google_places_cache' ||
+      topCityScore >= 85 ||
+      hasCity;
+    const priceOk = hasExplicitPrice || (allowEstimatedPrice && hasEstimatedPrice);
+
+    if (autoEnabled && confidenceOk && scoreOk && locationReliable && priceOk) {
+      return {
+        workflowLane: 'auto_published',
+        eligibleForAutoApprove: true,
+        reason: hasExplicitPrice
+          ? 'Auto-validé (Confiance haute + Prix affiché)'
+          : 'Auto-validé (Confiance haute + Estimation IA)',
+      };
+    }
+
+    return {
+      workflowLane: 'fast_check',
+      eligibleForAutoApprove: false,
+      reason: null,
+    };
+  }
+
+  private computeDisplayWorkflowLane(candidateLike: {
+    autoApproved?: boolean;
+    matchedCityId?: string | null;
+    gcsImages?: string[];
+    extracted?: Record<string, any>;
+  }): 'auto_published' | 'fast_check' | 'call_queue' {
+    if (candidateLike.autoApproved) return 'auto_published';
+    const ex = candidateLike.extracted || {};
+    const hasType = ex.type === 'rent' || ex.type === 'sale';
+    const hasCity = Boolean(candidateLike.matchedCityId);
+    const hasPhone = Boolean(
+      (ex.phone1 && String(ex.phone1).trim()) ||
+        (ex.phone2 && String(ex.phone2).trim()) ||
+        (ex.phone3 && String(ex.phone3).trim()),
+    );
+    const hasImage =
+      Array.isArray(candidateLike.gcsImages) && candidateLike.gcsImages.length > 0;
+    const explicitAmount =
+      ex.type === 'sale' ? Number(ex.price || 0) : Number(ex.rent || 0);
+    const estimatedAmount =
+      ex.type === 'sale'
+        ? Number(ex.estimatedPrice || 0)
+        : Number(ex.estimatedRent || 0);
+    const hasAnyPrice =
+      (Number.isFinite(explicitAmount) && explicitAmount > 0) ||
+      (Number.isFinite(estimatedAmount) && estimatedAmount > 0);
+    if (!hasType || !hasCity || !hasPhone || !hasImage || !hasAnyPrice) {
+      return 'call_queue';
+    }
+    return 'fast_check';
+  }
 
   async listCandidates(params: {
     status?: string;
@@ -1531,7 +1726,17 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       filter['extracted.houseType'] = normalizedHouseType;
     }
 
-    const [items, total, pendingCount, approvedCount, rejectedCount] = await Promise.all([
+    const [
+      items,
+      total,
+      pendingCount,
+      approvedCount,
+      rejectedCount,
+      autoApprovedCount,
+      fastCheckCount,
+      callQueueCount,
+      waitingReplyCount,
+    ] = await Promise.all([
       this.candidateModel
         .find(filter)
         .sort({ datePosted: -1, created_at: -1 })
@@ -1542,6 +1747,13 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       this.candidateModel.countDocuments({ status: 'pending' }),
       this.candidateModel.countDocuments({ status: 'approved' }),
       this.candidateModel.countDocuments({ status: 'rejected' }),
+      this.candidateModel.countDocuments({ status: 'approved', autoApproved: true }),
+      this.candidateModel.countDocuments({ status: 'pending', workflowLane: 'fast_check' }),
+      this.candidateModel.countDocuments({ status: 'pending', workflowLane: 'call_queue' }),
+      this.candidateModel.countDocuments({
+        status: 'pending',
+        contactFollowUpStatus: 'messaged_waiting',
+      }),
     ]);
 
     // Auto-resolve any pending candidate missing its city via Google Places -> nearest DB Fokontany
@@ -1746,11 +1958,23 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
         rawContent: item.rawContent,
       });
 
+      const computedLane = this.computeDisplayWorkflowLane({
+        autoApproved: Boolean(item.autoApproved),
+        matchedCityId: item.matchedCityId,
+        gcsImages: item.gcsImages,
+        extracted: hydratedEx,
+      });
+
       return {
         ...item,
         extracted: hydratedEx,
         featureVerification: verification,
         missingFields: baseMissing,
+        workflowLane: computedLane,
+        autoApproved: Boolean(item.autoApproved),
+        autoApproveReason: item.autoApproveReason || null,
+        contactFollowUpStatus: item.contactFollowUpStatus || 'none',
+        contactFollowUpAt: item.contactFollowUpAt || null,
       };
     });
 
@@ -1763,6 +1987,10 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
         pending: pendingCount,
         approved: approvedCount,
         rejected: rejectedCount,
+        autoApproved: autoApprovedCount,
+        fastCheck: fastCheckCount,
+        callQueue: callQueueCount,
+        waitingReply: waitingReplyCount,
       },
     };
   }
@@ -2112,6 +2340,23 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
     }
 
     candidate.extracted = extracted;
+    if (
+      patch.contactFollowUpStatus === 'none' ||
+      patch.contactFollowUpStatus === 'called' ||
+      patch.contactFollowUpStatus === 'messaged_waiting' ||
+      patch.contactFollowUpStatus === 'answered'
+    ) {
+      if (candidate.contactFollowUpStatus !== patch.contactFollowUpStatus) {
+        candidate.contactFollowUpStatus = patch.contactFollowUpStatus;
+        candidate.contactFollowUpAt = new Date();
+      }
+    }
+    candidate.workflowLane = this.computeDisplayWorkflowLane({
+      autoApproved: Boolean(candidate.autoApproved),
+      matchedCityId: candidate.matchedCityId,
+      gcsImages: candidate.gcsImages,
+      extracted,
+    });
     candidate.missingFields = this.computeMissingFields({
       type: extracted.type,
       houseType: extracted.houseType,
@@ -2366,7 +2611,12 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
     }
     const geoChanged = await this.applyGeoReanalysisIfEligible(candidate, true);
     const featureChanged = this.applyDeterministicReanalysis(candidate);
-    if (geoChanged || featureChanged) {
+    const nextLane = this.computeDisplayWorkflowLane(candidate);
+    const laneChanged = candidate.workflowLane !== nextLane;
+    if (laneChanged) {
+      candidate.workflowLane = nextLane;
+    }
+    if (geoChanged || featureChanged || laneChanged) {
       await candidate.save();
     }
     return candidate;
@@ -2383,7 +2633,12 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
           const candidate = candidates[nextIdx++];
           const geoChanged = await this.applyGeoReanalysisIfEligible(candidate, false);
           const featureChanged = this.applyDeterministicReanalysis(candidate);
-          if (geoChanged || featureChanged) {
+          const nextLane = this.computeDisplayWorkflowLane(candidate);
+          const laneChanged = candidate.workflowLane !== nextLane;
+          if (laneChanged) {
+            candidate.workflowLane = nextLane;
+          }
+          if (geoChanged || featureChanged || laneChanged) {
             await candidate.save();
             updated++;
           }
@@ -2392,6 +2647,68 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
     );
     await Promise.all(workers);
     return { analyzed: candidates.length, updated };
+  }
+
+  async autoApprovePendingCandidates() {
+    let config: Partial<FbIngestionConfig> | null = null;
+    try {
+      const q = this.configModel?.findOne?.({ key: 'default' }) as any;
+      config = q && typeof q.lean === 'function' ? await q.lean() : await q;
+    } catch {
+      config = null;
+    }
+
+    const pendingCandidates = await this.candidateModel.find({ status: 'pending' });
+    let autoApproved = 0;
+
+    for (const candidate of pendingCandidates) {
+      try {
+        const geoChanged = await this.applyGeoReanalysisIfEligible(candidate, false);
+        const featureChanged = this.applyDeterministicReanalysis(candidate);
+        const triage = this.evaluateCandidateWorkflowLane(candidate, config, {
+          forceAutoEnabled: true,
+        });
+        const nextLane = triage.eligibleForAutoApprove
+          ? 'fast_check'
+          : triage.workflowLane;
+        const laneChanged = candidate.workflowLane !== nextLane;
+        if (laneChanged) {
+          candidate.workflowLane = nextLane;
+        }
+        if (geoChanged || featureChanged || (laneChanged && !triage.eligibleForAutoApprove)) {
+          await candidate.save();
+        }
+
+        if (triage.eligibleForAutoApprove) {
+          await this.approveCandidate(
+            String(candidate._id),
+            'system_auto',
+            undefined,
+            {
+              isAutoApproved: true,
+              reason: triage.reason,
+            },
+          );
+          autoApproved++;
+        }
+      } catch (err) {
+        this.logger.warn(
+          `Bulk auto-approve failed for candidate ${String(candidate._id)}: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    if (autoApproved > 0 && this.configModel?.updateOne) {
+      await this.configModel.updateOne(
+        { key: 'default' },
+        { $inc: { totalAutoApproved: autoApproved } },
+      );
+    }
+
+    return {
+      scanned: pendingCandidates.length,
+      autoApproved,
+    };
   }
 
   async updateCandidate(id: string, patch: Record<string, any>) {
@@ -2408,6 +2725,7 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
     id: string,
     adminUserId: string,
     finalEdits?: Record<string, any>,
+    opts?: { isAutoApproved?: boolean; reason?: string | null },
   ) {
     const candidate = await this.candidateModel.findById(id);
     if (!candidate) {
@@ -2647,6 +2965,15 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
 
     candidate.status = 'approved';
     candidate.publishedPropertyId = String(createdProperty._id);
+    if (opts?.isAutoApproved) {
+      candidate.autoApproved = true;
+      candidate.autoApproveReason = opts.reason || 'Auto-validé IA';
+      candidate.workflowLane = 'auto_published';
+    } else {
+      candidate.autoApproved = false;
+      candidate.autoApproveReason = null;
+      candidate.workflowLane = 'fast_check';
+    }
     if (permanentAvatarUrl) {
       candidate.authorAvatarUrl = permanentAvatarUrl;
     }
@@ -2662,6 +2989,42 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       candidate,
       property: createdProperty,
     };
+  }
+
+  async unpublishCandidate(id: string) {
+    const candidate = await this.candidateModel.findById(id);
+    if (!candidate) {
+      throw new NotFoundException('Candidate not found');
+    }
+    if (candidate.status !== 'approved') {
+      throw new BadRequestException('Candidate is not currently published');
+    }
+
+    if (candidate.publishedPropertyId) {
+      await this.propertyModel.findByIdAndDelete(candidate.publishedPropertyId);
+    }
+
+    if (this.groupModel?.updateOne) {
+      await this.groupModel.updateOne(
+        { groupId: candidate.groupId, approvedCount: { $gt: 0 } },
+        { $inc: { approvedCount: -1 } },
+      );
+    }
+
+    candidate.status = 'pending';
+    candidate.publishedPropertyId = null;
+    candidate.autoApproved = false;
+    candidate.autoApproveReason = null;
+    candidate.workflowLane = this.computeDisplayWorkflowLane({
+      autoApproved: false,
+      matchedCityId: candidate.matchedCityId,
+      gcsImages: candidate.gcsImages,
+      extracted: candidate.extracted,
+    });
+    candidate.reviewedAt = null;
+    await candidate.save();
+
+    return { candidate };
   }
 
   /**

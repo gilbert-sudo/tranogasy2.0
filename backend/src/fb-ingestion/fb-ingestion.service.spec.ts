@@ -688,4 +688,296 @@ describe('FbIngestionService background job tracking & recovery', () => {
       { overwriteImmutable: true },
     );
   });
+
+  it('classifies candidates into auto_published, fast_check, and call_queue workflow lanes', () => {
+    const { service } = createHarness();
+    const baseCandidate = {
+      matchedCityId: '65f000000000000000000001',
+      resolutionSource: 'google_places_api',
+      gcsImages: ['https://storage.googleapis.com/tranogasy-media/img1.jpg'],
+      aiConfidence: 'high',
+      extracted: {
+        type: 'rent',
+        houseType: 'house',
+        rent: 500000,
+        phone1: '034 11 222 33',
+        qualityScore: 82,
+      },
+    };
+
+    const autoExplicit = service.evaluateCandidateWorkflowLane(baseCandidate, {
+      autoApproveEnabled: true,
+      autoApproveMinQualityScore: 75,
+      autoApproveAllowEstimatedPrice: true,
+    });
+    expect(autoExplicit.workflowLane).toBe('auto_published');
+    expect(autoExplicit.eligibleForAutoApprove).toBe(true);
+
+    const autoEstimated = service.evaluateCandidateWorkflowLane(
+      {
+        ...baseCandidate,
+        extracted: {
+          type: 'rent',
+          houseType: 'house',
+          rent: null,
+          estimatedRent: 450000,
+          phone1: '034 11 222 33',
+          qualityScore: 80,
+        },
+      },
+      {
+        autoApproveEnabled: true,
+        autoApproveMinQualityScore: 75,
+        autoApproveAllowEstimatedPrice: true,
+      },
+    );
+    expect(autoEstimated.workflowLane).toBe('auto_published');
+    expect(autoEstimated.eligibleForAutoApprove).toBe(true);
+
+    const fastCheckLowScore = service.evaluateCandidateWorkflowLane(
+      {
+        ...baseCandidate,
+        extracted: { ...baseCandidate.extracted, qualityScore: 68 },
+      },
+      {
+        autoApproveEnabled: true,
+        autoApproveMinQualityScore: 75,
+        autoApproveAllowEstimatedPrice: true,
+      },
+    );
+    expect(fastCheckLowScore.workflowLane).toBe('fast_check');
+    expect(fastCheckLowScore.eligibleForAutoApprove).toBe(false);
+
+    const fastCheckDisabled = service.evaluateCandidateWorkflowLane(baseCandidate, {
+      autoApproveEnabled: false,
+      autoApproveMinQualityScore: 75,
+      autoApproveAllowEstimatedPrice: true,
+    });
+    expect(fastCheckDisabled.workflowLane).toBe('fast_check');
+    expect(fastCheckDisabled.eligibleForAutoApprove).toBe(false);
+
+    const callQueueNoCity = service.evaluateCandidateWorkflowLane(
+      {
+        ...baseCandidate,
+        matchedCityId: null,
+      },
+      {
+        autoApproveEnabled: true,
+        autoApproveMinQualityScore: 75,
+        autoApproveAllowEstimatedPrice: true,
+      },
+    );
+    expect(callQueueNoCity.workflowLane).toBe('call_queue');
+    expect(callQueueNoCity.eligibleForAutoApprove).toBe(false);
+
+    const callQueueNoPhone = service.evaluateCandidateWorkflowLane(
+      {
+        ...baseCandidate,
+        extracted: { ...baseCandidate.extracted, phone1: null },
+      },
+      {
+        autoApproveEnabled: true,
+        autoApproveMinQualityScore: 75,
+        autoApproveAllowEstimatedPrice: true,
+      },
+    );
+    expect(callQueueNoPhone.workflowLane).toBe('call_queue');
+    expect(callQueueNoPhone.eligibleForAutoApprove).toBe(false);
+  });
+
+  it('autoApprovePendingCandidates publishes eligible pending candidates and increments totalAutoApproved', async () => {
+    const validCityId = '65f000000000000000000011';
+    const eligibleCandidate: any = {
+      _id: 'cand_auto_1',
+      status: 'pending',
+      groupId: 'grp_tana',
+      groupName: 'Trano Ahofa Tana',
+      canonicalPostId: 'post_auto_1',
+      postUrl: 'https://facebook.com/groups/tana/posts/post_auto_1',
+      authorName: 'Rabe Auto',
+      authorUrl: 'https://facebook.com/rabe.auto',
+      authorFbId: 'fb_auto_1',
+      authorAvatarUrl: null,
+      datePosted: new Date('2026-11-15T09:00:00Z'),
+      matchedCityId: validCityId,
+      resolutionSource: 'google_places_api',
+      resolvedCoords: { lat: -18.88, lng: 47.53 },
+      cityCandidates: [{ cityId: validCityId, label: 'Ambatobe', score: 96 }],
+      gcsImages: ['https://storage.googleapis.com/tranogasy-media/auto1.jpg'],
+      aiConfidence: 'high',
+      rawContent: 'Trano ahofa Ambatobe, 2 chambres, acces voiture, JIRAMA, 600 000 Ar',
+      extracted: {
+        title: 'Maison T3 Ambatobe',
+        description: 'Trano ahofa Ambatobe',
+        type: 'rent',
+        houseType: 'house',
+        rent: 600000,
+        price: null,
+        rooms: 2,
+        livingRoom: 1,
+        kitchen: 1,
+        toilet: 1,
+        bathrooms: 1,
+        area: 75,
+        phone1: '034 55 666 77',
+        phone2: null,
+        phone3: null,
+        qualityScore: 86,
+        features: { carAccess: true },
+        locationHints: ['Ambatobe'],
+      },
+      save: jest.fn().mockResolvedValue(true),
+    };
+
+    const callQueueCandidate: any = {
+      _id: 'cand_call_1',
+      status: 'pending',
+      groupId: 'grp_tana',
+      groupName: 'Trano Ahofa Tana',
+      canonicalPostId: 'post_call_1',
+      postUrl: 'https://facebook.com/groups/tana/posts/post_call_1',
+      matchedCityId: null,
+      gcsImages: ['https://storage.googleapis.com/tranogasy-media/call1.jpg'],
+      aiConfidence: 'medium',
+      rawContent: 'Trano tsara ahofa',
+      extracted: {
+        title: 'Trano tsara',
+        type: 'rent',
+        houseType: 'house',
+        rent: 300000,
+        phone1: null,
+        qualityScore: 50,
+        features: {},
+      },
+      save: jest.fn().mockResolvedValue(true),
+    };
+
+    const configModel: any = {
+      findOne: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue({
+          key: 'default',
+          autoApproveEnabled: true,
+          autoApproveMinQualityScore: 75,
+          autoApproveAllowEstimatedPrice: true,
+        }),
+      }),
+      updateOne: jest.fn().mockResolvedValue({ acknowledged: true }),
+    };
+
+    const candidateModel: any = {
+      find: jest.fn().mockResolvedValue([eligibleCandidate, callQueueCandidate]),
+      findById: jest.fn().mockImplementation(async (id: string) => {
+        if (id === 'cand_auto_1') return eligibleCandidate;
+        if (id === 'cand_call_1') return callQueueCandidate;
+        return null;
+      }),
+    };
+
+    const cityModel: any = {
+      findById: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue({
+          _id: validCityId,
+          fokontany: 'Ambatobe',
+          commune: 'Antananarivo Renivohitra',
+          district: 'Antananarivo II',
+          region: 'Analamanga',
+          coords: { lat: -18.8672, lng: 47.5469 },
+        }),
+      }),
+    };
+
+    const userModel: any = {
+      findOne: jest.fn().mockResolvedValue({
+        _id: 'shadow_auto_1',
+        username: 'Rabe Auto',
+        avatar: null,
+        save: jest.fn().mockResolvedValue(true),
+      }),
+    };
+
+    const groupModel: any = {
+      updateOne: jest.fn().mockResolvedValue({ acknowledged: true }),
+    };
+
+    const propertiesService: any = {
+      create: jest.fn().mockResolvedValue({ _id: 'prop_auto_1' }),
+    };
+
+    const service = new FbIngestionService(
+      configModel,
+      groupModel,
+      { findOne: jest.fn().mockResolvedValue(null), create: jest.fn() } as any,
+      candidateModel,
+      { findById: jest.fn().mockResolvedValue(null) } as any,
+      cityModel,
+      userModel,
+      propertiesService,
+      {} as any,
+      {} as any,
+      {} as any,
+      {
+        isPermanentGcsUrl: jest.fn().mockReturnValue(true),
+        reuploadFbAvatar: jest.fn().mockResolvedValue(null),
+      } as any,
+      { get: jest.fn().mockReturnValue(undefined) } as any,
+    );
+
+    const res = await service.autoApprovePendingCandidates();
+
+    expect(res).toEqual({ scanned: 2, autoApproved: 1 });
+    expect(propertiesService.create).toHaveBeenCalledTimes(1);
+    expect(eligibleCandidate.status).toBe('approved');
+    expect(eligibleCandidate.autoApproved).toBe(true);
+    expect(eligibleCandidate.workflowLane).toBe('auto_published');
+    expect(eligibleCandidate.publishedPropertyId).toBe('prop_auto_1');
+    expect(callQueueCandidate.status).toBe('pending');
+    expect(callQueueCandidate.workflowLane).toBe('call_queue');
+    expect(configModel.updateOne).toHaveBeenCalledWith(
+      { key: 'default' },
+      { $inc: { totalAutoApproved: 1 } },
+    );
+  });
+
+  it('unpublishCandidate deletes published property, decrements group approvedCount, and returns candidate to pending', async () => {
+    const { service, candidateModel, propertyModel } = createHarness();
+    const approvedDoc: any = {
+      _id: 'cand_unpub_1',
+      status: 'approved',
+      groupId: 'grp_tana',
+      publishedPropertyId: 'prop_pub_99',
+      autoApproved: true,
+      autoApproveReason: 'Auto-validé (Confiance haute + Prix affiché)',
+      workflowLane: 'auto_published',
+      matchedCityId: '65f000000000000000000022',
+      gcsImages: ['https://storage.googleapis.com/tranogasy-media/p1.jpg'],
+      extracted: {
+        type: 'rent',
+        houseType: 'house',
+        rent: 400000,
+        phone1: '034 22 333 44',
+      },
+      reviewedAt: new Date('2026-11-15T10:00:00Z'),
+      save: jest.fn().mockResolvedValue(true),
+    };
+
+    candidateModel.findById = jest.fn().mockResolvedValue(approvedDoc);
+    propertyModel.findByIdAndDelete = jest.fn().mockResolvedValue({ _id: 'prop_pub_99' });
+    const groupModel = (service as any).groupModel;
+    groupModel.updateOne = jest.fn().mockResolvedValue({ acknowledged: true });
+
+    const res = await service.unpublishCandidate('cand_unpub_1');
+
+    expect(propertyModel.findByIdAndDelete).toHaveBeenCalledWith('prop_pub_99');
+    expect(groupModel.updateOne).toHaveBeenCalledWith(
+      { groupId: 'grp_tana', approvedCount: { $gt: 0 } },
+      { $inc: { approvedCount: -1 } },
+    );
+    expect(approvedDoc.status).toBe('pending');
+    expect(approvedDoc.publishedPropertyId).toBeNull();
+    expect(approvedDoc.autoApproved).toBe(false);
+    expect(approvedDoc.autoApproveReason).toBeNull();
+    expect(approvedDoc.reviewedAt).toBeNull();
+    expect(approvedDoc.save).toHaveBeenCalledTimes(1);
+    expect(res.candidate).toBe(approvedDoc);
+  });
 });

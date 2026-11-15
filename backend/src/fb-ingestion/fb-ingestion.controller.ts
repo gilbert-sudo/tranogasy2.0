@@ -51,6 +51,9 @@ export class FbIngestionController {
       activeHourStart?: number;
       activeHourEnd?: number;
       geminiModel?: string;
+      autoApproveEnabled?: boolean;
+      autoApproveMinQualityScore?: number;
+      autoApproveAllowEstimatedPrice?: boolean;
       lastError?: string | null;
     },
   ) {
@@ -149,6 +152,11 @@ export class FbIngestionController {
     return this.fbIngestionService.reanalyzePendingCandidates();
   }
 
+  @Post('candidates/auto-approve-eligible')
+  autoApproveEligibleCandidates() {
+    return this.fbIngestionService.autoApprovePendingCandidates();
+  }
+
   @Post('candidates/:id/reanalyze')
   reanalyzeCandidate(@Param('id') id: string) {
     return this.fbIngestionService.reanalyzeCandidate(id);
@@ -170,6 +178,11 @@ export class FbIngestionController {
       String(req.adminUser?._id || ''),
       body?.edits,
     );
+  }
+
+  @Post('candidates/:id/unpublish')
+  unpublishCandidate(@Param('id') id: string) {
+    return this.fbIngestionService.unpublishCandidate(id);
   }
 
   @Delete('candidates/:id')

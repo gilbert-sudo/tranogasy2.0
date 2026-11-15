@@ -22,6 +22,37 @@ export function getApiBaseUrl(): string {
 
 export const API_BASE_URL = getApiBaseUrl();
 
+export function getStoredSessionAuth(): { userId?: string; authToken?: string } {
+  if (typeof window === 'undefined') return {};
+  try {
+    const rawUser = localStorage.getItem('user');
+    const parsed = rawUser ? JSON.parse(rawUser) : null;
+    const userObj = parsed?.user || parsed;
+    const userId = userObj?._id ? String(userObj._id) : undefined;
+    const authToken =
+      (parsed?.authToken && String(parsed.authToken)) ||
+      (userObj?.authToken && String(userObj.authToken)) ||
+      localStorage.getItem('authToken') ||
+      undefined;
+    return { userId, authToken };
+  } catch {
+    const fallbackToken = localStorage.getItem('authToken') || undefined;
+    return { authToken: fallbackToken };
+  }
+}
+
+function hasHeader(headers: HeadersInit | undefined, name: string): boolean {
+  if (!headers) return false;
+  const target = name.toLowerCase();
+  if (headers instanceof Headers) {
+    return headers.has(name) || headers.has(target);
+  }
+  if (Array.isArray(headers)) {
+    return headers.some(([k]) => String(k).toLowerCase() === target);
+  }
+  return Object.keys(headers).some((k) => k.toLowerCase() === target);
+}
+
 export class ApiError extends Error {
   status?: number;
   data?: any;
@@ -55,11 +86,20 @@ export async function apiFetch<T>(endpoint: string, options: FetchOptions = {}):
     url += `?${searchParams.toString()}`;
   }
 
+  const { authToken } = getStoredSessionAuth();
   const defaultHeaders: HeadersInit = {};
 
   // Only set Content-Type if it's not a GET request
   if (restOptions.method && restOptions.method.toUpperCase() !== 'GET') {
     defaultHeaders['Content-Type'] = 'application/json';
+  }
+  if (authToken) {
+    if (!hasHeader(optionHeaders, 'x-auth-token')) {
+      defaultHeaders['x-auth-token'] = authToken;
+    }
+    if (!hasHeader(optionHeaders, 'authorization')) {
+      defaultHeaders['Authorization'] = `Bearer ${authToken}`;
+    }
   }
 
   const controller = new AbortController();
