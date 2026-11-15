@@ -22,6 +22,12 @@ describe('property-sanitizer.util', () => {
     claimStatus: 'unclaimed',
     claimedBy: null,
     claimedAt: null,
+    estimatedArea: 145,
+    visitFee: 5000,
+    cautionPercent: 50,
+    cautionAmount: 150000,
+    commissionPercent: 100,
+    commissionAmount: 300000,
     owner: shadowOwner,
     sources: {
       fbUserId: '61557660160997',
@@ -42,6 +48,12 @@ describe('property-sanitizer.util', () => {
     expect(publicView.claimedBy).toBeUndefined();
     expect(publicView.claimedAt).toBeUndefined();
     expect(publicView.sources).toBeUndefined();
+    expect(publicView.estimatedArea).toBeUndefined();
+    expect(publicView.visitFee).toBe(5000);
+    expect(publicView.cautionPercent).toBe(50);
+    expect(publicView.cautionAmount).toBe(150000);
+    expect(publicView.commissionPercent).toBe(100);
+    expect(publicView.commissionAmount).toBe(300000);
 
     expect(publicView.owner).toMatchObject({
       _id: shadowOwner._id,
@@ -98,5 +110,44 @@ describe('property-sanitizer.util', () => {
       avatar: 'https://storage.googleapis.com/bucket/a.jpg',
     });
     expect(sanitizeOwnerForViewer(legacyAdminProp.owner, false).password).toBeUndefined();
+  });
+
+  it('keeps contacts public for old/legacy properties where contactAccessLocked is false or omitted', () => {
+    const legacyProp = {
+      ...scrapedProperty,
+      phone1: '0341234567',
+      description: 'Appeler au 034 12 345 67 pour visiter',
+    };
+    const publicView = sanitizePropertyForViewer(legacyProp, false);
+    expect(publicView.contactLocked).toBe(false);
+    expect(publicView.phone1).toBe('0341234567');
+    expect(publicView.description).toContain('034 12 345 67');
+  });
+
+  it('masks contacts and scrubs phone numbers from text for new properties with contactAccessLocked: true unless unlocked by viewer', () => {
+    const lockedProp = {
+      ...scrapedProperty,
+      contactAccessLocked: true,
+      contactUnlockCostJp: 50,
+      unlockedByUsers: ['user-unlocked-1'],
+      phone1: '0341234567',
+      phone2: '0329988776',
+      description: 'Belle villa. Contact direct 034 12 345 67 ou +261 32 99 887 76.',
+    };
+
+    const guestView = sanitizePropertyForViewer(lockedProp, false);
+    expect(guestView.contactLocked).toBe(true);
+    expect(guestView.contactUnlockCostJp).toBe(50);
+    expect(guestView.maskedPhonePreview).toBe('034 •• ••• ••');
+    expect(guestView.phone1).toBeNull();
+    expect(guestView.phone2).toBeNull();
+    expect(guestView.description).not.toContain('034 12 345 67');
+    expect(guestView.description).not.toContain('32 99 887 76');
+    expect(guestView.description).toContain('[Contact protégé]');
+
+    const unlockedViewerView = sanitizePropertyForViewer(lockedProp, false, 'user-unlocked-1');
+    expect(unlockedViewerView.contactLocked).toBe(false);
+    expect(unlockedViewerView.phone1).toBe('0341234567');
+    expect(unlockedViewerView.description).toContain('034 12 345 67');
   });
 });

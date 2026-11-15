@@ -248,12 +248,10 @@ describe('FbIngestionService background job tracking & recovery', () => {
       'rooms',
       'toilet',
       'bathrooms',
-      'area',
       'carAccess',
       'motoAccess',
       'waterSupply',
       'electricitySupply',
-      'furnishedProperty',
     ]);
   });
 
@@ -417,14 +415,17 @@ describe('FbIngestionService background job tracking & recovery', () => {
     expect(staleCandidate.extracted.features.parkingSpaceAvailable).toBe(true);
     expect(staleCandidate.extracted.features.carAccess).toBe(true);
     expect(staleCandidate.extracted.features.motoAccess).toBe(true);
+    expect(staleCandidate.extracted.livingRoom).toBe(1);
+    expect(staleCandidate.extracted.kitchen).toBe(1);
+    expect(staleCandidate.extracted.estimatedArea).toBe(200);
     expect(staleCandidate.featureVerification).toEqual({
       carAccess: 'yes',
       motoAccess: 'yes',
       waterSupply: 'yes',
       electricitySupply: 'yes',
-      furnishedProperty: 'unknown',
+      furnishedProperty: 'no',
     });
-    expect(staleCandidate.missingFields).toEqual(['furnishedProperty']);
+    expect(staleCandidate.missingFields).toEqual([]);
   });
 
   it('sets Property.created_at strictly to candidate.datePosted and uses resolvedCoords on approveCandidate', async () => {

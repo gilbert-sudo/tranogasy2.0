@@ -10,6 +10,11 @@ import {
   sanitizeOwnerForViewer,
   sanitizePropertyForViewer,
 } from '../common/property-sanitizer.util';
+import {
+  computePropertyQualityScore,
+  estimatePropertyArea,
+  estimatePropertyPriceAriary,
+} from '../fb-ingestion/fb-feature-analyzer.util';
 import { City, CityDocument } from '../cities/schemas/city.schema';
 import { Feature, FeatureDocument } from '../features/schemas/feature.schema';
 import { User, UserDocument } from '../users/schemas/user.schema';
@@ -146,6 +151,154 @@ export class PropertiesService {
       data[numericKey] = Number.isFinite(parsedNum) && parsedNum >= 0 ? parsedNum : 0;
     }
 
+    // 6b. Server-side estimatedArea (strictly for internal search/ranking algorithms when public area is 0)
+    const rawEst = Number(data.estimatedArea);
+    data.estimatedArea =
+      Number.isFinite(rawEst) && rawEst > 0
+        ? Math.round(rawEst)
+        : estimatePropertyArea({
+            houseType: data.houseType,
+            rooms: data.rooms,
+            livingRoom: data.livingRoom,
+            kitchen: data.kitchen,
+            toilet: data.toilet,
+            bathrooms: data.bathrooms,
+            area: data.area,
+            features: featureObj,
+          });
+
+    // 6c. Optional agency/entry fee terms (preserved ONLY when explicitly provided)
+    for (const feeKey of [
+      'visitFee',
+      'cautionPercent',
+      'cautionAmount',
+      'commissionPercent',
+      'commissionAmount',
+    ] as const) {
+      if (data[feeKey] !== undefined && data[feeKey] !== null && data[feeKey] !== '') {
+        const parsedFee = Number(data[feeKey]);
+        data[feeKey] =
+          Number.isFinite(parsedFee) && parsedFee >= 0 ? Math.round(parsedFee) : null;
+      } else {
+        data[feeKey] = null;
+      }
+    }
+
+    const monthlyRent = Number(data.rent || 0);
+    const salePrice = Number(data.price || 0);
+    const hasExplicitAmount =
+      data.type === 'sale' ? salePrice > 0 : monthlyRent > 0;
+
+    // 6d. Hybrid price estimation when explicit price/rent is missing (or pre-computed by scraper)
+    if (!hasExplicitAmount) {
+      let cityDoc: any = null;
+      if (data.city && Types.ObjectId.isValid(data.city)) {
+        cityDoc = await this.cityModel
+          .findById(data.city, { fokontany: 1, commune: 1, district: 1 })
+          .lean()
+          .catch(() => null);
+      }
+      const preEst =
+        data.type === 'sale'
+          ? Number(data.estimatedPrice || 0)
+          : Number(data.estimatedRent || 0);
+      const estimation = estimatePropertyPriceAriary({
+        type: data.type === 'sale' ? 'sale' : 'rent',
+        houseType: data.houseType,
+        fokontany: cityDoc?.fokontany || null,
+        commune: cityDoc?.commune || null,
+        district: cityDoc?.district || null,
+        rooms: data.rooms,
+        livingRoom: data.livingRoom,
+        kitchen: data.kitchen,
+        bathrooms: data.bathrooms,
+        toilet: data.toilet,
+        area: data.area,
+        estimatedArea: data.estimatedArea,
+        features: featureObj,
+        visualCondition: data.visualCondition || null,
+        geminiEstimateAriary: preEst > 0 ? preEst : null,
+      });
+      data.isPriceEstimated = true;
+      data.rent = data.type === 'rent' ? null : data.rent;
+      data.price = data.type === 'sale' ? null : data.price;
+      data.estimatedRent =
+        data.type === 'rent'
+          ? preEst > 0
+            ? Math.round(preEst)
+            : estimation.estimatedAmount
+          : null;
+      data.estimatedPrice =
+        data.type === 'sale'
+          ? preEst > 0
+            ? Math.round(preEst)
+            : estimation.estimatedAmount
+          : null;
+      data.estimatedPriceMin =
+        Number(data.estimatedPriceMin) > 0
+          ? Math.round(Number(data.estimatedPriceMin))
+          : estimation.minAmount;
+      data.estimatedPriceMax =
+        Number(data.estimatedPriceMax) > 0
+          ? Math.round(Number(data.estimatedPriceMax))
+          : estimation.maxAmount;
+      data.estimatedPriceConfidence =
+        data.estimatedPriceConfidence || estimation.confidence;
+    } else {
+      data.isPriceEstimated = Boolean(data.isPriceEstimated);
+    }
+
+    const effectiveMonthlyRent =
+      monthlyRent > 0 ? monthlyRent : Number(data.estimatedRent || 0);
+    if (effectiveMonthlyRent > 0) {
+      if (data.cautionPercent > 0 && data.cautionAmount === null) {
+        data.cautionAmount = Math.round(
+          (effectiveMonthlyRent * data.cautionPercent) / 100,
+        );
+      }
+      if (data.commissionPercent > 0 && data.commissionAmount === null) {
+        data.commissionAmount = Math.round(
+          (effectiveMonthlyRent * data.commissionPercent) / 100,
+        );
+      }
+    }
+
+    // 6e. Holistic property quality score (1..100) & contact paywall flag for new listings
+    if (!(Number(data.qualityScore) > 0)) {
+      const photosCount = Array.isArray(data.images) ? data.images.length : 0;
+      data.qualityScore = computePropertyQualityScore({
+        photoCount: photosCount,
+        visualCondition: data.visualCondition || null,
+        hasExplicitPrice: hasExplicitAmount,
+        hasMatchedCity: Boolean(data.city),
+        hasCoords: Boolean(data.coords?.lat && data.coords?.lng),
+        hasPhones: Boolean(data.phone1 || data.phone2 || data.phone3),
+        rooms: data.rooms,
+        livingRoom: data.livingRoom,
+        area: data.area,
+        estimatedArea: data.estimatedArea,
+        descriptionLength: typeof data.description === 'string' ? data.description.length : 0,
+        features: featureObj,
+        publishedAt: data.created_at || new Date(),
+      });
+    } else {
+      data.qualityScore = Math.round(Number(data.qualityScore));
+    }
+
+    // Activate contact masking for all newly created properties from now on
+    // (unless explicitly overridden, e.g. legacy backfill scripts)
+    data.contactAccessLocked =
+      data.contactAccessLocked !== undefined
+        ? Boolean(data.contactAccessLocked)
+        : true;
+    data.contactUnlockCostJp =
+      Number(data.contactUnlockCostJp) > 0
+        ? Math.round(Number(data.contactUnlockCostJp))
+        : 50;
+    if (!Array.isArray(data.unlockedByUsers)) {
+      data.unlockedByUsers = [];
+    }
+
     // 7. Preserve explicit creation timestamp when provided by trusted internal pipelines (e.g., FB post date)
     if (data.created_at != null) {
       const parsedCreatedAt =
@@ -166,7 +319,11 @@ export class PropertiesService {
     return this.findOne(saved._id.toString());
   }
 
-  async getPaginatedProperties(page: number = 1, limit: number = 20) {
+  async getPaginatedProperties(
+    page: number = 1,
+    limit: number = 20,
+    viewerUserId?: string,
+  ) {
     const skip = (page - 1) * limit;
 
     const [properties, total] = await Promise.all([
@@ -183,14 +340,16 @@ export class PropertiesService {
     ]);
 
     return {
-      properties: properties.map((p) => sanitizePropertyForViewer(p, false)),
+      properties: properties.map((p) =>
+        sanitizePropertyForViewer(p, false, viewerUserId),
+      ),
       total,
       page,
       totalPages: Math.ceil(total / limit),
     };
   }
 
-  async getLatestProperties(limit: number = 10) {
+  async getLatestProperties(limit: number = 10, viewerUserId?: string) {
     const props = await this.propertyModel
       .find()
       .populate('city')
@@ -200,7 +359,7 @@ export class PropertiesService {
       .limit(limit)
       .lean();
 
-    return props.map((p) => sanitizePropertyForViewer(p, false));
+    return props.map((p) => sanitizePropertyForViewer(p, false, viewerUserId));
   }
 
   private calculateDistanceMeters(
@@ -223,9 +382,10 @@ export class PropertiesService {
     return R * c;
   }
 
-  async searchProperties(query: Record<string, any>) {
+  async searchProperties(query: Record<string, any>, viewerUserId?: string) {
     const page = Math.max(1, parseInt(query.page, 10) || 1);
     const limit = Math.min(500, Math.max(1, parseInt(query.limit, 10) || 250));
+    const effectiveViewerId = viewerUserId || query.viewerId || undefined;
 
     const mongoFilter: Record<string, any> = {};
 
@@ -253,18 +413,39 @@ export class PropertiesService {
 
     if (budgetMin !== null || budgetMax !== null) {
       const priceField = query.type === 'sale' ? 'price' : 'rent';
-      mongoFilter[priceField] = {};
+      const estField = query.type === 'sale' ? 'estimatedPrice' : 'estimatedRent';
+      const priceRange: Record<string, number> = {};
       if (budgetMin !== null && !isNaN(budgetMin)) {
-        mongoFilter[priceField].$gte = budgetMin;
+        priceRange.$gte = budgetMin;
       }
       if (budgetMax !== null && !isNaN(budgetMax) && budgetMax > 0) {
-        mongoFilter[priceField].$lte = budgetMax;
+        priceRange.$lte = budgetMax;
+      }
+      if (Object.keys(priceRange).length > 0) {
+        mongoFilter.$and = [
+          ...(mongoFilter.$and || []),
+          {
+            $or: [
+              { [priceField]: priceRange },
+              {
+                $and: [
+                  {
+                    $or: [
+                      { [priceField]: null },
+                      { [priceField]: { $lte: 0 } },
+                      { [priceField]: { $exists: false } },
+                    ],
+                  },
+                  { [estField]: priceRange },
+                ],
+              },
+            ],
+          },
+        ];
       }
     }
 
-    if (query.minArea && Number(query.minArea) > 0) {
-      mongoFilter.area = { $gte: Number(query.minArea) };
-    }
+    const minArea = query.minArea && Number(query.minArea) > 0 ? Number(query.minArea) : 0;
 
     if (query.minBathrooms && Number(query.minBathrooms) > 0) {
       mongoFilter.bathrooms = { $gte: Number(query.minBathrooms) };
@@ -288,23 +469,20 @@ export class PropertiesService {
     const hasGeoRadius =
       lat !== null && lng !== null && !isNaN(lat) && !isNaN(lng) && radius > 0;
     const requiresInMemoryFiltering =
+      minArea > 0 ||
       minRooms > 0 ||
       insideToilet !== 'all' ||
       insideBathroom !== 'all' ||
       requiredFeatures.length > 0 ||
       Boolean(keyword) ||
       hasGeoRadius ||
-      sortBy === 'distance';
+      sortBy === 'distance' ||
+      sortBy === 'price_asc' ||
+      sortBy === 'price_desc';
 
     // Fast DB-paginated path for standard landing/tab/sort queries (avoids fetching 600 full docs)
     if (!requiresInMemoryFiltering) {
-      const priceSortField = query.type === 'sale' ? 'price' : 'rent';
-      const mongoSort: Record<string, 1 | -1> =
-        sortBy === 'price_asc'
-          ? { [priceSortField]: 1, created_at: -1 }
-          : sortBy === 'price_desc'
-          ? { [priceSortField]: -1, created_at: -1 }
-          : { created_at: -1 };
+      const mongoSort: Record<string, 1 | -1> = { created_at: -1, qualityScore: -1 };
 
       const skip = (page - 1) * limit;
       const [docs, total] = await Promise.all([
@@ -321,7 +499,9 @@ export class PropertiesService {
       ]);
 
       return {
-        properties: docs.map((p) => sanitizePropertyForViewer(p, false)),
+        properties: docs.map((p) =>
+          sanitizePropertyForViewer(p, false, effectiveViewerId),
+        ),
         total,
         page,
         totalPages: Math.ceil(total / limit) || 1,
@@ -339,6 +519,28 @@ export class PropertiesService {
       .lean();
 
     let filtered = candidates.filter((prop) => {
+      // Server-side area check using explicit area when > 0, or estimatedArea fallback
+      if (minArea > 0) {
+        const effectiveArea =
+          Number(prop.area) > 0
+            ? Number(prop.area)
+            : Number(prop.estimatedArea) > 0
+            ? Number(prop.estimatedArea)
+            : estimatePropertyArea({
+                houseType: prop.houseType,
+                rooms: prop.rooms,
+                livingRoom: prop.livingRoom,
+                kitchen: prop.kitchen,
+                toilet: prop.toilet,
+                bathrooms: prop.bathrooms,
+                area: prop.area,
+                features: prop.features,
+              });
+        if (effectiveArea < minArea) {
+          return false;
+        }
+      }
+
       // Rooms check (rooms + livingRoom like old Tranogasy or rooms directly)
       if (minRooms > 0) {
         const totalRooms = (Number(prop.rooms) || 0) + (Number(prop.livingRoom) || 0);
@@ -422,14 +624,26 @@ export class PropertiesService {
     // Sorting
     if (sortBy === 'price_asc') {
       filtered.sort((a, b) => {
-        const pA = (a.type === 'sale' ? a.price : a.rent) || 0;
-        const pB = (b.type === 'sale' ? b.price : b.rent) || 0;
+        const pA =
+          (a.type === 'sale'
+            ? a.price || a.estimatedPrice
+            : a.rent || a.estimatedRent) || Number.MAX_SAFE_INTEGER;
+        const pB =
+          (b.type === 'sale'
+            ? b.price || b.estimatedPrice
+            : b.rent || b.estimatedRent) || Number.MAX_SAFE_INTEGER;
         return pA - pB;
       });
     } else if (sortBy === 'price_desc') {
       filtered.sort((a, b) => {
-        const pA = (a.type === 'sale' ? a.price : a.rent) || 0;
-        const pB = (b.type === 'sale' ? b.price : b.rent) || 0;
+        const pA =
+          (a.type === 'sale'
+            ? a.price || a.estimatedPrice
+            : a.rent || a.estimatedRent) || 0;
+        const pB =
+          (b.type === 'sale'
+            ? b.price || b.estimatedPrice
+            : b.rent || b.estimatedRent) || 0;
         return pB - pA;
       });
     } else if (sortBy === 'distance' && lat !== null && lng !== null) {
@@ -440,7 +654,7 @@ export class PropertiesService {
     const start = (page - 1) * limit;
     const paginated = filtered
       .slice(start, start + limit)
-      .map((p) => sanitizePropertyForViewer(p, false));
+      .map((p) => sanitizePropertyForViewer(p, false, effectiveViewerId));
 
     return {
       properties: paginated,
@@ -450,7 +664,7 @@ export class PropertiesService {
     };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, viewerUserId?: string) {
     const property = await this.propertyModel
       .findById(id)
       .populate('city')
@@ -461,7 +675,100 @@ export class PropertiesService {
     if (!property) {
       throw new NotFoundException('Property not found');
     }
-    return sanitizePropertyForViewer(property, false);
+    return sanitizePropertyForViewer(property, false, viewerUserId);
+  }
+
+  async unlockPropertyContact(propertyId: string, userId: string) {
+    if (!propertyId || !Types.ObjectId.isValid(propertyId)) {
+      throw new BadRequestException('Identifiant de propriété invalide');
+    }
+    if (!userId || !Types.ObjectId.isValid(userId)) {
+      throw new BadRequestException('Veuillez vous connecter pour débloquer ce contact.');
+    }
+
+    const property: any = await this.propertyModel
+      .findById(propertyId)
+      .populate('owner', '_id username phone email')
+      .lean();
+
+    if (!property) {
+      throw new NotFoundException('Propriété introuvable');
+    }
+
+    const normalizedUserId = String(userId).trim();
+    const ownerId =
+      property.owner && typeof property.owner === 'object'
+        ? String(property.owner._id || '')
+        : String(property.owner || '');
+    const unlockedList: string[] = Array.isArray(property.unlockedByUsers)
+      ? property.unlockedByUsers.map((u: any) => String(u))
+      : [];
+
+    const alreadyUnlocked =
+      !property.contactAccessLocked ||
+      normalizedUserId === ownerId ||
+      unlockedList.includes(normalizedUserId);
+
+    if (alreadyUnlocked) {
+      const currentUser: any = await this.userModel
+        .findById(normalizedUserId, { balance: 1 })
+        .lean()
+        .catch(() => null);
+      return {
+        unlocked: true,
+        alreadyUnlocked: true,
+        costJp: 0,
+        balance: currentUser?.balance ?? 0,
+        phone1: property.phone1 || property.owner?.phone || null,
+        phone2: property.phone2 || null,
+        phone3: property.phone3 || null,
+        description: property.description || '',
+      };
+    }
+
+    const costJp =
+      Number(property.contactUnlockCostJp) > 0
+        ? Math.round(Number(property.contactUnlockCostJp))
+        : 50;
+
+    const updatedUser: any = await this.userModel
+      .findOneAndUpdate(
+        {
+          _id: new Types.ObjectId(normalizedUserId),
+          balance: { $gte: costJp },
+        },
+        { $inc: { balance: -costJp } },
+        { new: true },
+      )
+      .lean();
+
+    if (!updatedUser) {
+      const existingUser: any = await this.userModel
+        .findById(normalizedUserId, { balance: 1 })
+        .lean();
+      if (!existingUser) {
+        throw new NotFoundException('Compte utilisateur introuvable');
+      }
+      throw new BadRequestException(
+        `Solde JP insuffisant (${costJp} JP requis, vous avez ${existingUser.balance || 0} JP). Rechargez vos JP pour voir le contact.`,
+      );
+    }
+
+    await this.propertyModel.updateOne(
+      { _id: new Types.ObjectId(propertyId) },
+      { $addToSet: { unlockedByUsers: normalizedUserId } },
+    );
+
+    return {
+      unlocked: true,
+      alreadyUnlocked: false,
+      costJp,
+      balance: updatedUser.balance ?? 0,
+      phone1: property.phone1 || property.owner?.phone || null,
+      phone2: property.phone2 || null,
+      phone3: property.phone3 || null,
+      description: property.description || '',
+    };
   }
 
   /**

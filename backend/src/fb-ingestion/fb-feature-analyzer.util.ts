@@ -192,8 +192,8 @@ const SIMPLE_FEATURE_RULES: SimpleFeatureRule[] = [
   {
     key: 'courtyard',
     positive:
-      /(?:(?<!\ben\s)(?<!\bau\s)(?<!\bdu\s)\bcour\b(?!\s+(?:de\s+recreation|d['’]?appel|penal))|\bcours?\s+(?:interieure?|pavee?|cimentee?|spacieuse?|privee?|commune?)\b|\btokot?any\b)/iu,
-    negative: /(?:sans\s+cour\b|pas\s+de\s+cour\b|tsisy\s+(?:cour|tokot?any))/iu,
+      /(?:(?<!\ben\s)(?<!\bau\s)(?<!\bdu\s)\bcour\b(?!\s+(?:de\s+recreation|d['’]?appel|penal))|\bcours?\s+(?:interieure?|pavee?|cimentee?|spacieuse?|privee?|commune?)\b|\b(?:an[\s-]?)?tokon?tany\b)/iu,
+    negative: /(?:sans\s+cour\b|pas\s+de\s+cour\b|tsisy\s+(?:cour|tokon?tany))/iu,
   },
   {
     key: 'swimmingPool',
@@ -203,9 +203,9 @@ const SIMPLE_FEATURE_RULES: SimpleFeatureRule[] = [
   {
     key: 'surroundedByWalls',
     positive:
-      /(?:\btamboho\b|\bvoafefy\b|\bmisy\s+fefy\b|\bcloturee?s?\b|\bbien\s+cloturee?\b|\bmuree?s?\b|\bmur\s+de\s+cloture\b|\benceinte\s+(?:fermee?|securisee?)\b)/iu,
+      /(?:\btamboho\b|\bvoafefy\b|\bmifefy\b|\bmisy\s+fefy\b|\bcloturee?s?\b|\bbien\s+cloturee?\b|\bmuree?s?\b|\bmur\s+de\s+cloture\b|\benceinte\s+(?:fermee?|securisee?)\b)/iu,
     negative:
-      /(?:non\s+cloturee?|pas\s+cloturee?|sans\s+cloture|tsisy\s+tamboho|tsy\s+(?:misy\s+tamboho|voafefy))/iu,
+      /(?:non\s+cloturee?|pas\s+cloturee?|sans\s+cloture|tsisy\s+tamboho|tsy\s+(?:misy\s+tamboho|voafefy|mifefy))/iu,
   },
   {
     key: 'independentHouse',
@@ -342,20 +342,20 @@ const WATER_NEGATIVE_RE = new RegExp(
 const POWER_PRIVATE_POSITIVE_RE =
   /(?:\bgroupe\s+electrogene\b|\bconvertisseur\b|\bonduleur\b|\bbatteries?\s+solaires?\b|\bcompteur\s+(?:individuel|prive|separe)\b|\bkaontera(?:\s+manokana|\s+mitokana)\b|\belectricite\s+privee?\b)/iu;
 const POWER_ONLY_RE =
-  /(?:\belectricite\b|\belectrifiee?\b|(?<!\btsy\s+)\bmisy\s+jiro\b|\bjiro\s+(?:ihany|uniquement|seul(?:ement)?|misy)\b|\bcompteur\s+(?:individuel|prive|separe|jirama)\b|\bkaontera(?:\s+manokana|\s+mitokana)?\b|\bgroupe\s+electrogene\b|\bconvertisseur\b|\btriphasee?\b)/iu;
+  /(?:\belectricite\b|\belectrifiee?\b|(?<!\btsy\s+)\bmisy\s+jiro\b|\bjiro\s+(?:ihany|uniquement|seul(?:ement)?|misy)\b|\bcompteur\s+(?:individuel|prive|separe|jirama)\b|\bkaontera(?:\s+manokana|\s+mitokana)?\b|\bgroupe\s+electrogene\b|\bconvertisseur\b|\btriphasee?\b|\banko(?:a)?tran['’]?\s*ny\s+jiro\b|\bjiro\s+anko(?:a)?trany\b)/iu;
 const WATER_ONLY_RE =
-  /(?:(?<!\btsy\s+)\bmisy\s+rano\b|(?<!\bsans\s+)(?<!\bpas\s+d['’]?\s*)\beau\s+courante\b|\beau\s+disponible\b|\beau\s+potable\b|\bcompteur\s+d['’]?eau\b|(?<!\b(?:tsy\s+misy|tsisy|sans)\s+)\brano\s+jirama\b|(?<!\b(?:tsy\s+misy|tsisy)\s+)\brano\s+mandeha\b|(?<!\bpas\s+de\s+)\brobinet\s+(?:ao\s+an[\s-]?trano|ao\s+anatiny|interieur|prive|personnel)\b)/iu;
+  /(?:(?<!\btsy\s+)\bmisy\s+rano\b|(?<!\bsans\s+)(?<!\bpas\s+d['’]?\s*)\beau\s+courante\b|\beau\s+disponible\b|\beau\s+potable\b|\bcompteur\s+d['’]?eau\b|(?<!\b(?:tsy\s+misy|tsisy|sans)\s+)\brano\s+jirama\b|(?<!\b(?:tsy\s+misy|tsisy)\s+)\brano\s+mandeha\b|(?<!\bpas\s+de\s+)\brobinet\s+(?:ao\s+an[\s-]?trano|ao\s+anatiny|interieur|prive|personnel)\b|\beo\s+an[\s-]?tokon?tany\s+ny\s+(?:paompy|rano)\b|\b(?:paompy|rano)\s+eo\s+an[\s-]?tokon?tany\b)/iu;
 
 const INSIDE_BOTH_RE =
-  /(?:(?:douche|salle\s+d['’]?eau|sdb)[^\n]{0,18}(?:wc|toilette)[^\n]{0,20}(?:anatiny|interieur(?:e)?|dedans|privatif|privee?)|(?:wc|toilette)[^\n]{0,18}(?:douche|salle\s+d['’]?eau|sdb)[^\n]{0,20}(?:anatiny|interieur(?:e)?|dedans|privatif|privee?)|(?:douche\s*(?:&|et|sy|\/|\+)?\s*wc|wc\s*(?:&|et|sy|\/|\+)?\s*douche)\s+(?:anatiny|interieur(?:e)?|privatif|prive))/iu;
+  /(?:(?:\b(?:douche|dc|dch|salle\s+d['’]?eau|sdb)\b)(?:(?!(?:anatiny|ivelany|interieur|exterieur|dedans|dehors))[^\n]){0,14}\b(?:wc|toilette|kabone)\b[^\n]{0,20}(?:anatiny|interieur(?:e)?|dedans|privatif|privee?)|(?:\b(?:wc|toilette|kabone)\b)(?:(?!(?:anatiny|ivelany|interieur|exterieur|dedans|dehors))[^\n]){0,14}\b(?:douche|dc|dch|salle\s+d['’]?eau|sdb)\b[^\n]{0,20}(?:anatiny|interieur(?:e)?|dedans|privatif|privee?)|(?:\b(?:douche|dc|dch)\s*(?:&|et|sy|\/|\+)?\s*wc|\bwc\s*(?:&|et|sy|\/|\+)?\s*(?:douche|dc|dch)|\bdwc\b)\s+(?:anatiny|interieur(?:e)?|privatif|prive))/iu;
 const INSIDE_TOILET_RE =
-  /(?:(?:wc|toilettes?|kabone)[^\n]{0,20}(?:anatiny|interieur(?:e)?|dedans|privatif|privee?)|(?:wc|toilettes?)\s+(?:pour\s+|des?\s+)?visiteurs?)/iu;
+  /(?:\b(?:wc|toilettes?|kabone)\b(?:(?!(?:ivelany|exterieur|dehors|\bdc\b|\bdch\b|\bdouche\b))[^\n]){0,20}(?:anatiny|interieur(?:e)?|dedans|privatif|privee?)|(?:wc|toilettes?)\s+(?:pour\s+|des?\s+)?visiteurs?)/iu;
 const INSIDE_BATH_RE =
-  /(?:(?:douche|salle\s+de\s+bain|salle\s+d['’]?eau|sdb)[^\n]{0,20}(?:anatiny|interieur(?:e)?|dedans|privatif|privee?))/iu;
+  /(?:\b(?:douche|dc|dch|dwc|salle\s+de\s+bain|salle\s+d['’]?eau|sdb)\b(?:(?!(?:ivelany|exterieur|dehors|\bwc\b|\btoilette\b))[^\n]){0,20}(?:anatiny|interieur(?:e)?|dedans|privatif|privee?))/iu;
 const OUTSIDE_TOILET_RE =
-  /(?:(?:wc|toilette|kabone)[^\n]{0,22}(?:ivelany|exterieur(?:e)?|dehors|en\s+dehors|commun(?:e)?))/iu;
+  /(?:\b(?:wc|toilette|kabone)\b(?:(?!(?:anatiny|interieur|dedans|\bdc\b|\bdch\b|\bdouche\b))[^\n]){0,22}(?:ivelany|exterieur(?:e)?|dehors|en\s+dehors|commun(?:e)?))/iu;
 const OUTSIDE_BATH_RE =
-  /(?:(?:douche|salle\s+d['’]?eau|sdb)[^\n]{0,22}(?:ivelany|exterieur(?:e)?|dehors|en\s+dehors|commun(?:e)?))/iu;
+  /(?:\b(?:douche|dc|dch|dwc|salle\s+d['’]?eau|sdb)\b(?:(?!(?:anatiny|interieur|dedans|\bwc\b|\btoilette\b))[^\n]){0,22}(?:ivelany|exterieur(?:e)?|dehors|en\s+dehors|commun(?:e)?))/iu;
 
 /**
  * Extracts deterministic property features, explicit negations, and 3-state
@@ -533,7 +533,10 @@ export function extractDeterministicFeatures(
     features.garage = true;
   }
 
-  // Access (car & moto) respecting negations and physical implications
+  // Access (car & moto) respecting negations and physical implications:
+  // - If car access is mentioned -> accessible by car ('yes') AND by moto ('yes').
+  // - If ONLY moto access is mentioned without car access -> conclude moto-only ('carAccess' = 'no', 'motoAccess' = 'yes').
+  // - If neither is mentioned -> both 'unknown' (to verify).
   const motoNegated = MOTO_ACCESS_NEGATIVE_RE.test(norm);
   const carNegated = motoNegated || CAR_ACCESS_NEGATIVE_RE.test(norm);
 
@@ -562,6 +565,11 @@ export function extractDeterministicFeatures(
     (features.carAccess === true || MOTO_ACCESS_POSITIVE_RE.test(norm))
   ) {
     features.motoAccess = true;
+  }
+
+  // Rule: if publisher only mentioned moto access without mentioning car access, conclude moto-only
+  if (features.motoAccess === true && !features.carAccess) {
+    negated.carAccess = true;
   }
 
   const accessVerification: Pick<FeatureVerificationMap, 'carAccess' | 'motoAccess'> = {
@@ -595,8 +603,10 @@ export function extractDeterministicFeatures(
 
 /**
  * Combines Gemini's extracted boolean features with deterministic multilingual
- * keyword rules, negation overrides, Madagascar default JIRAMA assumptions
- * (flagged as `'unknown'` when silent so admins verify), and `carAccess => motoAccess`.
+ * keyword rules, negation overrides, and high-probability Malagasy defaults:
+ * - Unmentioned furniture -> unfurnished (`furnishedProperty = false`, verification `'no'`).
+ * - Unmentioned water/electricity on residential -> JIRAMA (`waterSupply = 'yes'`, `electricitySupply = 'yes'`).
+ * - `carAccess => motoAccess`, and `motoAccess` alone (without `carAccess`) => `carAccess = 'no'` (moto-only).
  */
 export function mergeGeminiAndDeterministicFeatures(
   geminiFeatures: Partial<Record<PropertyFeatureKey, unknown>> | null | undefined,
@@ -633,7 +643,13 @@ export function mergeGeminiAndDeterministicFeatures(
     merged.carAccess = false;
   }
 
-  // Water source verification & Madagascar default (unmentioned residential -> probable JIRAMA)
+  // If only moto access is present without car access (and admin did not override carAccess to 'yes'),
+  // conclude the property is only accessible by moto (`carAccess = false` / `'no'`).
+  if (merged.motoAccess && !merged.carAccess && existingVerif.carAccess !== 'yes') {
+    merged.carAccess = false;
+  }
+
+  // Water source verification & Madagascar high-probability default (unmentioned residential -> JIRAMA 'yes')
   const hasExplicitNonJiramaWaterFromGemini = Boolean(
     !det.negated.waterWellSupply && geminiFeatures?.waterWellSupply,
   ) || Boolean(
@@ -666,14 +682,16 @@ export function mergeGeminiAndDeterministicFeatures(
     waterSupply = 'no';
   } else if (existingVerif.waterSupply === 'yes' && hasKnownWaterSupply(merged)) {
     waterSupply = 'yes';
-  } else {
-    waterSupply = 'unknown';
-    if (!isCommercial && !hasKnownWaterSupply(merged)) {
+  } else if (!isCommercial) {
+    if (!hasKnownWaterSupply(merged)) {
       merged.waterPumpSupplyJirama = true;
     }
+    waterSupply = 'yes';
+  } else {
+    waterSupply = 'unknown';
   }
 
-  // Electricity source verification & Madagascar default (unmentioned residential -> probable JIRAMA)
+  // Electricity source verification & Madagascar high-probability default (unmentioned residential -> JIRAMA 'yes')
   const hasExplicitPowerFromGemini = Boolean(
     !det.negated.solarPanels && geminiFeatures?.solarPanels,
   ) || Boolean(
@@ -707,16 +725,18 @@ export function mergeGeminiAndDeterministicFeatures(
     electricitySupply = 'no';
   } else if (existingVerif.electricitySupply === 'yes' && hasKnownElectricitySupply(merged)) {
     electricitySupply = 'yes';
-  } else {
-    electricitySupply = 'unknown';
-    if (!isCommercial && !hasKnownElectricitySupply(merged)) {
+  } else if (!isCommercial) {
+    if (!hasKnownElectricitySupply(merged)) {
       merged.electricityJirama = true;
       merged.electricityPower = true;
     }
+    electricitySupply = 'yes';
+  } else {
+    electricitySupply = 'unknown';
   }
 
-  // Furnished verification (always verify whether furnished or unfurnished for houses)
-  let furnishedProperty: AccessVerificationState = 'unknown';
+  // Furnished verification: high-probability default is unfurnished ('no') unless explicitly stated as furnished ('yes')
+  let furnishedProperty: AccessVerificationState = 'no';
   if (det.furnishedVerification === 'no') {
     merged.furnishedProperty = false;
     furnishedProperty = 'no';
@@ -731,20 +751,30 @@ export function mergeGeminiAndDeterministicFeatures(
     furnishedProperty = 'yes';
   } else {
     merged.furnishedProperty = false;
-    furnishedProperty = 'unknown';
+    furnishedProperty = 'no';
   }
 
+  const resolvedMotoAccess: AccessVerificationState = det.negated.motoAccess
+    ? 'no'
+    : merged.motoAccess
+      ? 'yes'
+      : existingVerif.motoAccess === 'no'
+        ? 'no'
+        : 'unknown';
+
+  const resolvedCarAccess: AccessVerificationState = det.negated.carAccess
+    ? 'no'
+    : merged.carAccess
+      ? 'yes'
+      : resolvedMotoAccess === 'yes' && existingVerif.carAccess !== 'yes'
+        ? 'no'
+        : existingVerif.carAccess === 'no'
+          ? 'no'
+          : 'unknown';
+
   const featureVerification: FeatureVerificationMap = {
-    carAccess: det.negated.carAccess
-      ? 'no'
-      : merged.carAccess
-        ? 'yes'
-        : 'unknown',
-    motoAccess: det.negated.motoAccess
-      ? 'no'
-      : merged.motoAccess
-        ? 'yes'
-        : 'unknown',
+    carAccess: resolvedCarAccess,
+    motoAccess: resolvedCarAccess === 'yes' ? 'yes' : resolvedMotoAccess,
     waterSupply,
     electricitySupply,
     furnishedProperty,
@@ -770,54 +800,69 @@ export function deriveFeatureVerification(
       return 'yes';
     }
     const stored = storedVerification?.[key];
-    if (stored === 'no' || stored === 'yes' || stored === 'unknown') {
+    if (stored === 'no' || stored === 'yes') {
       return stored;
     }
     if (det?.accessVerification[key] === 'no') {
       return 'no';
     }
+    if (stored === 'unknown') {
+      return 'unknown';
+    }
     return 'unknown';
   };
 
   const moto = resolveAccessKey('motoAccess');
-  const car = moto === 'no' ? 'no' : resolveAccessKey('carAccess');
+  let car: AccessVerificationState;
+  if (moto === 'no') {
+    car = 'no';
+  } else if (features?.carAccess === true) {
+    car = 'yes';
+  } else if (moto === 'yes' && storedVerification?.carAccess !== 'yes') {
+    // Only moto access is enabled without car access -> conclude moto-only ('no' for carAccess)
+    car = 'no';
+  } else {
+    car = resolveAccessKey('carAccess');
+  }
 
   let waterSupply: AccessVerificationState = 'unknown';
   const storedWater = storedVerification?.waterSupply;
-  if (storedWater === 'yes' || storedWater === 'no' || storedWater === 'unknown') {
-    waterSupply = storedWater;
+  if (storedWater === 'no') {
+    waterSupply = 'no';
+  } else if (storedWater === 'yes') {
+    waterSupply = 'yes';
   } else if (det && det.waterVerification !== 'unknown') {
     waterSupply = det.waterVerification;
-  } else if (
-    Boolean(features?.waterWellSupply) ||
-    Boolean(features?.waterPumpSupply) ||
-    Boolean(features?.waterFetchExternal)
-  ) {
+  } else if (hasKnownWaterSupply(features)) {
     waterSupply = 'yes';
+  } else if (storedWater === 'unknown') {
+    waterSupply = 'unknown';
   }
 
   let electricitySupply: AccessVerificationState = 'unknown';
   const storedElec = storedVerification?.electricitySupply;
-  if (storedElec === 'yes' || storedElec === 'no' || storedElec === 'unknown') {
-    electricitySupply = storedElec;
+  if (storedElec === 'no') {
+    electricitySupply = 'no';
+  } else if (storedElec === 'yes') {
+    electricitySupply = 'yes';
   } else if (det && det.electricityVerification !== 'unknown') {
     electricitySupply = det.electricityVerification;
-  } else if (Boolean(features?.solarPanels)) {
+  } else if (hasKnownElectricitySupply(features)) {
     electricitySupply = 'yes';
+  } else if (storedElec === 'unknown') {
+    electricitySupply = 'unknown';
   }
 
-  let furnishedProperty: AccessVerificationState = 'unknown';
+  let furnishedProperty: AccessVerificationState = 'no';
   const storedFurnished = storedVerification?.furnishedProperty;
-  if (
-    storedFurnished === 'yes' ||
-    storedFurnished === 'no' ||
-    storedFurnished === 'unknown'
-  ) {
-    furnishedProperty = storedFurnished;
-  } else if (features?.furnishedProperty === true) {
+  if (storedFurnished === 'yes' || features?.furnishedProperty === true) {
     furnishedProperty = 'yes';
-  } else if (det && det.furnishedVerification !== 'unknown') {
-    furnishedProperty = det.furnishedVerification;
+  } else if (storedFurnished === 'no') {
+    furnishedProperty = 'no';
+  } else if (det && det.furnishedVerification === 'yes') {
+    furnishedProperty = 'yes';
+  } else {
+    furnishedProperty = 'no';
   }
 
   return {
@@ -908,4 +953,995 @@ export function getMissingFeatureVerificationFields(options: {
     }
   }
   return missing;
+}
+
+export interface ExtractedAgencyFees {
+  visitFee: number | null;
+  cautionPercent: number | null;
+  cautionAmount: number | null;
+  commissionPercent: number | null;
+  commissionAmount: number | null;
+}
+
+function parseLocalizedNumber(raw: string): number | null {
+  const cleaned = String(raw || '')
+    .trim()
+    .replace(/\s+/g, '')
+    .replace(/\.(?=\d{3}(?:\D|$))/g, '')
+    .replace(/,(?=\d{3}(?:\D|$))/g, '')
+    .replace(',', '.');
+  const num = Number(cleaned);
+  return Number.isFinite(num) && num >= 0 ? num : null;
+}
+
+function parseFeeAmountToAriary(rawNum: string, unitRaw?: string | null): number | null {
+  const base = parseLocalizedNumber(rawNum);
+  if (base === null) return null;
+  const unit = String(unitRaw || '').toLowerCase().trim();
+  let val = base;
+  if (
+    unit === 'k' ||
+    unit === 'mil' ||
+    unit === 'mille' ||
+    unit === 'milles' ||
+    unit === 'arivo'
+  ) {
+    val = base * 1000;
+  } else if (unit.startsWith('m') && unit !== 'mois') {
+    val = base * 1_000_000;
+  }
+  if (unit.includes('fmg') || unit.includes('iraimbilanja')) {
+    val = Math.round(val / 5);
+  }
+  return Math.round(val);
+}
+
+const MALAGASY_NUMBER_MAP: Record<string, number> = {
+  iray: 1,
+  tokana: 1,
+  roa: 2,
+  telo: 3,
+  efatra: 4,
+  dimy: 5,
+  enina: 6,
+  fito: 7,
+  valo: 8,
+  sivy: 9,
+  folo: 10,
+  un: 1,
+  une: 1,
+  deux: 2,
+  trois: 3,
+  quatre: 4,
+  cinq: 5,
+  six: 6,
+};
+
+function parseWordOrDigitCount(token?: string | null): number | null {
+  if (!token) return null;
+  const clean = token.toLowerCase().trim();
+  if (MALAGASY_NUMBER_MAP[clean] !== undefined) {
+    return MALAGASY_NUMBER_MAP[clean];
+  }
+  const n = Number(clean);
+  return Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
+}
+
+/**
+ * Extracts Droit de visite (`visitFee`), Caution (`cautionPercent`, `cautionAmount`),
+ * and Commission (`commissionPercent`, `commissionAmount`) ONLY when explicitly mentioned
+ * in the listing (combining deterministic regex parsing with optional Gemini values).
+ */
+export function extractAgencyFees(
+  rawText: string,
+  geminiFees?: Partial<ExtractedAgencyFees> | null,
+  rentAriary?: number | null,
+): ExtractedAgencyFees {
+  const norm = normalizeForFeatureMatching(rawText);
+  const validRent =
+    typeof rentAriary === 'number' && Number.isFinite(rentAriary) && rentAriary > 0
+      ? Math.round(rentAriary)
+      : null;
+
+  let visitFee: number | null = null;
+  let cautionPercent: number | null = null;
+  let cautionAmount: number | null = null;
+  let commissionPercent: number | null = null;
+  let commissionAmount: number | null = null;
+
+  const optSep = String.raw`(?:[ \t]*(?:dia|est\s+de|co[uû]te|de)?[ \t]*[:=.,;\/\-~()*_]+[ \t]*|[ \t]+|[ \t]*(?=\d))`;
+  const punctOrSpace = String.raw`[ \t]*(?:dia|est\s+de|co[uû]te|de)?[ \t]*[:=.,;\/\-~()*_]*[ \t]*`;
+  const numPattern = String.raw`(?:\d{1,3}(?:[ \t.,]\d{3})+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?)`;
+  const fixedNumPattern = String.raw`(?:\d{1,3}(?:[ \t.,]\d{3})+|\d+(?:[.,]\d+)?[ \t]*(?:k|m|milles?|mil|arivo|fmg|iraimbilanja|ar(?:iary)?))`;
+  const feeUnit = String.raw`(ar(?:iary)?|fmg|iraimbilanja|k|milles?|mil|arivo)`;
+  const visitKw = String.raw`(?:droit(?:s)?\s+(?:de\s+)?visites?|frais\s+(?:de\s+)?visites?|sarany\s+fitsidihana|saran['’]?\s*(?:ny\s+)?fitsidihana|fitsidihana|visites?(?:\s+(?:de\s+)?lieu(?:x)?)?|d\.?\s*v\.?(?=[ \t:=.,;\/\-~(\d]))`;
+  const cautionKw = String.raw`(?:caution(?:nement)?|antoka)`;
+  const commKw = String.raw`(?:commissions?|(?<!\.)comm?\.?(?=[ \t:=.,;\/\-~(\d%])|frais\s+d['’]?agence|honoraires?(?:\s+d['’]?agence)?|komisiona|droit\s+mpanera|anjaran['’]?\s*(?:ny\s+)?mpanera)`;
+
+  // 1. Droit de visite (visite : 5000ar, Visite.10.000 ar, dv:5000, visite gratuite, etc.)
+  const freeVisitRe = new RegExp(
+    String.raw`(?:(?:\b${visitKw}${punctOrSpace}(?:gratuite?|0\s*(?:ar|ariary|fmg)?|maimaim[\s-]?poana))|(?:\b(?:sans|pas\s+de|tsisy|tsy\s+misy)\s+(?:droit(?:s)?\s+de\s+|frais\s+de\s+)?visites?\b))`,
+    'iu',
+  );
+  const visitAmountRe = new RegExp(
+    String.raw`\b${visitKw}${optSep}(${numPattern})[ \t]*${feeUnit}?\b`,
+    'iu',
+  );
+  const visitReversedRe = new RegExp(
+    String.raw`\b(${numPattern})[ \t]*${feeUnit}[ \t]*(?:ny|no|de|pour|le)?[ \t]*[:=.,;\/\-~()*_]*[ \t]*${visitKw}\b`,
+    'iu',
+  );
+
+  if (freeVisitRe.test(norm)) {
+    visitFee = 0;
+  } else {
+    const mVisit = norm.match(visitAmountRe) || norm.match(visitReversedRe);
+    if (mVisit) {
+      const parsed = parseFeeAmountToAriary(mVisit[1], mVisit[2]);
+      const hasUnit = Boolean(mVisit[2]);
+      const looksLikeYearWithoutUnit = !hasUnit && parsed !== null && parsed >= 2020 && parsed <= 2035 && parsed % 100 !== 0;
+      if (
+        parsed !== null &&
+        !looksLikeYearWithoutUnit &&
+        (parsed === 0 || (parsed >= 500 && parsed <= 500_000))
+      ) {
+        visitFee = parsed;
+      }
+    } else if (
+      typeof geminiFees?.visitFee === 'number' &&
+      Number.isFinite(geminiFees.visitFee) &&
+      geminiFees.visitFee >= 0 &&
+      geminiFees.visitFee <= 500_000 &&
+      /\b(?:visites?|fitsidihana|d\.?\s*v\.?(?=[ \t:=.,;\/\-~(\d]))/iu.test(norm)
+    ) {
+      visitFee = Math.round(geminiFees.visitFee);
+    }
+  }
+
+  // 2. Combined "caution et commission : 50%" pattern
+  const combinedPctRe =
+    /\b(?:caution\s*(?:et|sy|&|\+|\/)\s*(?:commission|honoraire|mpanera)|(?:commission|honoraire)\s*(?:et|sy|&|\+|\/)\s*caution)[ \t]*[:=.,;\/\-()]*[ \t]*(\d{1,3})[ \t]*%/iu;
+  const mCombinedPct = norm.match(combinedPctRe);
+  if (mCombinedPct) {
+    const pct = Number(mCombinedPct[1]);
+    if (Number.isFinite(pct) && pct > 0 && pct <= 300) {
+      cautionPercent = pct;
+      commissionPercent = pct;
+    }
+  }
+
+  // 3. Caution (percentage, months of rent, or fixed Ariary amount)
+  const noCautionRe =
+    /\b(?:(?:sans|pas\s+de|tsisy|tsy\s+misy|aucune)\s+(?:caution|antoka)|(?:caution|antoka)[ \t]*[:=.,;\/\-()]*[ \t]*0(?:\s*(?:ar|%|mois))?\b)/iu;
+  const cautionPctAfterRe = new RegExp(
+    String.raw`\b${cautionKw}${punctOrSpace}(\d{1,3})[ \t]*%`,
+    'iu',
+  );
+  const cautionPctBeforeRe =
+    /\b(\d{1,3})[ \t]*%[ \t]*(?:de[ \t]+)?(?:caution(?:nement)?|antoka)\b/iu;
+  const cautionHalfMonthRe =
+    /\b(?:(?:caution(?:nement)?|antoka)[ \t]*[:=.,;\/\-()]*[ \t]*(?:1\s*\/\s*2\s*(?:mois|volana)|demi[\s-]?(?:mois|loyer)|antsasa[\s-]?bolana)|(?:1\s*\/\s*2\s*mois|demi[\s-]?mois)\s+de\s+caution)\b/iu;
+  const cautionMonthsAfterRe = new RegExp(
+    String.raw`\b${cautionKw}${optSep}(\d+|un|une|deux|trois|iray|roa|telo)[ \t]*(?:mois(?:[ \t]+de[ \t]+loyer)?|volana)\b`,
+    'iu',
+  );
+  const cautionMonthsBeforeRe =
+    /\b(\d+|un|une|deux|trois|iray|roa|telo)[ \t]*(?:mois|volana)[ \t]+(?:de[ \t]+)?(?:caution(?:nement)?|antoka)\b/iu;
+  const cautionFixedRe = new RegExp(
+    String.raw`\b${cautionKw}${optSep}(${fixedNumPattern})[ \t]*(ar(?:iary)?|fmg|iraimbilanja)?\b`,
+    'iu',
+  );
+
+  if (noCautionRe.test(norm)) {
+    cautionPercent = 0;
+    cautionAmount = 0;
+  } else {
+    const mPctAfter = norm.match(cautionPctAfterRe);
+    const mPctBefore = norm.match(cautionPctBeforeRe);
+    const mMonthsAfter = norm.match(cautionMonthsAfterRe);
+    const mMonthsBefore = norm.match(cautionMonthsBeforeRe);
+    if (mPctAfter || mPctBefore) {
+      const pct = Number((mPctAfter || mPctBefore)![1]);
+      if (Number.isFinite(pct) && pct > 0 && pct <= 500) {
+        cautionPercent = pct;
+      }
+    } else if (cautionHalfMonthRe.test(norm)) {
+      cautionPercent = 50;
+    } else if (mMonthsAfter || mMonthsBefore) {
+      const months = parseWordOrDigitCount((mMonthsAfter || mMonthsBefore)![1]);
+      if (months && months >= 1 && months <= 6) {
+        cautionPercent = months * 100;
+      }
+    } else {
+      const mFixed = norm.match(cautionFixedRe);
+      if (mFixed) {
+        const amt = parseFeeAmountToAriary(mFixed[1], mFixed[2]);
+        if (amt !== null && amt >= 5000) {
+          cautionAmount = amt;
+        }
+      }
+    }
+
+    // Fallback to Gemini caution only if the post actually mentions caution/antoka
+    if (
+      cautionPercent === null &&
+      cautionAmount === null &&
+      /\b(?:caution|antoka)\b/iu.test(norm)
+    ) {
+      if (
+        typeof geminiFees?.cautionPercent === 'number' &&
+        geminiFees.cautionPercent > 0 &&
+        geminiFees.cautionPercent <= 500
+      ) {
+        cautionPercent = Math.round(geminiFees.cautionPercent);
+      } else if (
+        typeof geminiFees?.cautionAmount === 'number' &&
+        geminiFees.cautionAmount >= 5000
+      ) {
+        cautionAmount = Math.round(geminiFees.cautionAmount);
+      }
+    }
+  }
+
+  // 4. Commission (percentage, "1 mois de loyer" => 100%, or fixed Ariary amount)
+  const noCommissionRe =
+    /\b(?:(?:sans|pas\s+de|tsisy|tsy\s+misy|aucune|0)\s+(?:commission|frais\s+d['’]?agence|honoraire|komisiona)|direct\s+proprietaire\s+sans\s+(?:intermediaire|commission))\b/iu;
+  const commPctAfterRe = new RegExp(
+    String.raw`\b${commKw}${punctOrSpace}(\d{1,3})[ \t]*%`,
+    'iu',
+  );
+  const commPctBeforeRe =
+    /\b(\d{1,3})[ \t]*%[ \t]*(?:de[ \t]+)?(?:commissions?|frais\s+d['’]?agence|honoraires?|komisiona)\b/iu;
+  const commHalfMonthRe =
+    /\b(?:(?:commissions?|(?<!\.)comm?\.?|frais\s+d['’]?agence|honoraires?|komisiona)[ \t]*[:=.,;\/\-()]*[ \t]*(?:1\s*\/\s*2\s*(?:mois|volana)(?:\s+de\s+loyer)?|demi[\s-]?(?:mois|loyer)|antsasa[\s-]?bolana)|(?:1\s*\/\s*2\s*mois|demi[\s-]?mois(?:\s+de\s+loyer)?)\s+(?:de\s+)?(?:commission|frais\s+d['’]?agence|honoraire))\b/iu;
+  const commMonthsAfterRe = new RegExp(
+    String.raw`\b${commKw}${optSep}(\d+|un|une|deux|iray|roa)[ \t]*(?:mois(?:[ \t]+de[ \t]+loyer|[ \t]+d['’]?ofany)?|volana|ofana[ \t]+iray[ \t]+volana)\b`,
+    'iu',
+  );
+  const commMonthsBeforeRe =
+    /\b(\d+|un|une|deux|iray|roa)[ \t]*(?:mois(?:\s+de\s+loyer)?|volana)[ \t]+(?:de[ \t]+|pour[ \t]+(?:la[ \t]+)?)?(?:commissions?|frais\s+d['’]?agence|honoraires?|komisiona)\b/iu;
+  const commFixedRe = new RegExp(
+    String.raw`\b(?:commissions?|(?<!\.)comm?\.?(?=[ \t:=.,;\/\-~(\d])|frais\s+d['’]?agence|honoraires?(?:\s+d['’]?agence)?|komisiona)${optSep}(${fixedNumPattern})[ \t]*(ar(?:iary)?|fmg|iraimbilanja)?\b`,
+    'iu',
+  );
+
+  if (noCommissionRe.test(norm)) {
+    commissionPercent = 0;
+    commissionAmount = 0;
+  } else {
+    const mCommPctAfter = norm.match(commPctAfterRe);
+    const mCommPctBefore = norm.match(commPctBeforeRe);
+    const mCommMonthsAfter = norm.match(commMonthsAfterRe);
+    const mCommMonthsBefore = norm.match(commMonthsBeforeRe);
+
+    if (mCommPctAfter || mCommPctBefore) {
+      const pct = Number((mCommPctAfter || mCommPctBefore)![1]);
+      if (Number.isFinite(pct) && pct > 0 && pct <= 500) {
+        commissionPercent = pct;
+      }
+    } else if (commHalfMonthRe.test(norm)) {
+      commissionPercent = 50;
+    } else if (mCommMonthsAfter || mCommMonthsBefore) {
+      const months = parseWordOrDigitCount((mCommMonthsAfter || mCommMonthsBefore)![1]);
+      if (months && months >= 1 && months <= 6) {
+        commissionPercent = months * 100;
+      }
+    } else {
+      const mFixed = norm.match(commFixedRe);
+      if (mFixed) {
+        const amt = parseFeeAmountToAriary(mFixed[1], mFixed[2]);
+        if (amt !== null && amt >= 5000) {
+          commissionAmount = amt;
+        }
+      }
+    }
+
+    // Fallback to Gemini commission only if the post explicitly mentions commission/honoraire/frais d'agence
+    if (
+      commissionPercent === null &&
+      commissionAmount === null &&
+      /\b(?:commissions?|(?<!\.)comm?\.?(?=[ \t:=.,;\/\-~\d])|frais\s+d['’]?agence|honoraires?|komisiona|droit\s+mpanera)\b/iu.test(norm)
+    ) {
+      if (
+        typeof geminiFees?.commissionPercent === 'number' &&
+        geminiFees.commissionPercent > 0 &&
+        geminiFees.commissionPercent <= 500
+      ) {
+        commissionPercent = Math.round(geminiFees.commissionPercent);
+      } else if (
+        typeof geminiFees?.commissionAmount === 'number' &&
+        geminiFees.commissionAmount >= 5000
+      ) {
+        commissionAmount = Math.round(geminiFees.commissionAmount);
+      }
+    }
+  }
+
+  // Cross-calculate Ariary amount from percentage (or percentage from amount) when monthly rent is known
+  if (validRent) {
+    if (cautionPercent !== null && cautionPercent > 0 && cautionAmount === null) {
+      cautionAmount = Math.round((validRent * cautionPercent) / 100);
+    } else if (cautionAmount !== null && cautionAmount > 0 && cautionPercent === null) {
+      const ratioPct = Math.round((cautionAmount / validRent) * 100);
+      if (ratioPct > 0 && ratioPct <= 500) {
+        cautionPercent = ratioPct;
+      }
+    }
+
+    if (commissionPercent !== null && commissionPercent > 0 && commissionAmount === null) {
+      commissionAmount = Math.round((validRent * commissionPercent) / 100);
+    } else if (commissionAmount !== null && commissionAmount > 0 && commissionPercent === null) {
+      const ratioPct = Math.round((commissionAmount / validRent) * 100);
+      if (ratioPct > 0 && ratioPct <= 500) {
+        commissionPercent = ratioPct;
+      }
+    }
+  }
+
+  return {
+    visitFee,
+    cautionPercent,
+    cautionAmount,
+    commissionPercent,
+    commissionAmount,
+  };
+}
+
+export interface ResolvedResidentialSpecs {
+  rooms: number | null;
+  livingRoom: number | null;
+  kitchen: number | null;
+  toilet: number | null;
+  bathrooms: number | null;
+}
+
+const NO_TOILET_RE =
+  /\b(?:sans|pas\s+de|tsisy|tsy\s+misy|aucun(?:e)?)\s+(?:wc|toilettes?|kabone)\b/iu;
+const NO_BATHROOM_RE =
+  /\b(?:sans|pas\s+de|tsisy|tsy\s+misy|aucun(?:e)?)\s+(?:douches?|salles?\s+d['’]?eau|salles?\s+de\s+bains?|sdb|dc|dch)\b/iu;
+const NO_KITCHEN_RE =
+  /\b(?:sans|pas\s+de|tsisy|tsy\s+misy|aucun(?:e)?)\s+(?:cuisines?|lakozia|lakosia|coin\s+cuisine)\b/iu;
+const NO_LIVING_ROOM_RE =
+  /\b(?:(?:sans|pas\s+de|tsisy|tsy\s+misy|aucun(?:e)?)\s+(?:salons?|livings?(?:\s*rooms?)?|sejours?|efitra\s+fandraisam[\s-]?bahiny|fandraisam[\s-]?bahiny)|chambre\s+(?:simple|seule|celibataire|etudiant)|efitra\s+tokana)\b/iu;
+const DOUBLE_LIVING_ROOM_RE =
+  /\b(?:double\s+(?:living|salon|sejour)|2\s*(?:salons?|livings?|sejours?)|(?:salons?|livings?|sejours?)\s*2|(?:salons?|livings?)\s+roa)\b/iu;
+const EXPLICIT_LIVING_ROOM_RE =
+  /\b(?:salons?|livings?(?:\s*rooms?)?|sejours?|salle\s+de\s+sejour|efitra\s+fandraisam[\s-]?bahiny|fandraisam[\s-]?bahiny)\b/iu;
+
+/**
+ * Applies Madagascar high-probability residential defaults and smart livingRoom deduction:
+ * - Toilet (`toilet`): at least 1 by default on residential properties unless explicitly negated (`0`).
+ * - Shower (`bathrooms`): at least 1 by default on residential properties unless explicitly negated (`0`).
+ * - Kitchen (`kitchen`): at least 1 by default on residential properties unless explicitly negated (`0`).
+ * - Living Room (`livingRoom`): deduced from explicit mentions, room counts, typology (`T2`/`F3`/`efitra roa`/`villa`),
+ *   and rent/price standing so the user ALWAYS knows whether a property has a living room (`1+`) or not (`0`).
+ */
+export function resolveResidentialRoomDefaults(params: {
+  rawText: string;
+  isCommercial: boolean;
+  houseType?: string | null;
+  rooms?: number | null;
+  livingRoom?: number | null;
+  kitchen?: number | null;
+  toilet?: number | null;
+  bathrooms?: number | null;
+  rentAriary?: number | null;
+  priceAriary?: number | null;
+}): ResolvedResidentialSpecs {
+  const { rawText, isCommercial, houseType, rentAriary, priceAriary } = params;
+  const norm = normalizeForFeatureMatching(rawText);
+
+  let rooms =
+    typeof params.rooms === 'number' && Number.isFinite(params.rooms) && params.rooms >= 0
+      ? Math.round(params.rooms)
+      : null;
+  let livingRoom =
+    typeof params.livingRoom === 'number' &&
+      Number.isFinite(params.livingRoom) &&
+      params.livingRoom >= 0
+      ? Math.round(params.livingRoom)
+      : null;
+  let kitchen =
+    typeof params.kitchen === 'number' && Number.isFinite(params.kitchen) && params.kitchen >= 0
+      ? Math.round(params.kitchen)
+      : null;
+  let toilet =
+    typeof params.toilet === 'number' && Number.isFinite(params.toilet) && params.toilet >= 0
+      ? Math.round(params.toilet)
+      : null;
+  let bathrooms =
+    typeof params.bathrooms === 'number' &&
+      Number.isFinite(params.bathrooms) &&
+      params.bathrooms >= 0
+      ? Math.round(params.bathrooms)
+      : null;
+
+  if (isCommercial) {
+    return { rooms, livingRoom, kitchen, toilet, bathrooms };
+  }
+
+  // Deterministic room extraction if rooms was left null by Gemini or regex
+  if (rooms === null) {
+    const tfMatch = norm.match(/\b[tf]\s*([1-9])\b/iu);
+    const efitraAfterMatch = norm.match(
+      /\befitra\s*(\d+|iray|tokana|roa|telo|efatra|dimy|enina|fito|valo)\b/iu,
+    );
+    const efitraBeforeMatch = norm.match(
+      /\b(\d+|iray|roa|telo|efatra|dimy|enina)\s*efitra\b/iu,
+    );
+    const chambresMatch = norm.match(
+      /\b(\d+|un|une|deux|trois|quatre|cinq|six)\s*chambres?\b/iu,
+    );
+    const piecesMatch = norm.match(
+      /\b(\d+|un|une|deux|trois|quatre|cinq|six)\s*pieces?\b/iu,
+    );
+
+    if (chambresMatch) {
+      rooms = parseWordOrDigitCount(chambresMatch[1]);
+    } else if (efitraAfterMatch) {
+      rooms = parseWordOrDigitCount(efitraAfterMatch[1]);
+    } else if (efitraBeforeMatch) {
+      rooms = parseWordOrDigitCount(efitraBeforeMatch[1]);
+    } else if (tfMatch) {
+      const tfTotal = Number(tfMatch[1]);
+      if (tfTotal === 1) {
+        rooms = 1;
+        if (livingRoom === null) livingRoom = 0;
+      } else if (tfTotal >= 2) {
+        rooms = tfTotal - 1;
+        if (livingRoom === null) livingRoom = 1;
+      }
+    } else if (piecesMatch) {
+      const pCount = parseWordOrDigitCount(piecesMatch[1]);
+      if (pCount !== null) {
+        rooms = pCount;
+      }
+    }
+  }
+
+  // 1. Toilet (WC) default: at least 1 unless explicitly negated
+  if (NO_TOILET_RE.test(norm)) {
+    toilet = 0;
+  } else if (toilet === null || toilet <= 0) {
+    const doubleWc = /\b(?:double\s+wc|2\s*wc|wc\s*2|wc\s+roa)\b/iu.test(norm);
+    toilet = doubleWc ? 2 : 1;
+  }
+
+  // 2. Bathroom / Douche default: at least 1 unless explicitly negated
+  if (NO_BATHROOM_RE.test(norm)) {
+    bathrooms = 0;
+  } else if (bathrooms === null || bathrooms <= 0) {
+    const doubleBath =
+      /\b(?:double\s+(?:douche|sdb)|2\s*(?:douches?|salles?\s+d['’]?eau|sdb)|(?:douche|dc)\s*2|(?:douche|dc)\s+roa)\b/iu.test(
+        norm,
+      );
+    bathrooms = doubleBath ? 2 : 1;
+  }
+
+  // 3. Kitchen / Cuisine default: at least 1 unless explicitly negated
+  if (NO_KITCHEN_RE.test(norm)) {
+    kitchen = 0;
+  } else if (kitchen === null || kitchen <= 0) {
+    kitchen = 1;
+  }
+
+  // 4. Living room (Salon) deduction system:
+  // Ensure the user ALWAYS knows whether the house has a living room (1 or 2) or not (0).
+  if (NO_LIVING_ROOM_RE.test(norm)) {
+    livingRoom = 0;
+  } else if (DOUBLE_LIVING_ROOM_RE.test(norm)) {
+    livingRoom = 2;
+  } else if (EXPLICIT_LIVING_ROOM_RE.test(norm)) {
+    if (livingRoom === null || livingRoom <= 0) {
+      livingRoom = 1;
+    }
+  } else if (livingRoom === null) {
+    const mentionsMultiRoomTypology =
+      /\b(?:[tf]\s*[2-9]|(?:2|3|4|5|6|deux|trois|quatre|cinq)\s*pieces?|efitra\s*(?:roa|telo|efatra|dimy|enina|[2-9])|(?:roa|telo|efatra|dimy|[2-9])\s*efitra)\b/iu.test(
+        norm,
+      );
+    const mentionsSingleRoomOnly =
+      /\b(?:[tf]\s*1|1\s*piece|une\s*piece|efitra\s*(?:iray|tokana|1)|1\s*efitra|\bstudio\b|\bgarconniere\b)\b/iu.test(
+        norm,
+      );
+
+    if (houseType === 'villa') {
+      livingRoom = rooms !== null && rooms >= 6 ? 2 : 1;
+    } else if (mentionsMultiRoomTypology || (rooms !== null && rooms >= 2)) {
+      livingRoom = 1;
+    } else if (mentionsSingleRoomOnly) {
+      livingRoom = 0;
+    } else if (rooms === 1) {
+      // A 1-bedroom standalone house with substantial rent/price has a living room; a simple 1-room rental does not
+      if (
+        houseType === 'maison' &&
+        ((typeof rentAriary === 'number' && rentAriary >= 400_000) ||
+          (typeof priceAriary === 'number' && priceAriary >= 40_000_000))
+      ) {
+        livingRoom = 1;
+      } else {
+        livingRoom = 0;
+      }
+    } else {
+      // When room count is unknown, houses/apartments default to 1 living room unless described as a studio/chambre
+      livingRoom = /\b(?:studio|chambre\s+a\s+louer|garconniere)\b/iu.test(norm) ? 0 : 1;
+    }
+  }
+
+  return {
+    rooms,
+    livingRoom,
+    kitchen,
+    toilet,
+    bathrooms,
+  };
+}
+
+export type VisualCondition = 'new_or_modern' | 'good' | 'average' | 'basic_or_worn';
+
+export interface PriceEstimationResult {
+  estimatedAmount: number;
+  estimatedMin: number;
+  estimatedMax: number;
+  minAmount: number;
+  maxAmount: number;
+  tier: 'tier1_premium' | 'tier2_upper_mid' | 'tier3_accessible' | 'tier4_popular';
+  confidence: 'high' | 'medium' | 'low';
+}
+
+/**
+ * Server-side habitable surface (`m²`) estimator.
+ * Computes a realistic surface estimate from rooms, livingRoom, kitchen, bathrooms,
+ * toilet, houseType, standing features, and optional Gemini Vision visual surface estimate
+ * when the listing does not state `area`.
+ * This value is strictly for server-side search/ranking algorithms and is NOT shown to the public.
+ */
+export function estimatePropertyArea(params: {
+  houseType?: string | null;
+  rooms?: number | null;
+  livingRoom?: number | null;
+  kitchen?: number | null;
+  toilet?: number | null;
+  bathrooms?: number | null;
+  area?: number | null;
+  visualAreaEstimateSqm?: number | null;
+  features?: Partial<Record<string, unknown>> | null;
+}): number {
+  if (typeof params.area === 'number' && Number.isFinite(params.area) && params.area > 0) {
+    return Math.round(params.area);
+  }
+
+  const ht = String(params.houseType || 'maison').toLowerCase();
+  const f = params.features || {};
+
+  let ruleArea: number;
+  if (ht === 'tsena') {
+    const r = typeof params.rooms === 'number' && params.rooms > 0 ? params.rooms : 0;
+    const t = typeof params.toilet === 'number' && params.toilet > 0 ? params.toilet : 0;
+    ruleArea = Math.round(18 + r * 12 + t * 2.5);
+  } else if (ht === 'bureau') {
+    const r = typeof params.rooms === 'number' && params.rooms > 0 ? params.rooms : 2;
+    const l = typeof params.livingRoom === 'number' && params.livingRoom > 0 ? params.livingRoom : 0;
+    const t = typeof params.toilet === 'number' && params.toilet > 0 ? params.toilet : 1;
+    ruleArea = Math.round(r * 16 + l * 22 + t * 3 + 8);
+  } else {
+    const roomsCount =
+      typeof params.rooms === 'number' && params.rooms >= 0 ? params.rooms : ht === 'villa' ? 3 : 2;
+    const livingCount =
+      typeof params.livingRoom === 'number' && params.livingRoom >= 0 ? params.livingRoom : 1;
+    const kitchenCount =
+      typeof params.kitchen === 'number' && params.kitchen >= 0 ? params.kitchen : 1;
+    const bathCount =
+      typeof params.bathrooms === 'number' && params.bathrooms >= 0 ? params.bathrooms : 1;
+    const toiletCount =
+      typeof params.toilet === 'number' && params.toilet >= 0 ? params.toilet : 1;
+
+    const bedroomSize = ht === 'villa' ? 16 : ht === 'maison' ? 13 : 12;
+    const livingSize = ht === 'villa' ? 28 : ht === 'maison' ? 20 : 16;
+    const kitchenSize = ht === 'villa' ? 12 : ht === 'maison' ? 8 : 6;
+    const bathWeight = f.insideBathroom === false ? 2.5 : ht === 'villa' ? 5.5 : 4;
+    const toiletWeight = f.insideToilet === false ? 1.5 : 2.5;
+    const circulationFactor = ht === 'villa' ? 1.2 : ht === 'maison' ? 1.15 : 1.12;
+
+    let baseArea =
+      Math.max(roomsCount, livingCount === 0 ? 1 : 0) * bedroomSize +
+      livingCount * livingSize +
+      kitchenCount * kitchenSize +
+      bathCount * bathWeight +
+      toiletCount * toiletWeight;
+
+    if (f.kitchenFacilities || f.placardKitchen) baseArea += 3;
+    if (f.balcony) baseArea += 5;
+    if (f.roofTop) baseArea += 10;
+
+    ruleArea = Math.round(baseArea * circulationFactor);
+  }
+
+  const vis =
+    typeof params.visualAreaEstimateSqm === 'number' &&
+    Number.isFinite(params.visualAreaEstimateSqm) &&
+    params.visualAreaEstimateSqm > 0
+      ? Math.round(params.visualAreaEstimateSqm)
+      : null;
+
+  let finalArea = ruleArea;
+  if (vis && vis >= ruleArea * 0.45 && vis <= ruleArea * 2.2) {
+    finalArea = Math.round(ruleArea * 0.55 + vis * 0.45);
+  }
+
+  return Math.max(14, Math.min(600, finalArea));
+}
+
+const TIER1_PREMIUM_LOCATIONS = [
+  'ivandry',
+  'alarobia',
+  'ambatobe',
+  'ambodivoanjo',
+  'ankorondrano',
+  'isoraka',
+  'ambohijatovo',
+  'faravohitra',
+  'ambatoroka',
+  'ankerana',
+  'ankadibevava',
+  'analakely',
+  'antaninarenina',
+  'ambohibao',
+  'talatamaty',
+  'ivato aeroport',
+  'amborovy',
+];
+
+const TIER2_UPPER_MID_LOCATIONS = [
+  'analamahitsy',
+  'androhibe',
+  'nanisana',
+  'ampandrianomby',
+  'mahazoarivo',
+  'ankadifotsy',
+  'behoririka',
+  'antanimena',
+  'andranomena',
+  'ambohidratrimo',
+  'andranoro',
+  'alasora',
+  'bypass',
+  'tanjombato',
+  'ankadindramamy',
+  'soavimasoandro',
+  'amboditsiry',
+  'ambohipo',
+  'tsiadana',
+  'ankatso',
+  'ambolokandrina',
+  'mandroseza',
+  'ivato',
+  'ilafy',
+];
+
+const TIER4_POPULAR_LOCATIONS = [
+  'anosibe',
+  'isotry',
+  'manjakaray',
+  'andavamamba',
+  'ankazomanga',
+  'anatihazo',
+  'andohatapenaka',
+  'antohomadinika',
+  'namontana',
+  'mandrangobato',
+];
+
+function resolveLocationMarketMultiplier(locationText: string): {
+  multiplier: number;
+  recognizedTier: boolean;
+  tier: 'tier1_premium' | 'tier2_upper_mid' | 'tier3_accessible' | 'tier4_popular';
+} {
+  const norm = normalizeForFeatureMatching(locationText);
+  if (!norm) return { multiplier: 1.0, recognizedTier: false, tier: 'tier3_accessible' };
+
+  for (const kw of TIER1_PREMIUM_LOCATIONS) {
+    if (norm.includes(kw)) return { multiplier: 1.85, recognizedTier: true, tier: 'tier1_premium' };
+  }
+  for (const kw of TIER2_UPPER_MID_LOCATIONS) {
+    if (norm.includes(kw)) return { multiplier: 1.28, recognizedTier: true, tier: 'tier2_upper_mid' };
+  }
+  for (const kw of TIER4_POPULAR_LOCATIONS) {
+    if (norm.includes(kw)) return { multiplier: 0.74, recognizedTier: true, tier: 'tier4_popular' };
+  }
+  if (
+    /\b(?:itaosy|ambohimangakely|sabotsy\s+namehana|ambohimanarina|anosizato|ampitatafika|andoharanofotsy|fenoarivo|bemasoandro|mahitsy|iavoloha|67\s*ha)\b/iu.test(
+      norm,
+    )
+  ) {
+    return { multiplier: 1.0, recognizedTier: true, tier: 'tier3_accessible' };
+  }
+  return { multiplier: 1.0, recognizedTier: false, tier: 'tier3_accessible' };
+}
+
+function roundMalagasyPrice(amount: number, type: 'rent' | 'sale'): number {
+  if (!Number.isFinite(amount) || amount <= 0) return 0;
+  if (type === 'sale') {
+    if (amount < 20_000_000) return Math.round(amount / 500_000) * 500_000;
+    return Math.round(amount / 1_000_000) * 1_000_000;
+  }
+  if (amount < 200_000) return Math.round(amount / 5_000) * 5_000;
+  if (amount < 600_000) return Math.round(amount / 10_000) * 10_000;
+  if (amount < 2_000_000) return Math.round(amount / 25_000) * 25_000;
+  return Math.round(amount / 50_000) * 50_000;
+}
+
+/**
+ * Hybrid Madagascar Real Estate Price/Rent Estimator.
+ * Works reliably even when the database has 0 historical comparables by combining:
+ * 1) Built-in Antananarivo/Madagascar neighborhood + typology + standing calibration matrix
+ * 2) Gemini Vision / AI price estimate (when available)
+ * 3) Database comparable median (when available)
+ */
+export function estimatePropertyPriceAriary(params: {
+  type?: 'rent' | 'sale' | string | null;
+  houseType?: string | null;
+  fokontany?: string | null;
+  commune?: string | null;
+  district?: string | null;
+  rooms?: number | null;
+  livingRoom?: number | null;
+  kitchen?: number | null;
+  toilet?: number | null;
+  bathrooms?: number | null;
+  area?: number | null;
+  estimatedArea?: number | null;
+  features?: Partial<Record<string, unknown>> | null;
+  visualCondition?: VisualCondition | string | null;
+  locationHints?: string[] | null;
+  cityLabel?: string | null;
+  rawText?: string | null;
+  geminiEstimateAriary?: number | null;
+  geminiEstimatedPriceAriary?: number | null;
+  dbComparableMedianAriary?: number | null;
+  dbComparableCount?: number;
+}): PriceEstimationResult {
+  const txType: 'rent' | 'sale' = params.type === 'sale' ? 'sale' : 'rent';
+  const ht = String(params.houseType || 'maison').toLowerCase();
+  const f = params.features || {};
+
+  const effectiveArea =
+    typeof params.area === 'number' && params.area > 0
+      ? params.area
+      : typeof params.estimatedArea === 'number' && params.estimatedArea > 0
+      ? params.estimatedArea
+      : estimatePropertyArea({
+          houseType: ht,
+          rooms: params.rooms,
+          livingRoom: params.livingRoom,
+          kitchen: params.kitchen,
+          toilet: params.toilet,
+          bathrooms: params.bathrooms,
+          features: f,
+        });
+
+  const rooms = typeof params.rooms === 'number' && params.rooms >= 0 ? params.rooms : 2;
+  const living = typeof params.livingRoom === 'number' && params.livingRoom >= 0 ? params.livingRoom : 1;
+
+  const locationContext = [
+    ...(Array.isArray(params.locationHints) ? params.locationHints : []),
+    params.fokontany || '',
+    params.commune || '',
+    params.district || '',
+    params.cityLabel || '',
+    params.rawText || '',
+  ].join(' ');
+  const { multiplier: zoneMultiplier, recognizedTier, tier } =
+    resolveLocationMarketMultiplier(locationContext);
+
+  let baseAmount: number;
+  if (txType === 'rent') {
+    if (ht === 'tsena') {
+      baseAmount = Math.max(220_000, effectiveArea * 15_000);
+    } else if (ht === 'bureau') {
+      baseAmount = Math.max(350_000, effectiveArea * 12_500);
+    } else if (ht === 'villa') {
+      baseAmount = Math.max(750_000, effectiveArea * 10_500);
+    } else {
+      const totalMainRooms = Math.max(1, rooms + living);
+      if (totalMainRooms <= 1) {
+        baseAmount = 150_000;
+      } else if (totalMainRooms === 2) {
+        baseAmount = 270_000;
+      } else if (totalMainRooms === 3) {
+        baseAmount = 410_000;
+      } else if (totalMainRooms === 4) {
+        baseAmount = 590_000;
+      } else {
+        baseAmount = 590_000 + (totalMainRooms - 4) * 150_000;
+      }
+      // Blend room-based anchor with surface-based anchor
+      const surfaceAnchor = effectiveArea * 6_800;
+      baseAmount = baseAmount * 0.65 + surfaceAnchor * 0.35;
+    }
+  } else {
+    // Sale price in Ariary
+    if (ht === 'villa') {
+      baseAmount = Math.max(120_000_000, effectiveArea * 1_850_000);
+    } else if (ht === 'bureau' || ht === 'tsena') {
+      baseAmount = Math.max(70_000_000, effectiveArea * 1_650_000);
+    } else {
+      baseAmount = Math.max(45_000_000, effectiveArea * 1_400_000);
+    }
+  }
+
+  let standingMultiplier = 1.0;
+  if (params.visualCondition === 'new_or_modern') standingMultiplier *= 1.3;
+  else if (params.visualCondition === 'good') standingMultiplier *= 1.1;
+  else if (params.visualCondition === 'basic_or_worn') standingMultiplier *= 0.78;
+
+  if (f.furnishedProperty) standingMultiplier *= txType === 'rent' ? 1.38 : 1.12;
+  if (f.carAccess || f.parkingSpaceAvailable || f.garage) standingMultiplier *= 1.16;
+  else if (f.motoAccess) standingMultiplier *= 0.86;
+
+  if (f.insideToilet === false || f.insideBathroom === false) standingMultiplier *= 0.76;
+  if (f.waterFetchExternal) standingMultiplier *= 0.65;
+  if (f.swimmingPool) standingMultiplier *= 1.35;
+  if (f.airConditionerAvailable || f.hotWaterAvailable) standingMultiplier *= 1.08;
+  if (f.independentHouse && ht !== 'villa') standingMultiplier *= 1.1;
+
+  const matrixEstimate = baseAmount * zoneMultiplier * standingMultiplier;
+
+  const rawGeminiEst = params.geminiEstimatedPriceAriary ?? params.geminiEstimateAriary;
+  const geminiEst =
+    typeof rawGeminiEst === 'number' &&
+    Number.isFinite(rawGeminiEst) &&
+    rawGeminiEst > 0
+      ? rawGeminiEst
+      : null;
+
+  const dbMedian =
+    typeof params.dbComparableMedianAriary === 'number' &&
+    Number.isFinite(params.dbComparableMedianAriary) &&
+    params.dbComparableMedianAriary > 0
+      ? params.dbComparableMedianAriary
+      : null;
+  const dbCount = Number(params.dbComparableCount) || 0;
+
+  let blended = matrixEstimate;
+  let confidence: 'high' | 'medium' | 'low' = recognizedTier ? 'medium' : 'low';
+
+  const geminiPlausible =
+    geminiEst !== null &&
+    geminiEst >= matrixEstimate * 0.35 &&
+    geminiEst <= matrixEstimate * 2.8;
+
+  if (dbMedian && dbCount >= 2) {
+    if (geminiPlausible && geminiEst) {
+      blended = dbMedian * 0.5 + geminiEst * 0.3 + matrixEstimate * 0.2;
+    } else {
+      blended = dbMedian * 0.65 + matrixEstimate * 0.35;
+    }
+    confidence = 'high';
+  } else if (geminiPlausible && geminiEst) {
+    blended = geminiEst * 0.55 + matrixEstimate * 0.45;
+    const ratio = Math.max(geminiEst, matrixEstimate) / Math.min(geminiEst, matrixEstimate);
+    confidence = ratio <= 1.3 && recognizedTier ? 'high' : 'medium';
+  } else if (dbMedian && dbCount === 1) {
+    blended = dbMedian * 0.45 + matrixEstimate * 0.55;
+    confidence = 'medium';
+  }
+
+  const estimatedAmount = Math.max(
+    txType === 'sale' ? 15_000_000 : 50_000,
+    roundMalagasyPrice(blended, txType),
+  );
+  const estimatedMin = roundMalagasyPrice(estimatedAmount * 0.85, txType);
+  const estimatedMax = roundMalagasyPrice(estimatedAmount * 1.15, txType);
+
+  return {
+    estimatedAmount,
+    estimatedMin,
+    estimatedMax,
+    minAmount: estimatedMin,
+    maxAmount: estimatedMax,
+    tier,
+    confidence,
+  };
+}
+
+/**
+ * Computes a holistic 0-100 property quality score combining:
+ * 1) Visual condition & photo richness (0-35 pts)
+ * 2) Data completeness & property comfort/access (0-35 pts)
+ * 3) Reliability & text-photo coherence (0-20 pts)
+ * 4) Publication freshness (0-10 pts)
+ */
+export function computePropertyQualityScore(params: {
+  photoCount?: number;
+  visualCondition?: VisualCondition | string | null;
+  hasExplicitPrice?: boolean;
+  estimatedPriceConfidence?: 'high' | 'medium' | 'low' | string | null;
+  hasMatchedCity?: boolean;
+  hasResolvedCoords?: boolean;
+  hasCoords?: boolean;
+  rooms?: number | null;
+  livingRoom?: number | null;
+  kitchen?: number | null;
+  toilet?: number | null;
+  bathrooms?: number | null;
+  area?: number | null;
+  estimatedArea?: number | null;
+  descriptionLength?: number | null;
+  features?: Partial<Record<string, unknown>> | null;
+  aiConfidence?: 'high' | 'medium' | 'low' | string | null;
+  hasPhone?: boolean;
+  hasPhones?: boolean;
+  datePosted?: Date | string | null;
+  publishedAt?: Date | string | null;
+}): number {
+  let score = 0;
+  const photos = Math.max(0, Number(params.photoCount) || 0);
+  const f = params.features || {};
+
+  // 1. Visual quality & photo richness (max 35)
+  if (photos >= 5) score += 18;
+  else if (photos >= 3) score += 14;
+  else if (photos >= 1) score += 8;
+
+  if (params.visualCondition === 'new_or_modern') score += 17;
+  else if (params.visualCondition === 'good') score += 13;
+  else if (params.visualCondition === 'basic_or_worn') score += 5;
+  else score += 10; // 'average' or default
+
+  // 2. Data completeness & comfort (max 35)
+  if (params.hasExplicitPrice) score += 10;
+  else if (params.estimatedPriceConfidence === 'high') score += 7;
+  else score += 4;
+
+  if (params.hasMatchedCity) score += 6;
+  if (params.hasResolvedCoords || params.hasCoords) score += 3;
+  if (typeof params.rooms === 'number' && params.rooms > 0) score += 4;
+  if (typeof params.descriptionLength === 'number' && params.descriptionLength >= 80) score += 2;
+
+  if (f.insideToilet !== false && f.insideBathroom !== false) score += 4;
+  else if (f.insideToilet || f.insideBathroom) score += 2;
+
+  if (f.carAccess || f.parkingSpaceAvailable || f.garage) score += 4;
+  else if (f.motoAccess) score += 2;
+
+  if (
+    (f.electricityJirama || f.electricityPower || f.solarPanels) &&
+    (f.waterPumpSupplyJirama || f.waterPumpSupply || f.waterWellSupply)
+  ) {
+    score += 4;
+  } else if (!f.waterFetchExternal) {
+    score += 2;
+  }
+
+  // 3. Reliability & transparency (max 20)
+  if (params.aiConfidence === 'high') score += 12;
+  else if (params.aiConfidence === 'low') score += 3;
+  else score += 8;
+
+  const hasValidPhone =
+    params.hasPhones !== undefined
+      ? Boolean(params.hasPhones)
+      : params.hasPhone !== false;
+  if (hasValidPhone) score += 8;
+
+  // 4. Freshness (max 10)
+  const effectiveDate = params.datePosted ?? params.publishedAt;
+  if (effectiveDate) {
+    const postMs = new Date(effectiveDate).getTime();
+    if (!Number.isNaN(postMs)) {
+      const ageHours = Math.max(0, (Date.now() - postMs) / 3_600_000);
+      if (ageHours <= 24) score += 10;
+      else if (ageHours <= 72) score += 8;
+      else if (ageHours <= 168) score += 6;
+      else if (ageHours <= 720) score += 3;
+      else score += 1;
+    } else {
+      score += 5;
+    }
+  } else {
+    score += 6;
+  }
+
+  return Math.max(1, Math.min(100, Math.round(score)));
 }

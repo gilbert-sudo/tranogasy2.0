@@ -32,7 +32,7 @@ describe('property-types.util', () => {
 
     expect(getRequiredMissingSpecs('tsena')).toEqual(['area']);
     expect(getRequiredMissingSpecs('bureau')).toEqual(['area']);
-    expect(getRequiredMissingSpecs('maison')).toEqual(['rooms', 'toilet', 'bathrooms', 'area']);
+    expect(getRequiredMissingSpecs('maison')).toEqual(['rooms', 'toilet', 'bathrooms']);
   });
 
   it('builds backwards-compatible Mongo houseType filters', () => {

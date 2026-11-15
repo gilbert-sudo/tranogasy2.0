@@ -25,6 +25,7 @@ import { usePropertyDetailModalStore } from '@/store/propertyDetailModalStore';
 import { useProperty } from '@/hooks/useProperty';
 import { useFavorite } from '@/hooks/useFavorite';
 import { resolveProfileHref } from '@/services/user.service';
+import { formatPublicationDateTime, formatExactPublicationDateTime } from '@/lib/dateFormat';
 
 const FEATURE_ICONS: Record<string, { icon: React.ElementType, label: string }> = {
   electricityJirama: { icon: FaPlugCircleBolt, label: "Électricité JIRAMA" },
@@ -65,19 +66,6 @@ const FEATURE_ICONS: Record<string, { icon: React.ElementType, label: string }> 
   insideToilet: { icon: MdWc, label: "W.C intérieur" },
   insideBathroom: { icon: FaShower, label: "Douche intérieure" },
 };
-
-function formatDateAgo(dateString?: string) {
-  if (!dateString) return 'Nouveau';
-  const date = new Date(dateString);
-  const now = new Date();
-  const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-  
-  const diffInMonths = Math.floor(diffInSeconds / (3600 * 24 * 30));
-  if (diffInMonths > 0) return `il y a ${diffInMonths} mois`;
-  const diffInDays = Math.floor(diffInSeconds / (3600 * 24));
-  if (diffInDays > 0) return `il y a ${diffInDays} jours`;
-  return "Récent";
-}
 
 function LazyPropertyMap({ position, circle }: { position: any; circle?: boolean }) {
   const [shouldRender, setShouldRender] = useState(false);
@@ -189,7 +177,18 @@ function PropertyDetailsContent({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [lightboxIndex, images.length]);
 
-  const displayPrice = property?.type === 'rent' ? property?.rent : property?.price;
+  const explicitPrice = property?.type === 'rent' ? property?.rent : property?.price;
+  const fallbackEstimatedPrice =
+    property?.type === 'rent' ? property?.estimatedRent : property?.estimatedPrice;
+  const displayPrice =
+    explicitPrice && Number(explicitPrice) > 0
+      ? Number(explicitPrice)
+      : fallbackEstimatedPrice && Number(fallbackEstimatedPrice) > 0
+      ? Number(fallbackEstimatedPrice)
+      : null;
+  const isEstimatedDisplay =
+    !(explicitPrice && Number(explicitPrice) > 0) &&
+    Boolean(fallbackEstimatedPrice && Number(fallbackEstimatedPrice) > 0);
 
   const formatCompactPrice = (val: number | string | undefined | null) => {
     if (!val) return 'Sur demande';
@@ -226,27 +225,27 @@ function PropertyDetailsContent({
     floor: property?.floor,
   });
 
-  const toiletCount = (property?.toilet !== undefined && property?.toilet !== null && Number(property.toilet) > 0)
+  const toiletCount = (property?.toilet !== undefined && property?.toilet !== null)
     ? Number(property.toilet)
-    : (property?.features?.insideToilet ? 1 : 0);
+    : (isCommercial ? (property?.features?.insideToilet ? 1 : 0) : 1);
 
   const bathroomCount = isCommercial
     ? 0
-    : (property?.bathrooms !== undefined && property?.bathrooms !== null && Number(property.bathrooms) > 0)
+    : (property?.bathrooms !== undefined && property?.bathrooms !== null)
       ? Number(property.bathrooms)
-      : (property?.features?.insideBathroom ? 1 : 0);
+      : 1;
 
   const kitchenCount = isCommercial
     ? 0
-    : (property?.kitchen !== undefined && property?.kitchen !== null && Number(property.kitchen) > 0)
+    : (property?.kitchen !== undefined && property?.kitchen !== null)
       ? Number(property.kitchen)
-      : (property?.features?.openKitchen || property?.features?.kitchenFacilities || property?.features?.placardKitchen ? 1 : 0);
+      : 1;
 
   const livingRoomCount = isCommercial
     ? 0
-    : (property?.livingRoom !== undefined && property?.livingRoom !== null && Number(property.livingRoom) > 0)
+    : (property?.livingRoom !== undefined && property?.livingRoom !== null)
       ? Number(property.livingRoom)
-      : (property?.features?.furnishedProperty ? 1 : 0);
+      : (Number(property?.rooms) === 1 ? 0 : 1);
 
   const activeFeatures = property?.features 
     ? Object.entries(property.features)
@@ -300,13 +299,39 @@ function PropertyDetailsContent({
       ]
     : [
         { value: property?.rooms || 0, label: "Chambres", icon: BedDouble },
-        { value: livingRoomCount || 0, label: "Salon", icon: Home },
+        { value: livingRoomCount > 0 ? livingRoomCount : 'Non', label: "Salon", icon: Home },
         { value: kitchenCount || 0, label: "Cuisine", icon: Utensils },
         { value: bathroomCount || 0, label: "Douches", icon: Droplets },
         { value: toiletCount || 0, label: "W.C", icon: Grid2X2 },
         ...(property?.floor ? [{ value: property.floor, label: "Étage", icon: Layers }] : []),
-        { value: parsedArea ? `${parsedArea}` : 'Non précisée', label: "Surface (m²)", icon: Expand },
+        ...(parsedArea ? [{ value: `${parsedArea}`, label: "Surface (m²)", icon: Expand }] : []),
       ];
+
+  const hasVisitFee = property?.visitFee !== undefined && property?.visitFee !== null;
+  const resolvedCautionPercent =
+    property?.cautionPercent !== undefined && property?.cautionPercent !== null
+      ? Number(property.cautionPercent)
+      : null;
+  const resolvedCautionAmount =
+    property?.cautionAmount !== undefined && property?.cautionAmount !== null
+      ? Number(property.cautionAmount)
+      : resolvedCautionPercent !== null && displayPrice
+        ? Math.round((Number(displayPrice) * resolvedCautionPercent) / 100)
+        : null;
+  const hasCaution = resolvedCautionPercent !== null || resolvedCautionAmount !== null;
+
+  const resolvedCommissionPercent =
+    property?.commissionPercent !== undefined && property?.commissionPercent !== null
+      ? Number(property.commissionPercent)
+      : null;
+  const resolvedCommissionAmount =
+    property?.commissionAmount !== undefined && property?.commissionAmount !== null
+      ? Number(property.commissionAmount)
+      : resolvedCommissionPercent !== null && displayPrice
+        ? Math.round((Number(displayPrice) * resolvedCommissionPercent) / 100)
+        : null;
+  const hasCommission = resolvedCommissionPercent !== null || resolvedCommissionAmount !== null;
+  const hasAnyAgencyFee = hasVisitFee || hasCaution || hasCommission;
 
   const handleMobileScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const scrollPosition = e.currentTarget.scrollLeft;
@@ -514,12 +539,24 @@ function PropertyDetailsContent({
       </div>
 
       <div className="mb-5 lg:mb-6">
-        <div className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-widest mb-1">
-          {property.type === 'rent' ? 'Loyer Mensuel' : 'Prix de Vente'}
+        <div className="flex items-center gap-2 mb-1">
+          <div className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-widest">
+            {property.type === 'rent' ? 'Loyer Mensuel' : 'Prix de Vente'}
+          </div>
+          {isEstimatedDisplay && (
+            <span
+              title="L'annonceur n'a pas mentionné le prix exact. Ce montant est une estimation générée par TranoGasy selon le quartier, la typologie et les photos."
+              className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-amber-600 dark:text-amber-400"
+            >
+              Estimation TranoGasy
+            </span>
+          )}
         </div>
         <div className="flex items-baseline gap-1 text-brand-green">
           <span className="text-xl sm:text-2xl lg:text-3xl font-black tracking-tight">
-            {displayPrice ? displayPrice.toLocaleString('en-US') : 'Sur demande'}
+            {displayPrice
+              ? `${isEstimatedDisplay ? '~' : ''}${displayPrice.toLocaleString('en-US')}`
+              : 'Sur demande'}
           </span>
           {displayPrice && (
             <span className="text-xs sm:text-sm lg:text-base font-bold ml-1">
@@ -527,7 +564,107 @@ function PropertyDetailsContent({
             </span>
           )}
         </div>
+        {isEstimatedDisplay &&
+          property.estimatedPriceMin &&
+          property.estimatedPriceMax && (
+            <p className="mt-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+              Prix non mentionné par l&apos;annonceur • Fourchette estimée par nos systèmes :{' '}
+              <span className="font-semibold text-zinc-700 dark:text-zinc-200">
+                {Number(property.estimatedPriceMin).toLocaleString('fr-FR')} –{' '}
+                {Number(property.estimatedPriceMax).toLocaleString('fr-FR')} Ar
+              </span>
+            </p>
+          )}
       </div>
+
+      {/* DEDICATED AGENCY & ENTRY FEES UI (ONLY WHEN MENTIONED) */}
+      {hasAnyAgencyFee && (
+        <div className="mb-5 lg:mb-6 rounded-2xl border border-amber-200/80 dark:border-amber-800/50 bg-amber-50/50 dark:bg-amber-950/20 p-3.5 sm:p-4 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] font-extrabold uppercase tracking-wider text-amber-800 dark:text-amber-300">
+              Conditions &amp; Frais d&apos;entrée mentionnés
+            </span>
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-800 dark:text-amber-200">
+              À prévoir
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            {hasVisitFee && (
+              <div className="rounded-xl bg-white dark:bg-zinc-900 border border-amber-200/70 dark:border-zinc-800 p-3 flex flex-col justify-between">
+                <div className="flex items-center justify-between gap-1.5 mb-1">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                    Droit de visite
+                  </span>
+                  {Number(property.visitFee) > 0 && (
+                    <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300">
+                      {(Number(property.visitFee) * 5).toLocaleString('fr-FR')} FMG
+                    </span>
+                  )}
+                </div>
+                <div className="text-base sm:text-lg font-black text-zinc-900 dark:text-white leading-tight">
+                  {Number(property.visitFee) === 0
+                    ? 'Gratuit (0 Ar)'
+                    : `${Number(property.visitFee).toLocaleString('fr-FR')} Ar`}
+                </div>
+                <p className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-1 leading-snug">
+                  À régler pour visiter les lieux
+                </p>
+              </div>
+            )}
+
+            {hasCaution && (
+              <div className="rounded-xl bg-white dark:bg-zinc-900 border border-amber-200/70 dark:border-zinc-800 p-3 flex flex-col justify-between">
+                <div className="flex items-center justify-between gap-1.5 mb-1">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                    Caution
+                  </span>
+                  {resolvedCautionPercent !== null && (
+                    <span className="px-1.5 py-0.5 rounded-md text-[10px] font-extrabold bg-brand-green/15 text-brand-green">
+                      {resolvedCautionPercent === 100
+                        ? '1 mois (100%)'
+                        : `${resolvedCautionPercent}% du loyer`}
+                    </span>
+                  )}
+                </div>
+                <div className="text-base sm:text-lg font-black text-zinc-900 dark:text-white leading-tight">
+                  {resolvedCautionAmount !== null
+                    ? `${resolvedCautionAmount.toLocaleString('fr-FR')} Ar`
+                    : `${resolvedCautionPercent}% du loyer`}
+                </div>
+                <p className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-1 leading-snug">
+                  Payable une seule fois au propriétaire en plus du loyer
+                </p>
+              </div>
+            )}
+
+            {hasCommission && (
+              <div className="rounded-xl bg-white dark:bg-zinc-900 border border-amber-200/70 dark:border-zinc-800 p-3 flex flex-col justify-between">
+                <div className="flex items-center justify-between gap-1.5 mb-1">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                    Commission
+                  </span>
+                  {resolvedCommissionPercent !== null && (
+                    <span className="px-1.5 py-0.5 rounded-md text-[10px] font-extrabold bg-amber-500/15 text-amber-800 dark:text-amber-300">
+                      {resolvedCommissionPercent === 100
+                        ? '1 mois (100%)'
+                        : `${resolvedCommissionPercent}% du loyer`}
+                    </span>
+                  )}
+                </div>
+                <div className="text-base sm:text-lg font-black text-zinc-900 dark:text-white leading-tight">
+                  {resolvedCommissionAmount !== null
+                    ? `${resolvedCommissionAmount.toLocaleString('fr-FR')} Ar`
+                    : `${resolvedCommissionPercent}% du loyer`}
+                </div>
+                <p className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-1 leading-snug">
+                  Frais d&apos;agent immobilier avant de prendre le bien
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* COMPACT STATS GRID */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3 gap-2 sm:gap-2.5 mb-6 lg:mb-8">
@@ -715,7 +852,12 @@ function PropertyDetailsContent({
                         <span className="font-bold text-zinc-900 dark:text-white group-hover:text-brand-green transition-colors text-sm sm:text-base truncate">
                           {property.owner?.role === "admin" ? (property.sources?.username || "TranoGasy") : (property.owner?.username || "Utilisateur")}
                         </span>
-                        <span className="text-xs text-brand-green font-semibold mt-0.5">Annonce {formatDateAgo(property.created_at)}</span>
+                        <span
+                          className="text-xs text-brand-green font-semibold mt-0.5"
+                          title={formatExactPublicationDateTime(property.created_at) ? `Publiée le ${formatExactPublicationDateTime(property.created_at)}` : undefined}
+                        >
+                          Publiée {formatPublicationDateTime(property.created_at)}
+                        </span>
                      </div>
                    </div>
                    <ChevronRight className="w-4.5 h-4.5 text-zinc-400 group-hover:text-brand-green group-hover:translate-x-0.5 transition-all shrink-0" />
@@ -768,11 +910,17 @@ function PropertyDetailsContent({
       >
         {/* Left: Price Section */}
         <div className="flex flex-col min-w-0 pr-1">
-          <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider leading-none mb-1">
-            {property.type === 'rent' ? 'Loyer Mensuel' : 'Prix de vente'}
+          <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider leading-none mb-1 flex items-center gap-1">
+            <span>{property.type === 'rent' ? 'Loyer Mensuel' : 'Prix de vente'}</span>
+            {isEstimatedDisplay && (
+              <span className="rounded bg-amber-500/15 px-1 py-0.5 text-[8px] font-extrabold text-amber-600 dark:text-amber-400">
+                EST. IA
+              </span>
+            )}
           </span>
           <div className="flex items-baseline gap-1 text-zinc-950 dark:text-white">
             <span className="text-xl sm:text-2xl font-black tracking-tight">
+              {displayPrice && isEstimatedDisplay ? '~' : ''}
               {formatCompactPrice(displayPrice)}
             </span>
             {displayPrice && (

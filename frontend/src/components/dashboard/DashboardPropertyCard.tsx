@@ -62,6 +62,7 @@ import { TbAirConditioning, TbBuildingCastle, TbWash } from 'react-icons/tb';
 import { TfiLayoutSidebarLeft } from 'react-icons/tfi';
 import { usePropertyDetailModalStore } from '@/store/propertyDetailModalStore';
 import PropertyStatsModal from './PropertyStatsModal';
+import { formatPublicationDateTime, formatExactPublicationDateTime } from '@/lib/dateFormat';
 
 const FEATURE_ICONS: Record<string, React.ElementType> = {
   electricityJirama: FaPlugCircleBolt,
@@ -113,25 +114,6 @@ function extractSurfaceFromText(text?: string): number | null {
     if (!isNaN(val) && val > 0) return val;
   }
   return null;
-}
-
-function formatDateAgo(dateString?: string) {
-  if (!dateString) return 'Nouveau';
-  const date = new Date(dateString);
-  const now = new Date();
-  const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-
-  if (diffInSeconds < 60) return "À l'instant";
-  const diffInMinutes = Math.floor(diffInSeconds / 60);
-  if (diffInMinutes < 60) return `Il y a ${diffInMinutes} min`;
-  const diffInHours = Math.floor(diffInMinutes / 60);
-  if (diffInHours < 24) return `Il y a ${diffInHours} h`;
-  const diffInDays = Math.floor(diffInHours / 24);
-  if (diffInDays < 30) return `Il y a ${diffInDays} j`;
-  const diffInMonths = Math.floor(diffInDays / 30);
-  if (diffInMonths < 12) return `Il y a ${diffInMonths} mois`;
-  const diffInYears = Math.floor(diffInMonths / 12);
-  return `Il y a ${diffInYears} an${diffInYears > 1 ? 's' : ''}`;
 }
 
 export interface DashboardProperty {
@@ -423,9 +405,12 @@ function DashboardPropertyCardComponent({
           </div>
         </div>
 
-        {/* Top-Right: Time ago badge */}
-        <div className="absolute top-3 right-3 rounded-full bg-black/60 px-2.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-md border border-white/10 z-10">
-          {formatDateAgo(property.created_at)}
+        {/* Top-Right: Exact publication date/hour badge */}
+        <div
+          className="absolute top-3 right-3 rounded-full bg-black/60 px-2.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-md border border-white/10 z-10"
+          title={formatExactPublicationDateTime(property.created_at) ? `Publiée le ${formatExactPublicationDateTime(property.created_at)}` : undefined}
+        >
+          {formatPublicationDateTime(property.created_at, { compact: true })}
         </div>
       </div>
 

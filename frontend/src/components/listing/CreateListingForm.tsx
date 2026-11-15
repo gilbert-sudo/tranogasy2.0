@@ -90,6 +90,9 @@ export default function CreateListingForm({
   // Pricing (in Ariary MGA)
   const [rent, setRent] = useState<number | null>(null);
   const [price, setPrice] = useState<number | null>(null);
+  const [visitFee, setVisitFee] = useState<number | null>(null);
+  const [cautionPercent, setCautionPercent] = useState<number | null>(null);
+  const [commissionPercent, setCommissionPercent] = useState<number | null>(null);
 
   // Location
   const [selectedCity, setSelectedCity] = useState<CityLocation | null>(null);
@@ -325,6 +328,17 @@ export default function CreateListingForm({
         floor: usesFloor ? (floor.trim() || null) : null,
         price: type === 'sale' ? price : null,
         rent: type === 'rent' ? rent : null,
+        visitFee: visitFee != null && visitFee >= 0 ? visitFee : null,
+        cautionPercent: type === 'rent' && cautionPercent != null && cautionPercent > 0 ? cautionPercent : null,
+        cautionAmount:
+          type === 'rent' && cautionPercent != null && cautionPercent > 0 && rent
+            ? Math.round((rent * cautionPercent) / 100)
+            : null,
+        commissionPercent: commissionPercent != null && commissionPercent > 0 ? commissionPercent : null,
+        commissionAmount:
+          commissionPercent != null && commissionPercent > 0 && currentPriceValue
+            ? Math.round((currentPriceValue * commissionPercent) / 100)
+            : null,
         city: selectedCity?._id,
         coords: coords || selectedCity?.coords || null,
         rooms: isCommercial ? 0 : (Number(rooms) || 0),
@@ -534,6 +548,152 @@ export default function CreateListingForm({
             </button>
           );
         })}
+      </div>
+
+      {/* Optional Agency & Entry Conditions (Droit de visite, Caution, Commission) */}
+      <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800/80 space-y-2.5">
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+            Conditions &amp; Frais (Optionnel)
+          </span>
+          <span className="text-[10px] font-medium text-zinc-400">
+            Uniquement si applicable
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          {/* Droit de visite */}
+          <div className="rounded-2xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200/70 dark:border-zinc-800 p-2.5 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                Droit de visite
+              </label>
+              {visitFee != null && (
+                <button
+                  type="button"
+                  onClick={() => setVisitFee(null)}
+                  className="text-[10px] font-semibold text-zinc-400 hover:text-red-500 cursor-pointer"
+                >
+                  Effacer
+                </button>
+              )}
+            </div>
+            <input
+              type="number"
+              min={0}
+              step={1000}
+              value={visitFee != null ? visitFee : ''}
+              onChange={(e) => {
+                const v = e.target.value.trim();
+                setVisitFee(v === '' ? null : Math.max(0, parseInt(v, 10) || 0));
+              }}
+              placeholder="Non mentionné"
+              className="w-full px-2.5 py-1.5 rounded-xl bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs font-bold text-zinc-900 dark:text-white focus:outline-none focus:border-brand-green"
+            />
+            <div className="flex flex-wrap gap-1">
+              {[0, 5000, 10000].map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setVisitFee(visitFee === v ? null : v)}
+                  className={`px-2 py-0.5 rounded-lg text-[10px] font-bold cursor-pointer transition ${
+                    visitFee === v
+                      ? 'bg-brand-green text-white'
+                      : 'bg-zinc-200/60 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300'
+                  }`}
+                >
+                  {v === 0 ? 'Gratuit' : `${v / 1000}k Ar`}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Caution (% du loyer) */}
+          {type === 'rent' && (
+            <div className="rounded-2xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200/70 dark:border-zinc-800 p-2.5 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                  Caution (%)
+                </label>
+                {cautionPercent != null && rent ? (
+                  <span className="text-[10px] font-bold text-brand-green">
+                    {Math.round((rent * cautionPercent) / 100).toLocaleString('fr-FR')} Ar
+                  </span>
+                ) : null}
+              </div>
+              <input
+                type="number"
+                min={0}
+                max={300}
+                value={cautionPercent != null ? cautionPercent : ''}
+                onChange={(e) => {
+                  const v = e.target.value.trim();
+                  setCautionPercent(v === '' ? null : Math.max(0, parseInt(v, 10) || 0));
+                }}
+                placeholder="Ex: 50 ou 100%"
+                className="w-full px-2.5 py-1.5 rounded-xl bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs font-bold text-zinc-900 dark:text-white focus:outline-none focus:border-brand-green"
+              />
+              <div className="flex flex-wrap gap-1">
+                {[50, 100].map((pct) => (
+                  <button
+                    key={pct}
+                    type="button"
+                    onClick={() => setCautionPercent(cautionPercent === pct ? null : pct)}
+                    className={`px-2 py-0.5 rounded-lg text-[10px] font-bold cursor-pointer transition ${
+                      cautionPercent === pct
+                        ? 'bg-brand-green text-white'
+                        : 'bg-zinc-200/60 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300'
+                    }`}
+                  >
+                    {pct === 100 ? '1 mois (100%)' : `${pct}%`}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Commission (% du loyer/prix) */}
+          <div className="rounded-2xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200/70 dark:border-zinc-800 p-2.5 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                Commission (%)
+              </label>
+              {commissionPercent != null && currentPriceValue ? (
+                <span className="text-[10px] font-bold text-brand-green">
+                  {Math.round((currentPriceValue * commissionPercent) / 100).toLocaleString('fr-FR')} Ar
+                </span>
+              ) : null}
+            </div>
+            <input
+              type="number"
+              min={0}
+              max={200}
+              value={commissionPercent != null ? commissionPercent : ''}
+              onChange={(e) => {
+                const v = e.target.value.trim();
+                setCommissionPercent(v === '' ? null : Math.max(0, parseInt(v, 10) || 0));
+              }}
+              placeholder="Ex: 50 ou 100%"
+              className="w-full px-2.5 py-1.5 rounded-xl bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs font-bold text-zinc-900 dark:text-white focus:outline-none focus:border-brand-green"
+            />
+            <div className="flex flex-wrap gap-1">
+              {[50, 100].map((pct) => (
+                <button
+                  key={pct}
+                  type="button"
+                  onClick={() => setCommissionPercent(commissionPercent === pct ? null : pct)}
+                  className={`px-2 py-0.5 rounded-lg text-[10px] font-bold cursor-pointer transition ${
+                    commissionPercent === pct
+                      ? 'bg-brand-green text-white'
+                      : 'bg-zinc-200/60 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300'
+                  }`}
+                >
+                  {pct === 100 ? '1 mois (100%)' : `${pct}%`}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

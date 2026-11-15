@@ -141,4 +141,27 @@ describe('fb-dedup.util', () => {
     expect(directPost).not.toBeNull();
     expect(directPost!.datePosted.toISOString()).toBe('2026-11-10T06:42:19.000Z');
   });
+
+  it('parses localized and relative Facebook date strings in Madagascar UTC+3', () => {
+    // 2026-11-15T11:21:00 in Antananarivo (UTC+3) = 2026-11-15T08:21:00.000Z
+    const refNow = new Date('2026-11-15T08:21:00.000Z');
+
+    // Yesterday at 10:18 AM (Tana) => 2026-11-14 10:18:00+03:00 = 2026-11-14T07:18:00.000Z
+    expect(parseBrightDataDate('Yesterday at 10:18 AM', refNow)?.toISOString()).toBe(
+      '2026-11-14T07:18:00.000Z',
+    );
+    expect(parseBrightDataDate('Hier à 10:18', refNow)?.toISOString()).toBe(
+      '2026-11-14T07:18:00.000Z',
+    );
+    expect(parseBrightDataDate("Aujourd'hui à 08:05", refNow)?.toISOString()).toBe(
+      '2026-11-15T05:05:00.000Z',
+    );
+    expect(parseBrightDataDate('3 hrs', refNow)?.toISOString()).toBe('2026-11-15T05:21:00.000Z');
+    expect(parseBrightDataDate('14 nov. à 10:18', refNow)?.toISOString()).toBe(
+      '2026-11-14T07:18:00.000Z',
+    );
+    expect(parseBrightDataDate('November 14 at 10:18 AM', refNow)?.toISOString()).toBe(
+      '2026-11-14T07:18:00.000Z',
+    );
+  });
 });

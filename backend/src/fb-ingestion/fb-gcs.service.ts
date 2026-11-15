@@ -1,6 +1,26 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Bucket, Storage } from '@google-cloud/storage';
+import sharp from 'sharp';
+
+export interface ImageContactBox {
+  ymin: number; // 0..1000
+  xmin: number; // 0..1000
+  ymax: number; // 0..1000
+  xmax: number; // 0..1000
+}
+
+export interface ImageContactRedactionSpec {
+  imageIndex: number;
+  isFullContactCard?: boolean;
+  boxes?: ImageContactBox[];
+}
+
+export interface VisionInlineImage {
+  index: number;
+  mimeType: string;
+  base64Data: string;
+}
 
 @Injectable()
 export class FbGcsService implements OnModuleInit {
@@ -54,11 +74,148 @@ export class FbGcsService implements OnModuleInit {
     return 'jpg';
   }
 
+  /**
+   * Downloads up to `maxImages` photos and downscales them to compact 768px JPEGs
+   * for low-token multimodal Gemini Vision OCR + property quality analysis.
+   */
+  async fetchVisionInlineImages(
+    photoUrls: string[],
+    maxImages = 4,
+  ): Promise<VisionInlineImage[]> {
+    if (!Array.isArray(photoUrls) || photoUrls.length === 0) return [];
+    const targets = photoUrls.slice(0, Math.max(1, Math.min(5, maxImages)));
+    const results: Array<VisionInlineImage | null> = await Promise.all(
+      targets.map(async (url, index) => {
+        try {
+          const res = await fetch(url, {
+            headers: {
+              'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+              Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+            },
+            signal: AbortSignal.timeout(10000),
+          });
+          if (!res.ok) return null;
+          const contentType = (res.headers.get('content-type') || 'image/jpeg').toLowerCase();
+          if (!contentType.startsWith('image/')) return null;
+
+          const rawBuf = Buffer.from(await res.arrayBuffer());
+          if (rawBuf.length < 500) return null;
+
+          try {
+            const resized = await sharp(rawBuf)
+              .rotate()
+              .resize({ width: 768, height: 768, fit: 'inside', withoutEnlargement: true })
+              .jpeg({ quality: 78 })
+              .toBuffer();
+            return {
+              index,
+              mimeType: 'image/jpeg',
+              base64Data: resized.toString('base64'),
+            };
+          } catch {
+            // Fallback if buffer is a synthetic test image that sharp cannot decode
+            return null;
+          }
+        } catch {
+          return null;
+        }
+      }),
+    );
+
+    return results.filter((item): item is VisionInlineImage => Boolean(item));
+  }
+
+  /**
+   * Server-side irreversible pixel redaction of phone numbers / contact watermarks on property photos.
+   * Crops each detected contact bounding box (0..1000 scale), applies a heavy blur + dark frosted mask,
+   * and composites it back onto the image so public users cannot inspect or download unblurred contacts.
+   */
+  async redactImageBuffer(
+    buffer: Buffer,
+    spec?: ImageContactRedactionSpec,
+  ): Promise<{ buffer: Buffer; redacted: boolean; mimeType?: string }> {
+    if (
+      !spec ||
+      (!spec.isFullContactCard && (!Array.isArray(spec.boxes) || spec.boxes.length === 0))
+    ) {
+      return { buffer, redacted: false };
+    }
+
+    try {
+      const baseImg = sharp(buffer).rotate();
+      const meta = await baseImg.metadata();
+      const imgW = meta.width || 0;
+      const imgH = meta.height || 0;
+      if (imgW < 16 || imgH < 16) {
+        return { buffer, redacted: false };
+      }
+
+      if (spec.isFullContactCard) {
+        const blurredFull = await baseImg
+          .blur(32)
+          .modulate({ brightness: 0.55 })
+          .jpeg({ quality: 84 })
+          .toBuffer();
+        return { buffer: blurredFull, redacted: true, mimeType: 'image/jpeg' };
+      }
+
+      const normBuf = await baseImg.toBuffer();
+      const overlays: Array<{ input: Buffer; left: number; top: number }> = [];
+
+      for (const box of spec.boxes || []) {
+        const ymin = Math.max(0, Math.min(1000, Number(box.ymin) || 0));
+        const xmin = Math.max(0, Math.min(1000, Number(box.xmin) || 0));
+        const ymax = Math.max(0, Math.min(1000, Number(box.ymax) || 0));
+        const xmax = Math.max(0, Math.min(1000, Number(box.xmax) || 0));
+        if (ymax <= ymin || xmax <= xmin) continue;
+
+        // Add a 2% safety margin around the detected phone digits
+        const padY = 20;
+        const padX = 20;
+        const y0 = Math.max(0, ymin - padY);
+        const x0 = Math.max(0, xmin - padX);
+        const y1 = Math.min(1000, ymax + padY);
+        const x1 = Math.min(1000, xmax + padX);
+
+        const left = Math.max(0, Math.floor((x0 / 1000) * imgW));
+        const top = Math.max(0, Math.floor((y0 / 1000) * imgH));
+        const width = Math.min(imgW - left, Math.ceil(((x1 - x0) / 1000) * imgW));
+        const height = Math.min(imgH - top, Math.ceil(((y1 - y0) / 1000) * imgH));
+
+        if (width < 4 || height < 4) continue;
+
+        const patch = await sharp(normBuf)
+          .extract({ left, top, width, height })
+          .blur(26)
+          .modulate({ brightness: 0.42 })
+          .toBuffer();
+
+        overlays.push({ input: patch, left, top });
+      }
+
+      if (overlays.length === 0) {
+        return { buffer, redacted: false };
+      }
+
+      const redactedBuffer = await sharp(normBuf)
+        .composite(overlays)
+        .jpeg({ quality: 86 })
+        .toBuffer();
+
+      return { buffer: redactedBuffer, redacted: true, mimeType: 'image/jpeg' };
+    } catch (err) {
+      this.logger.warn(`Image contact redaction skipped: ${(err as Error).message}`);
+      return { buffer, redacted: false };
+    }
+  }
+
   private async uploadSingleFbImage(
     url: string,
     idx: number,
     safePostId: string,
-  ): Promise<string> {
+    redactionSpec?: ImageContactRedactionSpec,
+  ): Promise<{ url: string; redacted: boolean }> {
     const res = await fetch(url, {
       headers: {
         'User-Agent':
@@ -72,19 +229,29 @@ export class FbGcsService implements OnModuleInit {
       throw new Error(`HTTP ${res.status} downloading FB image`);
     }
 
-    const contentType = res.headers.get('content-type') || 'image/jpeg';
+    let contentType = res.headers.get('content-type') || 'image/jpeg';
     if (!contentType.toLowerCase().startsWith('image/')) {
       throw new Error(`Unexpected content-type: ${contentType}`);
     }
 
     const arrayBuf = await res.arrayBuffer();
-    const buffer = Buffer.from(arrayBuf);
+    let buffer: Buffer = Buffer.from(arrayBuf);
     if (buffer.length < 500) {
       throw new Error(`Downloaded image too small (${buffer.length} bytes)`);
     }
 
-    const ext = this.getExtFromContentType(contentType, url);
-    const objectPath = `fb-ingested/${safePostId}_${Date.now()}_${idx}.${ext}`;
+    let redacted = false;
+    if (redactionSpec) {
+      const redResult = await this.redactImageBuffer(buffer, redactionSpec);
+      buffer = redResult.buffer;
+      redacted = redResult.redacted;
+      if (redResult.mimeType) {
+        contentType = redResult.mimeType;
+      }
+    }
+
+    const ext = redacted ? 'jpg' : this.getExtFromContentType(contentType, url);
+    const objectPath = `fb-ingested/${safePostId}_${Date.now()}_${idx}${redacted ? '_redacted' : ''}.${ext}`;
     const file = this.bucket!.file(objectPath);
 
     await file.save(buffer, {
@@ -95,43 +262,79 @@ export class FbGcsService implements OnModuleInit {
         metadata: {
           source: 'fb-ingestion',
           canonicalPostId: safePostId,
+          contactRedacted: String(redacted),
         },
       },
     });
 
-    return `https://storage.googleapis.com/${this.bucketName}/${objectPath}`;
+    return {
+      url: `https://storage.googleapis.com/${this.bucketName}/${objectPath}`,
+      redacted,
+    };
   }
 
   /**
-   * Downloads temporary Facebook CDN photos and persists them into GCS.
-   * Uses bounded concurrency (4) while preserving original photo ordering.
+   * Downloads temporary Facebook CDN photos, applies server-side contact redaction
+   * where Gemini Vision detected watermarked phone numbers, reorders the best cover
+   * photo to #1, and persists them into GCS.
    */
   async reuploadFbImages(
     photoUrls: string[],
     canonicalPostId: string,
-  ): Promise<{ uploadedUrls: string[]; failedCount: number; errors: string[] }> {
+    options?: {
+      redactions?: ImageContactRedactionSpec[];
+      recommendedCoverIndex?: number | null;
+    },
+  ): Promise<{
+    uploadedUrls: string[];
+    failedCount: number;
+    redactedCount: number;
+    errors: string[];
+  }> {
     const errors: string[] = [];
     let failedCount = 0;
+    let redactedCount = 0;
 
     if (!this.bucket) {
       return {
         uploadedUrls: [],
         failedCount: photoUrls.length,
+        redactedCount: 0,
         errors: ['GCS bucket is not initialized'],
       };
     }
 
     const targets = photoUrls.slice(0, 12);
     const safePostId = canonicalPostId.replace(/[^a-zA-Z0-9_-]/g, '');
-    const orderedResults: Array<string | null> = new Array(targets.length).fill(null);
+    const orderedResults: Array<{ url: string; index: number; isFullCard: boolean } | null> =
+      new Array(targets.length).fill(null);
+
+    const redactionMap = new Map<number, ImageContactRedactionSpec>();
+    for (const r of options?.redactions || []) {
+      if (typeof r?.imageIndex === 'number') {
+        redactionMap.set(r.imageIndex, r);
+      }
+    }
 
     let nextIndex = 0;
     const workerCount = Math.min(4, targets.length);
     const workers = Array.from({ length: workerCount }, async () => {
       while (nextIndex < targets.length) {
         const idx = nextIndex++;
+        const spec = redactionMap.get(idx);
         try {
-          orderedResults[idx] = await this.uploadSingleFbImage(targets[idx], idx, safePostId);
+          const uploaded = await this.uploadSingleFbImage(
+            targets[idx],
+            idx,
+            safePostId,
+            spec,
+          );
+          if (uploaded.redacted) redactedCount++;
+          orderedResults[idx] = {
+            url: uploaded.url,
+            index: idx,
+            isFullCard: Boolean(spec?.isFullContactCard),
+          };
         } catch (err) {
           failedCount++;
           const msg = (err as Error).message;
@@ -143,9 +346,38 @@ export class FbGcsService implements OnModuleInit {
 
     await Promise.all(workers);
 
+    const validItems = orderedResults.filter(
+      (item): item is { url: string; index: number; isFullCard: boolean } => Boolean(item),
+    );
+
+    // Promote the recommended cover photo to #1 (if valid and not a full contact card),
+    // and push full contact cards to the end of the gallery.
+    const recIdx = options?.recommendedCoverIndex;
+    const coverCandidate =
+      typeof recIdx === 'number' && recIdx > 0
+        ? validItems.find((item) => item.index === recIdx && !item.isFullCard)
+        : undefined;
+
+    const reordered: string[] = [];
+    if (coverCandidate) {
+      reordered.push(coverCandidate.url);
+    }
+    for (const item of validItems) {
+      if (coverCandidate && item.index === coverCandidate.index) continue;
+      if (!item.isFullCard) {
+        reordered.push(item.url);
+      }
+    }
+    for (const item of validItems) {
+      if (item.isFullCard) {
+        reordered.push(item.url);
+      }
+    }
+
     return {
-      uploadedUrls: orderedResults.filter((u): u is string => Boolean(u)),
+      uploadedUrls: reordered,
       failedCount,
+      redactedCount,
       errors,
     };
   }

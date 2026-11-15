@@ -37,27 +37,69 @@ export class PropertiesController {
     return verified;
   }
 
+  private extractOptionalViewerId(
+    authTokenHeader?: string,
+    authHeader?: string,
+    explicitViewerId?: string,
+  ): string | undefined {
+    const rawBearer = authHeader?.startsWith('Bearer ')
+      ? authHeader.slice(7).trim()
+      : undefined;
+    const token = authTokenHeader || rawBearer;
+    if (token) {
+      const secret = resolveAuthSecret(
+        this.configService.get<string>('AUTH_TOKEN_SECRET') ||
+          this.configService.get<string>('JWT_SECRET'),
+        this.configService.get<string>('DATABASE_URI'),
+      );
+      const verified = verifyAuthToken(token, secret);
+      if (verified?.userId) return verified.userId;
+    }
+    return explicitViewerId ? String(explicitViewerId).trim() : undefined;
+  }
+
   @Get()
   async getPaginatedProperties(
     @Query('page') page: string,
     @Query('limit') limit: string,
+    @Query('viewerId') viewerId?: string,
+    @Headers('x-auth-token') authToken?: string,
+    @Headers('authorization') authHeader?: string,
   ) {
+    const resolvedViewer = this.extractOptionalViewerId(authToken, authHeader, viewerId);
     return this.propertiesService.getPaginatedProperties(
       page ? parseInt(page, 10) : 1,
       limit ? parseInt(limit, 10) : 20,
+      resolvedViewer,
     );
   }
 
   @Get('latest')
-  async getLatestProperties(@Query('limit') limit: string) {
+  async getLatestProperties(
+    @Query('limit') limit: string,
+    @Query('viewerId') viewerId?: string,
+    @Headers('x-auth-token') authToken?: string,
+    @Headers('authorization') authHeader?: string,
+  ) {
+    const resolvedViewer = this.extractOptionalViewerId(authToken, authHeader, viewerId);
     return this.propertiesService.getLatestProperties(
       limit ? parseInt(limit, 10) : 10,
+      resolvedViewer,
     );
   }
 
   @Get('search')
-  async searchProperties(@Query() query: Record<string, any>) {
-    return this.propertiesService.searchProperties(query);
+  async searchProperties(
+    @Query() query: Record<string, any>,
+    @Headers('x-auth-token') authToken?: string,
+    @Headers('authorization') authHeader?: string,
+  ) {
+    const resolvedViewer = this.extractOptionalViewerId(
+      authToken,
+      authHeader,
+      query?.viewerId,
+    );
+    return this.propertiesService.searchProperties(query, resolvedViewer);
   }
 
   @Get('claimable')
@@ -88,8 +130,34 @@ export class PropertiesController {
   }
 
   @Get(':id')
-  async findOne(@Param('id') id: string) {
-    return this.propertiesService.findOne(id);
+  async findOne(
+    @Param('id') id: string,
+    @Query('viewerId') viewerId?: string,
+    @Headers('x-auth-token') authToken?: string,
+    @Headers('authorization') authHeader?: string,
+  ) {
+    const resolvedViewer = this.extractOptionalViewerId(authToken, authHeader, viewerId);
+    return this.propertiesService.findOne(id, resolvedViewer);
+  }
+
+  @Post(':id/unlock-contact')
+  async unlockContact(
+    @Param('id') id: string,
+    @Body() body?: { userId?: string },
+    @Headers('x-auth-token') authToken?: string,
+    @Headers('authorization') authHeader?: string,
+  ) {
+    const resolvedUserId = this.extractOptionalViewerId(
+      authToken,
+      authHeader,
+      body?.userId,
+    );
+    if (!resolvedUserId) {
+      throw new UnauthorizedException(
+        'Veuillez vous connecter pour débloquer ce contact.',
+      );
+    }
+    return this.propertiesService.unlockPropertyContact(id, resolvedUserId);
   }
 
   @Post()

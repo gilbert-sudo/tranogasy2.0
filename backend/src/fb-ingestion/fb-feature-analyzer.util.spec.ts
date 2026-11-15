@@ -1,11 +1,16 @@
 import {
+  computePropertyQualityScore,
   deriveAccessVerification,
   deriveFeatureVerification,
+  estimatePropertyArea,
+  estimatePropertyPriceAriary,
+  extractAgencyFees,
   extractDeterministicFeatures,
   hasKnownElectricitySupply,
   hasKnownWaterSupply,
   mergeGeminiAndDeterministicFeatures,
   preserveDescriptionLayout,
+  resolveResidentialRoomDefaults,
 } from './fb-feature-analyzer.util';
 
 describe('fb-feature-analyzer.util', () => {
@@ -41,12 +46,13 @@ describe('fb-feature-analyzer.util', () => {
       expect(features.electricityJirama).toBe(true);
       expect(features.waterPumpSupplyJirama).toBe(true);
       expect(features.electricityPower).toBe(true);
+      expect(features.furnishedProperty).toBe(false);
       expect(featureVerification).toEqual({
         carAccess: 'yes',
         motoAccess: 'yes',
         waterSupply: 'yes',
         electricitySupply: 'yes',
-        furnishedProperty: 'unknown',
+        furnishedProperty: 'no',
       });
     });
 
@@ -77,16 +83,17 @@ describe('fb-feature-analyzer.util', () => {
       expect(features.guardianHouse).toBe(true);
       expect(features.securitySystem).toBe(true);
       expect(features.placardKitchen).toBe(false);
-      // Unmentioned residential water & electricity default to probable JIRAMA while still flagged 'unknown'
+      // Unmentioned residential water & electricity default to probable JIRAMA ('yes') and unfurnished ('no')
       expect(features.waterPumpSupplyJirama).toBe(true);
       expect(features.electricityJirama).toBe(true);
       expect(features.electricityPower).toBe(true);
+      expect(features.furnishedProperty).toBe(false);
       expect(featureVerification).toEqual({
         carAccess: 'yes',
         motoAccess: 'yes',
-        waterSupply: 'unknown',
-        electricitySupply: 'unknown',
-        furnishedProperty: 'unknown',
+        waterSupply: 'yes',
+        electricitySupply: 'yes',
+        furnishedProperty: 'no',
       });
     });
 
@@ -128,7 +135,7 @@ describe('fb-feature-analyzer.util', () => {
       expect(res2.features.insideBathroom).toBe(true);
     });
 
-    it('handles explicit negations and Malagasy access restrictions accurately', () => {
+    it('handles explicit negations, moto-only inference when only accès moto is stated, and Malagasy access restrictions accurately', () => {
       const motoOnly = mergeGeminiAndDeterministicFeatures(
         { carAccess: true }, // Gemini hallucinated carAccess=true
         'Trano ahofa Sabotsy Namehana, moto ihany no miditra, tsisy parking, douche wc ivelany',
@@ -141,9 +148,25 @@ describe('fb-feature-analyzer.util', () => {
       expect(motoOnly.featureVerification).toEqual({
         carAccess: 'no',
         motoAccess: 'yes',
-        waterSupply: 'unknown',
-        electricitySupply: 'unknown',
-        furnishedProperty: 'unknown',
+        waterSupply: 'yes',
+        electricitySupply: 'yes',
+        furnishedProperty: 'no',
+      });
+
+      // When publisher mentions ONLY "accès moto" without mentioning car access -> conclude moto-only (carAccess = 'no')
+      const motoMentionedAlone = mergeGeminiAndDeterministicFeatures(
+        {},
+        'ambany rihana accès moto, mifefy tsara..',
+      );
+      expect(motoMentionedAlone.features.motoAccess).toBe(true);
+      expect(motoMentionedAlone.features.carAccess).toBe(false);
+      expect(motoMentionedAlone.features.surroundedByWalls).toBe(true);
+      expect(motoMentionedAlone.featureVerification).toEqual({
+        carAccess: 'no',
+        motoAccess: 'yes',
+        waterSupply: 'yes',
+        electricitySupply: 'yes',
+        furnishedProperty: 'no',
       });
 
       const pedestrianOnly = mergeGeminiAndDeterministicFeatures(
@@ -157,8 +180,8 @@ describe('fb-feature-analyzer.util', () => {
       expect(pedestrianOnly.featureVerification).toEqual({
         carAccess: 'no',
         motoAccess: 'no',
-        waterSupply: 'unknown',
-        electricitySupply: 'unknown',
+        waterSupply: 'yes',
+        electricitySupply: 'yes',
         furnishedProperty: 'no',
       });
     });
@@ -175,9 +198,9 @@ describe('fb-feature-analyzer.util', () => {
       expect(res.featureVerification).toEqual({
         carAccess: 'unknown',
         motoAccess: 'unknown',
-        waterSupply: 'unknown',
-        electricitySupply: 'unknown',
-        furnishedProperty: 'unknown',
+        waterSupply: 'yes',
+        electricitySupply: 'yes',
+        furnishedProperty: 'no',
       });
     });
 
@@ -189,7 +212,7 @@ describe('fb-feature-analyzer.util', () => {
       expect(
         deriveAccessVerification(
           { carAccess: false, motoAccess: true },
-          'moto ihany no miditra',
+          'accès moto',
           null,
         ),
       ).toEqual({ carAccess: 'no', motoAccess: 'yes' });
@@ -333,19 +356,14 @@ describe('fb-feature-analyzer.util', () => {
       expect(commercialSilent.features.motoAccess).toBe(true);
       expect(commercialSilent.features.carAccess).toBe(false);
 
-      // Re-analysis preserves unconfirmed status on silent posts vs admin confirmations
+      // Residential silent posts default to JIRAMA water/electricity ('yes') and unfurnished ('no')
       const firstPass = mergeGeminiAndDeterministicFeatures({}, 'T3 calme Antanimena');
       expect(firstPass.features.waterPumpSupplyJirama).toBe(true);
-      expect(firstPass.featureVerification.waterSupply).toBe('unknown');
-
-      const reanalyzedStillUnknown = mergeGeminiAndDeterministicFeatures(
-        firstPass.features,
-        'T3 calme Antanimena',
-        undefined,
-        { existingVerification: firstPass.featureVerification },
-      );
-      expect(reanalyzedStillUnknown.featureVerification.waterSupply).toBe('unknown');
-      expect(reanalyzedStillUnknown.featureVerification.electricitySupply).toBe('unknown');
+      expect(firstPass.features.electricityJirama).toBe(true);
+      expect(firstPass.features.furnishedProperty).toBe(false);
+      expect(firstPass.featureVerification.waterSupply).toBe('yes');
+      expect(firstPass.featureVerification.electricitySupply).toBe('yes');
+      expect(firstPass.featureVerification.furnishedProperty).toBe('no');
 
       const reanalyzedConfirmed = mergeGeminiAndDeterministicFeatures(
         firstPass.features,
@@ -376,6 +394,165 @@ describe('fb-feature-analyzer.util', () => {
         waterSupply: 'no',
         electricitySupply: 'no',
         furnishedProperty: 'no',
+      });
+    });
+
+    it('parses the exact Anosibe Facebook screenshot post (efitra roa+lakozia.dc anatiny.wc ivelany, accès moto, visite 5000ar, caution 50%)', () => {
+      const screenshotPost = [
+        '👉 Ofany:1M500fmg(300.000ar)',
+        '✅ efitra roa+lakozia.dc anatiny.wc ivelany (fosse septique)',
+        '✅ ambany rihana accès moto, mifefy tsara..',
+        '▶️ eo antokotany ny paompy',
+        '▶️ Ankotrany ny jiro',
+        '🔍 visite :5000ar',
+        '👉 caution :50%',
+        '📱0386807242 0337724967(mpanera)',
+      ].join('\n');
+
+      const { features, featureVerification } = mergeGeminiAndDeterministicFeatures(
+        {},
+        screenshotPost,
+      );
+      expect(features.insideBathroom).toBe(true);
+      expect(features.insideToilet).toBe(false);
+      expect(features.motoAccess).toBe(true);
+      expect(features.carAccess).toBe(false);
+      expect(features.surroundedByWalls).toBe(true);
+      expect(features.courtyard).toBe(true);
+      expect(features.waterPumpSupplyJirama).toBe(true);
+      expect(features.electricityJirama).toBe(true);
+      expect(features.furnishedProperty).toBe(false);
+      expect(featureVerification).toEqual({
+        carAccess: 'no',
+        motoAccess: 'yes',
+        waterSupply: 'yes',
+        electricitySupply: 'yes',
+        furnishedProperty: 'no',
+      });
+
+      const roomsSpec = resolveResidentialRoomDefaults({
+        rawText: screenshotPost,
+        isCommercial: false,
+        houseType: 'appartement',
+        rooms: 2,
+        livingRoom: null,
+        kitchen: null,
+        toilet: null,
+        bathrooms: null,
+        rentAriary: 300000,
+      });
+      expect(roomsSpec).toEqual({
+        rooms: 2,
+        livingRoom: 1,
+        kitchen: 1,
+        toilet: 1,
+        bathrooms: 1,
+      });
+
+      const fees = extractAgencyFees(screenshotPost, null, 300000);
+      expect(fees).toEqual({
+        visitFee: 5000,
+        cautionPercent: 50,
+        cautionAmount: 150000,
+        commissionPercent: null,
+        commissionAmount: null,
+      });
+
+      const estArea = estimatePropertyArea({
+        houseType: 'appartement',
+        ...roomsSpec,
+        area: null,
+        features,
+      });
+      expect(estArea).toBeGreaterThanOrEqual(45);
+      expect(estArea).toBeLessThanOrEqual(75);
+    });
+
+    it('detects commission ("50%", "1 mois de loyer" => 100%), caution, and droit de visite only when mentioned', () => {
+      const oneMonthComm = extractAgencyFees(
+        'Appartement T3 Ivandry, loyer 1.200.000 Ar, droit de visite 10.000 Ar, caution 1 mois, commission 1 mois de loyer',
+        null,
+        1200000,
+      );
+      expect(oneMonthComm).toEqual({
+        visitFee: 10000,
+        cautionPercent: 100,
+        cautionAmount: 1200000,
+        commissionPercent: 100,
+        commissionAmount: 1200000,
+      });
+
+      const halfMonthComm = extractAgencyFees(
+        'Maison à louer Itaosy 400.000 Ar. Visite : 25.000 fmg. Commission : 50%',
+        null,
+        400000,
+      );
+      expect(halfMonthComm).toEqual({
+        visitFee: 5000,
+        cautionPercent: null,
+        cautionAmount: null,
+        commissionPercent: 50,
+        commissionAmount: 200000,
+      });
+
+      const silentFees = extractAgencyFees('Trano ahofa Ankadifotsy 500.000 Ar, efitra telo', null, 500000);
+      expect(silentFees).toEqual({
+        visitFee: null,
+        cautionPercent: null,
+        cautionAmount: null,
+        commissionPercent: null,
+        commissionAmount: null,
+      });
+    });
+
+    it('detects sloppy visit fee, caution, and commission notations (Visite.10.000 ar, dv:5000, Caution.50%, Com:50%)', () => {
+      const andranoroScreenshotPost = [
+        '1 Living Carrelée',
+        'Cuisine placardée',
+        '1 chambres Carrelée',
+        "Salle d'eau et toilettes intérieur",
+        'Avec terrasse',
+        'Eau et électricité Indépendant',
+        'Commission :50%',
+        'Visite.10.000 ar',
+        'Contact 034 4915369',
+      ].join('\n');
+
+      expect(extractAgencyFees(andranoroScreenshotPost, null, 350000)).toEqual({
+        visitFee: 10000,
+        cautionPercent: null,
+        cautionAmount: null,
+        commissionPercent: 50,
+        commissionAmount: 175000,
+      });
+
+      expect(
+        extractAgencyFees('T2 Anosy, dv: 5mil, Caution.50%, Com.50%', null, 400000),
+      ).toEqual({
+        visitFee: 5000,
+        cautionPercent: 50,
+        cautionAmount: 200000,
+        commissionPercent: 50,
+        commissionAmount: 200000,
+      });
+
+      expect(
+        extractAgencyFees('Villa Ivato, 10.000 ar ny visite\n034 4915369', null, 800000).visitFee,
+      ).toBe(10000);
+
+      // Should not swallow phone digits on the next line after "visite 5000"
+      expect(
+        extractAgencyFees('Visite 5000\n034 4915369', null, 300000).visitFee,
+      ).toBe(5000);
+
+      // Should not mistake "visite 2 chambres" or "Visite.gratuite"
+      expect(extractAgencyFees('T2 calme, visite 2 chambres possible', null, 300000).visitFee).toBeNull();
+      expect(extractAgencyFees('Studio propre, Visite.gratuite, caution 1mois', null, 250000)).toEqual({
+        visitFee: 0,
+        cautionPercent: 100,
+        cautionAmount: 250000,
+        commissionPercent: null,
+        commissionAmount: null,
       });
     });
   });
@@ -417,6 +594,99 @@ describe('fb-feature-analyzer.util', () => {
 
       const result = preserveDescriptionLayout(raw, structuredGemini);
       expect(result).toBe(structuredGemini);
+    });
+  });
+
+  describe('estimatePropertyPriceAriary & computePropertyQualityScore', () => {
+    it('estimates realistic Antananarivo rents and sale prices even with zero DB comparables', () => {
+      const ivandryVilla = estimatePropertyPriceAriary({
+        type: 'rent',
+        houseType: 'villa',
+        fokontany: 'Ivandry',
+        rooms: 4,
+        livingRoom: 1,
+        kitchen: 1,
+        bathrooms: 2,
+        toilet: 2,
+        features: {
+          carAccess: true,
+          furnishedProperty: true,
+          insideToilet: true,
+          insideBathroom: true,
+          electricityJirama: true,
+          waterPumpSupplyJirama: true,
+          garden: true,
+        },
+        visualCondition: 'new_or_modern',
+      });
+
+      const itaosySimple = estimatePropertyPriceAriary({
+        type: 'rent',
+        houseType: 'appartement',
+        fokontany: 'Itaosy',
+        rooms: 2,
+        livingRoom: 0,
+        kitchen: 1,
+        bathrooms: 1,
+        toilet: 1,
+        features: {
+          motoAccess: true,
+          insideToilet: false,
+          insideBathroom: false,
+          electricityJirama: true,
+          waterFetchExternal: true,
+        },
+        visualCondition: 'basic_or_worn',
+      });
+
+      expect(ivandryVilla.tier).toBe('tier1_premium');
+      expect(itaosySimple.tier).toBe('tier3_accessible');
+      expect(ivandryVilla.estimatedAmount).toBeGreaterThan(2_000_000);
+      expect(itaosySimple.estimatedAmount).toBeLessThan(400_000);
+      expect(ivandryVilla.minAmount).toBeLessThan(ivandryVilla.estimatedAmount);
+      expect(ivandryVilla.maxAmount).toBeGreaterThan(ivandryVilla.estimatedAmount);
+    });
+
+    it('computes holistic qualityScore (1..100) from photos, visual condition, completeness, and freshness', () => {
+      const highQuality = computePropertyQualityScore({
+        photoCount: 6,
+        visualCondition: 'new_or_modern',
+        hasExplicitPrice: true,
+        hasMatchedCity: true,
+        hasCoords: true,
+        hasPhones: true,
+        rooms: 3,
+        livingRoom: 1,
+        area: 120,
+        descriptionLength: 280,
+        features: {
+          carAccess: true,
+          insideToilet: true,
+          insideBathroom: true,
+          placardKitchen: true,
+          electricityJirama: true,
+          waterPumpSupplyJirama: true,
+        },
+        publishedAt: new Date(),
+      });
+
+      const lowQuality = computePropertyQualityScore({
+        photoCount: 1,
+        visualCondition: 'basic_or_worn',
+        hasExplicitPrice: false,
+        hasMatchedCity: false,
+        hasCoords: false,
+        hasPhones: false,
+        rooms: 0,
+        livingRoom: 0,
+        area: 0,
+        descriptionLength: 20,
+        features: {},
+        publishedAt: new Date(Date.now() - 40 * 24 * 3600 * 1000),
+      });
+
+      expect(highQuality).toBeGreaterThanOrEqual(80);
+      expect(lowQuality).toBeLessThanOrEqual(40);
     });
   });
 });

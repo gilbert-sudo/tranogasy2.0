@@ -24,6 +24,7 @@ import { useFavorite } from '@/hooks/useFavorite';
 import { useUserStore } from '@/store/userStore';
 import { usePropertyDetailModalStore } from '@/store/propertyDetailModalStore';
 import { resolveProfileHref } from '@/services/user.service';
+import { formatPublicationDateTime, formatExactPublicationDateTime } from '@/lib/dateFormat';
 
 const FEATURE_ICONS: Record<string, React.ElementType> = {
   electricityJirama: FaPlugCircleBolt,
@@ -77,32 +78,18 @@ function extractSurfaceFromText(text?: string): number | null {
   return null;
 }
 
-function formatDateAgo(dateString?: string) {
-  if (!dateString) return 'Nouveau';
-  const date = new Date(dateString);
-  const now = new Date();
-  const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-  
-  if (diffInSeconds < 60) return "À l'instant";
-  const diffInMinutes = Math.floor(diffInSeconds / 60);
-  if (diffInMinutes < 60) return `Il y a ${diffInMinutes} min`;
-  const diffInHours = Math.floor(diffInMinutes / 60);
-  if (diffInHours < 24) return `Il y a ${diffInHours} h`;
-  const diffInDays = Math.floor(diffInHours / 24);
-  if (diffInDays < 30) return `Il y a ${diffInDays} j`;
-  const diffInMonths = Math.floor(diffInDays / 30);
-  if (diffInMonths < 12) return `Il y a ${diffInMonths} mois`;
-  const diffInYears = Math.floor(diffInMonths / 12);
-  return `Il y a ${diffInYears} an${diffInYears > 1 ? 's' : ''}`;
-}
-
 interface PropertyProps {
   property: {
     _id: string;
     title: string;
     description?: string;
-    price?: number;
-    rent?: number;
+    price?: number | null;
+    rent?: number | null;
+    isPriceEstimated?: boolean;
+    estimatedPrice?: number | null;
+    estimatedRent?: number | null;
+    estimatedPriceMin?: number | null;
+    estimatedPriceMax?: number | null;
     rooms: number;
     bathrooms: number;
     toilet?: number;
@@ -158,7 +145,18 @@ function PropertyCardComponent({ property }: PropertyProps) {
     await toggleFavorite(property._id, currentUser._id);
   };
 
-  const displayPrice = property.type === 'rent' ? property.rent : property.price;
+  const explicitPrice = property.type === 'rent' ? property.rent : property.price;
+  const fallbackEstimatedPrice =
+    property.type === 'rent' ? property.estimatedRent : property.estimatedPrice;
+  const displayPrice =
+    explicitPrice && Number(explicitPrice) > 0
+      ? Number(explicitPrice)
+      : fallbackEstimatedPrice && Number(fallbackEstimatedPrice) > 0
+      ? Number(fallbackEstimatedPrice)
+      : null;
+  const isEstimatedDisplay =
+    !(explicitPrice && Number(explicitPrice) > 0) &&
+    Boolean(fallbackEstimatedPrice && Number(fallbackEstimatedPrice) > 0);
   
   const images = property.images && property.images.length > 0 
     ? property.images
@@ -347,8 +345,11 @@ function PropertyCardComponent({ property }: PropertyProps) {
           }`}>
             {property.type === 'rent' ? 'Location' : 'Vente'}
           </div>
-          <div className="absolute top-3 right-3 rounded-full bg-black/60 px-2.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-md border border-white/10">
-            {formatDateAgo(property.created_at)}
+          <div
+            className="absolute top-3 right-3 rounded-full bg-black/60 px-2.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-md border border-white/10"
+            title={formatExactPublicationDateTime(property.created_at) ? `Publiée le ${formatExactPublicationDateTime(property.created_at)}` : undefined}
+          >
+            {formatPublicationDateTime(property.created_at, { compact: true })}
           </div>
 
           {/* Favorite Button (Borderless & Backgroundless with Red Heart) */}
@@ -402,9 +403,21 @@ function PropertyCardComponent({ property }: PropertyProps) {
             <h3 className="text-sm font-bold text-zinc-900 dark:text-white line-clamp-1 flex-1 tracking-tight">
               {property.title}
             </h3>
-            <p className="text-sm font-black text-brand-green whitespace-nowrap tracking-tight">
-              {displayPrice ? `${displayPrice.toLocaleString('fr-FR')} Ar` : 'Sur dmd'}
-              {property.type === 'rent' && <span className="text-[10px] font-normal text-zinc-500">/mois</span>}
+            <p className="text-sm font-black text-brand-green whitespace-nowrap tracking-tight flex items-center gap-1">
+              {displayPrice
+                ? `${isEstimatedDisplay ? '~' : ''}${displayPrice.toLocaleString('fr-FR')} Ar`
+                : 'Sur dmd'}
+              {property.type === 'rent' && displayPrice && (
+                <span className="text-[10px] font-normal text-zinc-500">/mois</span>
+              )}
+              {isEstimatedDisplay && (
+                <span
+                  title="Estimation générée par TranoGasy selon le quartier et les caractéristiques"
+                  className="ml-0.5 rounded bg-amber-500/15 px-1 py-0.5 text-[9px] font-extrabold uppercase tracking-wider text-amber-600 dark:text-amber-400"
+                >
+                  Est.
+                </span>
+              )}
             </p>
           </div>
 

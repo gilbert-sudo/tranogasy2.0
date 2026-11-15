@@ -248,13 +248,18 @@ export class UsersService {
         .lean();
 
       const firstProp = properties[0];
+      const firstUnlockedProp = properties.find((p) => !p.contactAccessLocked);
       userDoc = {
         _id: cleanId,
         username: firstProp?.sources?.username || cleanSource,
         avatar: firstProp?.sources?.avatar || null,
         coverImage: null,
         bio: null,
-        phone: firstProp?.phone1 || firstProp?.phone2 || firstProp?.owner?.phone || null,
+        phone:
+          firstUnlockedProp?.phone1 ||
+          firstUnlockedProp?.phone2 ||
+          firstUnlockedProp?.owner?.phone ||
+          null,
         role: 'user',
         location: firstProp?.city
           ? `${firstProp.city.commune || ''}, ${firstProp.city.district || 'Madagascar'}`
@@ -369,13 +374,14 @@ export class UsersService {
 
       if (properties.length > 0) {
         const firstProp = properties[0];
+        const firstUnlockedProp = properties.find((p) => !p.contactAccessLocked);
         userDoc = {
           _id: cleanId,
           username: firstProp?.sources?.username || cleanId,
           avatar: firstProp?.sources?.avatar || null,
           coverImage: null,
           bio: null,
-          phone: firstProp?.phone1 || firstProp?.phone2 || null,
+          phone: firstUnlockedProp?.phone1 || firstUnlockedProp?.phone2 || null,
           role: 'user',
           location: firstProp?.city
             ? `${firstProp.city.commune || ''}, ${firstProp.city.district || 'Madagascar'}`
@@ -432,9 +438,21 @@ export class UsersService {
       }
     }
 
+    // If the user has published properties and every single one of them has contactAccessLocked: true,
+    // do not expose the user's phone on the public profile header (unless they also have legacy unlocked listings).
+    const hasLockedProperties = properties.some((p) => Boolean(p.contactAccessLocked));
+    const hasUnlockedProperties = properties.some((p) => !p.contactAccessLocked);
+    const shouldHideProfilePhone = hasLockedProperties && !hasUnlockedProperties;
+
+    const sanitizedUser = sanitizeOwnerForViewer(userDoc, false);
+    if (shouldHideProfilePhone && sanitizedUser) {
+      sanitizedUser.phone = null;
+      sanitizedUser.contactLocked = true;
+    }
+
     return {
       user: {
-        ...sanitizeOwnerForViewer(userDoc, false),
+        ...sanitizedUser,
         fallbackCoverImage,
       },
       stats: {

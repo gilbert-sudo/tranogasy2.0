@@ -30,7 +30,8 @@
     "firebase-admin": "^14.5.0",
     "mongoose": "^8.24.4",
     "reflect-metadata": "^0.2.0",
-    "rxjs": "^7.8.1"
+    "rxjs": "^7.8.1",
+    "sharp": "^0.35.5"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.0.0",

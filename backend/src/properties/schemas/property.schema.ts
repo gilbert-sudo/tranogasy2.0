@@ -53,6 +53,77 @@ export class Property {
   @Prop({ required: false, default: 0 })
   area: number;
 
+  /**
+   * Server-side habitable surface estimate (`m²`) used strictly by internal
+   * search/scoring algorithms when `area` is not explicitly provided.
+   * Stripped from non-admin public API responses.
+   */
+  @Prop({ type: Number, required: false, default: null })
+  estimatedArea: number | null;
+
+  /**
+   * Price / rent estimation fields when the publisher omits explicit pricing
+   * ("prix sur demande" / MP).
+   */
+  @Prop({ type: Boolean, required: false, default: false })
+  isPriceEstimated: boolean;
+
+  @Prop({ type: Number, required: false, default: null })
+  estimatedPrice: number | null;
+
+  @Prop({ type: Number, required: false, default: null })
+  estimatedRent: number | null;
+
+  @Prop({ type: Number, required: false, default: null })
+  estimatedPriceMin: number | null;
+
+  @Prop({ type: Number, required: false, default: null })
+  estimatedPriceMax: number | null;
+
+  @Prop({ type: String, required: false, default: null })
+  estimatedPriceConfidence: 'high' | 'medium' | 'low' | null;
+
+  /**
+   * Holistic listing quality score (1..100) combining visual condition,
+   * data completeness, reliability, and freshness. Stripped from public API.
+   */
+  @Prop({ type: Number, required: false, default: 70 })
+  qualityScore: number;
+
+  @Prop({ type: String, required: false, default: null })
+  visualCondition: string | null;
+
+  /**
+   * Contact paywall flag. Defaults to `false` so existing/legacy properties in DB
+   * remain unlocked, while newly created/published properties set `true`.
+   */
+  @Prop({ type: Boolean, required: false, default: false })
+  contactAccessLocked: boolean;
+
+  @Prop({ type: Number, required: false, default: 50 })
+  contactUnlockCostJp: number;
+
+  @Prop({ type: [String], required: false, default: [] })
+  unlockedByUsers: string[];
+
+  /**
+   * Optional agency / entry terms (populated ONLY when explicitly mentioned in the listing).
+   */
+  @Prop({ type: Number, required: false, default: null })
+  visitFee: number | null;
+
+  @Prop({ type: Number, required: false, default: null })
+  cautionPercent: number | null;
+
+  @Prop({ type: Number, required: false, default: null })
+  cautionAmount: number | null;
+
+  @Prop({ type: Number, required: false, default: null })
+  commissionPercent: number | null;
+
+  @Prop({ type: Number, required: false, default: null })
+  commissionAmount: number | null;
+
   @Prop({ required: true })
   propertyNumber: string;
 

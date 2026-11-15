@@ -63,6 +63,12 @@ interface CandidateDraft {
   toilet: string;
   bathrooms: string;
   area: string;
+  estimatedArea: number | null;
+  visitFee: string;
+  cautionPercent: string;
+  cautionAmount: string;
+  commissionPercent: string;
+  commissionAmount: string;
   floor: string;
   phone1: string;
   phone2: string;
@@ -98,16 +104,20 @@ function normalizeDescriptionLayout(text: string): string {
 
 function toDraft(c: FbIngestedCandidate): CandidateDraft {
   const ex = c.extracted;
+  const houseType = normalizeHouseType(ex?.houseType) || 'maison';
+  const commercial = isCommercialHouseType(houseType);
   const features = { ...(ex?.features || {}) };
   const fv = c.featureVerification || {};
+  const hasMoto = Boolean(features.motoAccess || fv.motoAccess === 'yes');
   const carAccess: AccessVerificationState = features.carAccess
     ? 'yes'
     : fv.carAccess === 'no'
       ? 'no'
-      : 'unknown';
-  const motoAccess: AccessVerificationState = features.motoAccess
-    ? 'yes'
-    : carAccess === 'yes'
+      : hasMoto
+        ? 'no'
+        : 'unknown';
+  const motoAccess: AccessVerificationState =
+    features.motoAccess || carAccess === 'yes' || fv.motoAccess === 'yes'
       ? 'yes'
       : fv.motoAccess === 'no'
         ? 'no'
@@ -116,44 +126,63 @@ function toDraft(c: FbIngestedCandidate): CandidateDraft {
     features.motoAccess = true;
   }
 
+  if (!commercial) {
+    if (!hasKnownWaterSupply(features) && fv.waterSupply !== 'no') {
+      features.waterPumpSupplyJirama = true;
+      features.waterPumpSupply = true;
+    }
+    if (!hasKnownElectricitySupply(features) && fv.electricitySupply !== 'no') {
+      features.electricityJirama = true;
+      features.electricityPower = true;
+    }
+  }
+
   const waterSupply: AccessVerificationState =
-    fv.waterSupply === 'yes' || fv.waterSupply === 'no' || fv.waterSupply === 'unknown'
-      ? fv.waterSupply
-      : features.waterPumpSupply || features.waterWellSupply || features.waterFetchExternal
+    fv.waterSupply === 'no'
+      ? 'no'
+      : !commercial || fv.waterSupply === 'yes' || hasKnownWaterSupply(features)
         ? 'yes'
         : 'unknown';
 
   const electricitySupply: AccessVerificationState =
-    fv.electricitySupply === 'yes' ||
-    fv.electricitySupply === 'no' ||
-    fv.electricitySupply === 'unknown'
-      ? fv.electricitySupply
-      : features.solarPanels
+    fv.electricitySupply === 'no'
+      ? 'no'
+      : !commercial || fv.electricitySupply === 'yes' || hasKnownElectricitySupply(features)
         ? 'yes'
         : 'unknown';
 
   const furnishedProperty: AccessVerificationState =
-    fv.furnishedProperty === 'yes' ||
-    fv.furnishedProperty === 'no' ||
-    fv.furnishedProperty === 'unknown'
-      ? fv.furnishedProperty
-      : features.furnishedProperty
-        ? 'yes'
-        : 'unknown';
+    features.furnishedProperty || fv.furnishedProperty === 'yes'
+      ? 'yes'
+      : 'no';
+  features.furnishedProperty = furnishedProperty === 'yes';
 
   return {
     title: ex?.title || '',
     description: normalizeDescriptionLayout(ex?.description || c.rawContent || ''),
     type: ex?.type || null,
-    houseType: normalizeHouseType(ex?.houseType) || 'maison',
+    houseType,
     price: ex?.price != null ? String(ex.price) : '',
     rent: ex?.rent != null ? String(ex.rent) : '',
     rooms: ex?.rooms != null ? String(ex.rooms) : '',
-    livingRoom: ex?.livingRoom != null ? String(ex.livingRoom) : '',
-    kitchen: ex?.kitchen != null ? String(ex.kitchen) : '',
-    toilet: ex?.toilet != null ? String(ex.toilet) : '',
-    bathrooms: ex?.bathrooms != null ? String(ex.bathrooms) : '',
+    livingRoom:
+      ex?.livingRoom != null
+        ? String(ex.livingRoom)
+        : !commercial
+          ? ex?.rooms === 1
+            ? '0'
+            : '1'
+          : '',
+    kitchen: ex?.kitchen != null ? String(ex.kitchen) : !commercial ? '1' : '',
+    toilet: ex?.toilet != null ? String(ex.toilet) : !commercial ? '1' : '',
+    bathrooms: ex?.bathrooms != null ? String(ex.bathrooms) : !commercial ? '1' : '',
     area: ex?.area != null ? String(ex.area) : '',
+    estimatedArea: ex?.estimatedArea ?? null,
+    visitFee: ex?.visitFee != null ? String(ex.visitFee) : '',
+    cautionPercent: ex?.cautionPercent != null ? String(ex.cautionPercent) : '',
+    cautionAmount: ex?.cautionAmount != null ? String(ex.cautionAmount) : '',
+    commissionPercent: ex?.commissionPercent != null ? String(ex.commissionPercent) : '',
+    commissionAmount: ex?.commissionAmount != null ? String(ex.commissionAmount) : '',
     floor: ex?.floor || '',
     phone1: ex?.phone1 || '',
     phone2: ex?.phone2 || '',
@@ -192,19 +221,38 @@ function toNumOrNull(val: string): number | null {
 
 function buildPatchFromDraft(d: CandidateDraft): Record<string, unknown> {
   const commercial = isCommercialHouseType(d.houseType);
+  const rentVal = d.type === 'rent' ? toNumOrNull(d.rent) : null;
+  const cautionPercent = toNumOrNull(d.cautionPercent);
+  const rawCautionAmount = toNumOrNull(d.cautionAmount);
+  const cautionAmount =
+    cautionPercent != null && rentVal != null && rentVal > 0
+      ? Math.round((rentVal * cautionPercent) / 100)
+      : rawCautionAmount;
+  const commissionPercent = toNumOrNull(d.commissionPercent);
+  const rawCommissionAmount = toNumOrNull(d.commissionAmount);
+  const commissionAmount =
+    commissionPercent != null && rentVal != null && rentVal > 0
+      ? Math.round((rentVal * commissionPercent) / 100)
+      : rawCommissionAmount;
+
   return {
     title: d.title.trim(),
     description: normalizeDescriptionLayout(d.description),
     type: d.type,
     houseType: d.houseType,
     price: d.type === 'sale' ? toNumOrNull(d.price) : null,
-    rent: d.type === 'rent' ? toNumOrNull(d.rent) : null,
+    rent: rentVal,
     rooms: commercial ? null : toNumOrNull(d.rooms),
     livingRoom: commercial ? null : toNumOrNull(d.livingRoom),
     kitchen: commercial ? null : toNumOrNull(d.kitchen),
     toilet: toNumOrNull(d.toilet),
     bathrooms: commercial ? null : toNumOrNull(d.bathrooms),
     area: toNumOrNull(d.area),
+    visitFee: toNumOrNull(d.visitFee),
+    cautionPercent,
+    cautionAmount,
+    commissionPercent,
+    commissionAmount,
     floor: d.floor.trim() || null,
     phone1: d.phone1.trim() || null,
     phone2: d.phone2.trim() || null,
@@ -226,6 +274,20 @@ function mergeDraftIntoCandidate(
   draft: CandidateDraft,
 ): FbIngestedCandidate {
   const commercial = isCommercialHouseType(draft.houseType);
+  const rentVal = draft.type === 'rent' ? toNumOrNull(draft.rent) : null;
+  const cautionPercent = toNumOrNull(draft.cautionPercent);
+  const rawCautionAmount = toNumOrNull(draft.cautionAmount);
+  const cautionAmount =
+    cautionPercent != null && rentVal != null && rentVal > 0
+      ? Math.round((rentVal * cautionPercent) / 100)
+      : rawCautionAmount;
+  const commissionPercent = toNumOrNull(draft.commissionPercent);
+  const rawCommissionAmount = toNumOrNull(draft.commissionAmount);
+  const commissionAmount =
+    commissionPercent != null && rentVal != null && rentVal > 0
+      ? Math.round((rentVal * commissionPercent) / 100)
+      : rawCommissionAmount;
+
   return {
     ...candidate,
     matchedCityId: draft.matchedCityId || null,
@@ -244,13 +306,19 @@ function mergeDraftIntoCandidate(
       type: draft.type,
       houseType: draft.houseType,
       price: draft.type === 'sale' ? toNumOrNull(draft.price) : null,
-      rent: draft.type === 'rent' ? toNumOrNull(draft.rent) : null,
+      rent: rentVal,
       rooms: commercial ? null : toNumOrNull(draft.rooms),
       livingRoom: commercial ? null : toNumOrNull(draft.livingRoom),
       kitchen: commercial ? null : toNumOrNull(draft.kitchen),
       toilet: toNumOrNull(draft.toilet),
       bathrooms: commercial ? null : toNumOrNull(draft.bathrooms),
       area: toNumOrNull(draft.area),
+      estimatedArea: draft.estimatedArea,
+      visitFee: toNumOrNull(draft.visitFee),
+      cautionPercent,
+      cautionAmount,
+      commissionPercent,
+      commissionAmount,
       floor: draft.floor.trim() || null,
       phone1: draft.phone1.trim() || null,
       phone2: draft.phone2.trim() || null,
@@ -432,18 +500,56 @@ const CandidateReviewCard = React.memo(function CandidateReviewCard({
       setIsSearchingCity(true);
       try {
         const res = await cityService.searchCities(clean, 8);
-        if (!cancelled) setCityResults(res);
+        if (cancelled) return;
+        setCityResults(res);
+
+        // If local Fokontany text search finds 0 matches (e.g. "by pass", "rond point ivandry"),
+        // automatically query Google Places first -> get coords -> return nearest Fokontany!
+        if (res.length === 0 && clean.length >= 3) {
+          setIsResolvingPlaces(true);
+          try {
+            const placesRes = await fbIngestionService.resolveLocation(
+              userId,
+              clean,
+              candidate.groupName,
+            );
+            if (!cancelled && placesRes.bestMatch) {
+              setDraft((prev) => ({
+                ...prev,
+                matchedCityId: prev.matchedCityId || placesRes.bestMatch!._id,
+                matchedCityLabel: prev.matchedCityLabel || placesRes.bestMatch!.label,
+                cityCandidates:
+                  placesRes.candidates && placesRes.candidates.length > 0
+                    ? placesRes.candidates
+                    : prev.cityCandidates,
+                resolvedCoords: placesRes.place?.coords ?? prev.resolvedCoords,
+                resolvedPlaceName: placesRes.place?.placeName ?? prev.resolvedPlaceName,
+                resolvedAddress: placesRes.place?.formattedAddress ?? prev.resolvedAddress,
+                resolutionSource: placesRes.place?.source ?? prev.resolutionSource,
+              }));
+              setPlacesFeedback(
+                placesRes.place?.placeName
+                  ? `Google Places (« ${placesRes.place.placeName} ») → Fokontany le plus proche : ${placesRes.bestMatch.label}`
+                  : `Fokontany le plus proche → ${placesRes.bestMatch.label}`,
+              );
+            }
+          } catch {
+            // Silent fallback when typing; user can still click "Via Places"
+          } finally {
+            if (!cancelled) setIsResolvingPlaces(false);
+          }
+        }
       } catch {
         if (!cancelled) setCityResults([]);
       } finally {
         if (!cancelled) setIsSearchingCity(false);
       }
-    }, 200);
+    }, 320);
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [cityQuery]);
+  }, [cityQuery, userId, candidate.groupName]);
 
   const handleResolvePlaces = async () => {
     const clean = cityQuery.trim();
@@ -483,12 +589,16 @@ const CandidateReviewCard = React.memo(function CandidateReviewCard({
   };
 
   const missing = useMemo(() => computeLiveMissing(draft), [draft]);
+  const estimatedFallbackAmount =
+    draft.type === 'sale'
+      ? Number(candidate.extracted?.estimatedPrice || 0)
+      : Number(candidate.extracted?.estimatedRent || 0);
   const canPublish =
     Boolean(draft.type) &&
     Boolean(draft.matchedCityId) &&
     Boolean(draft.title.trim()) &&
-    ((draft.type === 'rent' && Number(draft.rent) > 0) ||
-      (draft.type === 'sale' && Number(draft.price) > 0));
+    ((draft.type === 'rent' && (Number(draft.rent) > 0 || estimatedFallbackAmount > 0)) ||
+      (draft.type === 'sale' && (Number(draft.price) > 0 || estimatedFallbackAmount > 0)));
 
   const amountVal = Number(draft.type === 'sale' ? draft.price : draft.rent) || 0;
   const enabledFeatureKeys = Object.entries(draft.features)
@@ -601,7 +711,10 @@ const CandidateReviewCard = React.memo(function CandidateReviewCard({
       } else {
         nextVerif.motoAccess = state;
         nextFeatures.motoAccess = state === 'yes';
-        if (state === 'no') {
+        if (state === 'yes' && nextVerif.carAccess === 'unknown') {
+          nextVerif.carAccess = 'no';
+          nextFeatures.carAccess = false;
+        } else if (state === 'no') {
           nextVerif.carAccess = 'no';
           nextFeatures.carAccess = false;
         } else if (state === 'unknown' && nextFeatures.carAccess) {
@@ -846,6 +959,48 @@ const CandidateReviewCard = React.memo(function CandidateReviewCard({
           >
             <Sparkles className="w-3 h-3" /> Confiance {candidate.aiConfidence}
           </span>
+
+          {typeof candidate.extracted?.qualityScore === 'number' &&
+            candidate.extracted.qualityScore > 0 && (
+              <span
+                title="Score global de qualité TranoGasy (photos, standing, complétude, géolocalisation, fraîcheur)"
+                className={`px-2.5 py-0.5 rounded-full text-[11px] font-extrabold inline-flex items-center gap-1 ${
+                  candidate.extracted.qualityScore >= 75
+                    ? 'bg-brand-green/15 text-brand-green'
+                    : candidate.extracted.qualityScore >= 55
+                    ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300'
+                    : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'
+                }`}
+              >
+                Score Qualité : {candidate.extracted.qualityScore}/100
+              </span>
+            )}
+
+          {candidate.extracted?.visualCondition && (
+            <span
+              title="Standing visuel détecté par Gemini Vision sur les photos"
+              className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300"
+            >
+              Standing :{' '}
+              {candidate.extracted.visualCondition === 'new_or_modern'
+                ? 'Neuf / Moderne'
+                : candidate.extracted.visualCondition === 'good'
+                ? 'Bon état'
+                : candidate.extracted.visualCondition === 'basic_or_worn'
+                ? 'Simple / Ancien'
+                : 'Standard'}
+            </span>
+          )}
+
+          {typeof candidate.extracted?.redactedPhotoCount === 'number' &&
+            candidate.extracted.redactedPhotoCount > 0 && (
+              <span
+                title="Nombre de photos dont les numéros de téléphone ont été floutés automatiquement"
+                className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-700 dark:text-amber-300"
+              >
+                {candidate.extracted.redactedPhotoCount} photo(s) floutée(s)
+              </span>
+            )}
 
           {candidate.status === 'pending' && (
             <span
@@ -1231,16 +1386,45 @@ const CandidateReviewCard = React.memo(function CandidateReviewCard({
                         prev.type === 'sale' ? { ...prev, price: val } : { ...prev, rent: val },
                       );
                     }}
-                    placeholder="ex: 600000"
+                    placeholder={
+                      estimatedFallbackAmount > 0
+                        ? `Est. IA : ~${estimatedFallbackAmount.toLocaleString('fr-FR')} Ar`
+                        : 'ex: 600000'
+                    }
                     className={`w-full px-3.5 py-2 rounded-xl border text-sm font-semibold focus:outline-none focus:ring-2 ${missingRing(
                       draft.type === 'sale' ? 'price' : 'rent',
                     )}`}
                   />
-                  {amountVal > 0 && (
+                  {amountVal > 0 ? (
                     <p className="text-[11px] text-zinc-500 mt-1">
                       = {(amountVal * 5).toLocaleString('fr-FR')} FMG
                     </p>
-                  )}
+                  ) : estimatedFallbackAmount > 0 ? (
+                    <div className="mt-1.5 flex flex-wrap items-center justify-between gap-1.5 rounded-lg bg-amber-500/10 border border-amber-500/25 px-2.5 py-1 text-[11px] text-amber-700 dark:text-amber-300">
+                      <span>
+                        Est. système :{' '}
+                        <strong>~{estimatedFallbackAmount.toLocaleString('fr-FR')} Ar</strong>
+                        {candidate.extracted?.estimatedPriceMin &&
+                        candidate.extracted?.estimatedPriceMax
+                          ? ` (${Number(candidate.extracted.estimatedPriceMin).toLocaleString('fr-FR')}–${Number(candidate.extracted.estimatedPriceMax).toLocaleString('fr-FR')})`
+                          : ''}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setDraft((prev) =>
+                            prev.type === 'sale'
+                              ? { ...prev, price: String(estimatedFallbackAmount) }
+                              : { ...prev, rent: String(estimatedFallbackAmount) },
+                          )
+                        }
+                        className="rounded bg-amber-500/20 hover:bg-amber-500/30 px-1.5 py-0.5 text-[10px] font-extrabold text-amber-800 dark:text-amber-200 cursor-pointer"
+                        title="Copier l'estimation comme prix fixe, ou laisser vide pour publier avec le badge 'Estimation TranoGasy'"
+                      >
+                        Appliquer
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               </div>
 
@@ -1329,6 +1513,12 @@ const CandidateReviewCard = React.memo(function CandidateReviewCard({
                       <input
                         type="text"
                         value={cityQuery}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            void handleResolvePlaces();
+                          }
+                        }}
                         onChange={(e) => {
                           const val = e.target.value;
                           setCityQuery(val);
@@ -1337,7 +1527,7 @@ const CandidateReviewCard = React.memo(function CandidateReviewCard({
                             setCityResults([]);
                           }
                         }}
-                        placeholder="Rechercher un Fokontany ou un lieu/repère (ex: Rond-point Ivandry, Lycée Français...)"
+                        placeholder="Rechercher un Fokontany ou un lieu/repère (ex: By Pass, Rond-point Ivandry, Lycée Français...)"
                         className={`w-full px-3.5 py-1.5 rounded-xl border text-xs focus:outline-none focus:ring-2 ${missingRing(
                           'city',
                         )}`}
@@ -1436,7 +1626,18 @@ const CandidateReviewCard = React.memo(function CandidateReviewCard({
                           onChange={(e) =>
                             setDraft((prev) => ({ ...prev, [field.key]: e.target.value }))
                           }
-                          placeholder="—"
+                          placeholder={
+                            field.key === 'area' && draft.estimatedArea
+                              ? `~${draft.estimatedArea} (est.)`
+                              : '—'
+                          }
+                          title={
+                            field.key === 'area'
+                              ? draft.estimatedArea
+                                ? `Surface estimée pour l'algorithme serveur : ~${draft.estimatedArea} m² (non affichée au public si laissé vide)`
+                                : 'Surface habitable (optionnelle — laisser vide si non mentionnée)'
+                              : undefined
+                          }
                           className={`w-full px-2.5 py-1.5 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 ${missingRing(
                             field.key,
                           )}`}
@@ -1454,6 +1655,289 @@ const CandidateReviewCard = React.memo(function CandidateReviewCard({
                         placeholder={commercial ? 'RDC / Bord de route' : 'RDC'}
                         className="w-full px-2.5 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs focus:outline-none focus:ring-2 focus:ring-brand-green"
                       />
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Agency & Entry Fees (Droit de visite, Caution, Commission) */}
+              {(() => {
+                const hasAnyFee =
+                  draft.visitFee.trim() !== '' ||
+                  draft.cautionPercent.trim() !== '' ||
+                  draft.cautionAmount.trim() !== '' ||
+                  draft.commissionPercent.trim() !== '' ||
+                  draft.commissionAmount.trim() !== '';
+                const visitFeeNum = toNumOrNull(draft.visitFee);
+                const cautionPctNum = toNumOrNull(draft.cautionPercent);
+                const cautionAmtNum =
+                  cautionPctNum != null && amountVal > 0
+                    ? Math.round((amountVal * cautionPctNum) / 100)
+                    : toNumOrNull(draft.cautionAmount);
+                const commissionPctNum = toNumOrNull(draft.commissionPercent);
+                const commissionAmtNum =
+                  commissionPctNum != null && amountVal > 0
+                    ? Math.round((amountVal * commissionPctNum) / 100)
+                    : toNumOrNull(draft.commissionAmount);
+
+                return (
+                  <div
+                    className={`p-3 rounded-2xl border space-y-2.5 transition ${
+                      hasAnyFee
+                        ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-brand-green/40'
+                        : 'bg-zinc-50/70 dark:bg-zinc-800/25 border-zinc-200/80 dark:border-zinc-800'
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-zinc-700 dark:text-zinc-200">
+                          Conditions &amp; Frais d&apos;entrée (Droit de visite, Caution, Commission)
+                        </span>
+                        {hasAnyFee && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-brand-green/15 text-brand-green">
+                            Mentionné dans l&apos;annonce
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[10px] font-medium text-zinc-400">
+                        Optionnel • Affiché aux utilisateurs uniquement si renseigné
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                      {/* Droit de visite */}
+                      <div className="rounded-xl border border-zinc-200/80 dark:border-zinc-700/80 bg-white dark:bg-zinc-900 p-2.5 space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[11px] font-bold text-zinc-600 dark:text-zinc-300">
+                            Droit de visite (Ar)
+                          </label>
+                          {visitFeeNum != null && (
+                            <span className="text-[10px] font-bold text-brand-green">
+                              {visitFeeNum === 0
+                                ? 'Gratuit'
+                                : `${(visitFeeNum * 5).toLocaleString('fr-FR')} FMG`}
+                            </span>
+                          )}
+                        </div>
+                        <input
+                          type="number"
+                          min={0}
+                          step={1000}
+                          value={draft.visitFee}
+                          onChange={(e) =>
+                            setDraft((prev) => ({ ...prev, visitFee: e.target.value }))
+                          }
+                          placeholder="Non mentionné"
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-brand-green"
+                        />
+                        <div className="flex flex-wrap gap-1">
+                          {[
+                            { label: 'Gratuit', val: '0' },
+                            { label: '5 000', val: '5000' },
+                            { label: '10 000', val: '10000' },
+                          ].map((preset) => (
+                            <button
+                              key={preset.val}
+                              type="button"
+                              onClick={() =>
+                                setDraft((prev) => ({
+                                  ...prev,
+                                  visitFee: prev.visitFee === preset.val ? '' : preset.val,
+                                }))
+                              }
+                              className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition cursor-pointer ${
+                                draft.visitFee === preset.val
+                                  ? 'bg-brand-green text-white'
+                                  : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200'
+                              }`}
+                            >
+                              {preset.label}
+                            </button>
+                          ))}
+                          {draft.visitFee !== '' && (
+                            <button
+                              type="button"
+                              onClick={() => setDraft((prev) => ({ ...prev, visitFee: '' }))}
+                              className="px-1.5 py-0.5 rounded-md text-[10px] font-semibold text-zinc-400 hover:text-red-500 cursor-pointer"
+                            >
+                              Effacer
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Caution */}
+                      <div className="rounded-xl border border-zinc-200/80 dark:border-zinc-700/80 bg-white dark:bg-zinc-900 p-2.5 space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[11px] font-bold text-zinc-600 dark:text-zinc-300">
+                            Caution (% du loyer)
+                          </label>
+                          {cautionAmtNum != null && cautionAmtNum > 0 && (
+                            <span className="text-[10px] font-bold text-brand-green">
+                              = {cautionAmtNum.toLocaleString('fr-FR')} Ar
+                            </span>
+                          )}
+                        </div>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            min={0}
+                            max={300}
+                            value={draft.cautionPercent}
+                            onChange={(e) => {
+                              const nextPct = e.target.value;
+                              const pctNum = toNumOrNull(nextPct);
+                              setDraft((prev) => ({
+                                ...prev,
+                                cautionPercent: nextPct,
+                                cautionAmount:
+                                  pctNum != null && amountVal > 0
+                                    ? String(Math.round((amountVal * pctNum) / 100))
+                                    : '',
+                              }));
+                            }}
+                            placeholder="Non mentionné"
+                            className="w-full pl-2.5 pr-7 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-brand-green"
+                          />
+                          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] font-bold text-zinc-400 pointer-events-none">
+                            %
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {[
+                            { label: '50%', val: '50' },
+                            { label: '100% (1 mois)', val: '100' },
+                          ].map((preset) => (
+                            <button
+                              key={preset.val}
+                              type="button"
+                              onClick={() =>
+                                setDraft((prev) => {
+                                  const nextVal = prev.cautionPercent === preset.val ? '' : preset.val;
+                                  const pctNum = toNumOrNull(nextVal);
+                                  return {
+                                    ...prev,
+                                    cautionPercent: nextVal,
+                                    cautionAmount:
+                                      pctNum != null && amountVal > 0
+                                        ? String(Math.round((amountVal * pctNum) / 100))
+                                        : '',
+                                  };
+                                })
+                              }
+                              className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition cursor-pointer ${
+                                draft.cautionPercent === preset.val
+                                  ? 'bg-brand-green text-white'
+                                  : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200'
+                              }`}
+                            >
+                              {preset.label}
+                            </button>
+                          ))}
+                          {(draft.cautionPercent !== '' || draft.cautionAmount !== '') && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setDraft((prev) => ({
+                                  ...prev,
+                                  cautionPercent: '',
+                                  cautionAmount: '',
+                                }))
+                              }
+                              className="px-1.5 py-0.5 rounded-md text-[10px] font-semibold text-zinc-400 hover:text-red-500 cursor-pointer"
+                            >
+                              Effacer
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Commission */}
+                      <div className="rounded-xl border border-zinc-200/80 dark:border-zinc-700/80 bg-white dark:bg-zinc-900 p-2.5 space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[11px] font-bold text-zinc-600 dark:text-zinc-300">
+                            Commission (% loyer)
+                          </label>
+                          {commissionAmtNum != null && commissionAmtNum > 0 && (
+                            <span className="text-[10px] font-bold text-brand-green">
+                              = {commissionAmtNum.toLocaleString('fr-FR')} Ar
+                            </span>
+                          )}
+                        </div>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            min={0}
+                            max={200}
+                            value={draft.commissionPercent}
+                            onChange={(e) => {
+                              const nextPct = e.target.value;
+                              const pctNum = toNumOrNull(nextPct);
+                              setDraft((prev) => ({
+                                ...prev,
+                                commissionPercent: nextPct,
+                                commissionAmount:
+                                  pctNum != null && amountVal > 0
+                                    ? String(Math.round((amountVal * pctNum) / 100))
+                                    : '',
+                              }));
+                            }}
+                            placeholder="Non mentionné"
+                            className="w-full pl-2.5 pr-7 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-brand-green"
+                          />
+                          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] font-bold text-zinc-400 pointer-events-none">
+                            %
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {[
+                            { label: '50%', val: '50' },
+                            { label: '100% (1 mois)', val: '100' },
+                          ].map((preset) => (
+                            <button
+                              key={preset.val}
+                              type="button"
+                              onClick={() =>
+                                setDraft((prev) => {
+                                  const nextVal =
+                                    prev.commissionPercent === preset.val ? '' : preset.val;
+                                  const pctNum = toNumOrNull(nextVal);
+                                  return {
+                                    ...prev,
+                                    commissionPercent: nextVal,
+                                    commissionAmount:
+                                      pctNum != null && amountVal > 0
+                                        ? String(Math.round((amountVal * pctNum) / 100))
+                                        : '',
+                                  };
+                                })
+                              }
+                              className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition cursor-pointer ${
+                                draft.commissionPercent === preset.val
+                                  ? 'bg-brand-green text-white'
+                                  : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200'
+                              }`}
+                            >
+                              {preset.label}
+                            </button>
+                          ))}
+                          {(draft.commissionPercent !== '' || draft.commissionAmount !== '') && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setDraft((prev) => ({
+                                  ...prev,
+                                  commissionPercent: '',
+                                  commissionAmount: '',
+                                }))
+                              }
+                              className="px-1.5 py-0.5 rounded-md text-[10px] font-semibold text-zinc-400 hover:text-red-500 cursor-pointer"
+                            >
+                              Effacer
+                            </button>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 );

@@ -37,7 +37,11 @@ import { unwrapBrightDataPost } from './fb-dedup.util';
 import { FbGcsService } from './fb-gcs.service';
 import {
   AccessVerificationState,
+  computePropertyQualityScore,
   deriveFeatureVerification,
+  estimatePropertyArea,
+  estimatePropertyPriceAriary,
+  extractAgencyFees,
   FeatureVerificationMap,
   getMissingFeatureVerificationFields,
   hasKnownElectricitySupply,
@@ -45,6 +49,7 @@ import {
   mergeGeminiAndDeterministicFeatures,
   normalizePreservingLayout,
   preserveDescriptionLayout,
+  resolveResidentialRoomDefaults,
 } from './fb-feature-analyzer.util';
 import { FbGeminiService, PROPERTY_FEATURE_KEYS } from './fb-gemini.service';
 import { FbPlacesService } from './fb-places.service';
@@ -930,12 +935,19 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
   ): Promise<void> {
     let parsedResult;
     try {
+      const inlineImages =
+        typeof (this.gcsService as any)?.fetchVisionInlineImages === 'function'
+          ? await this.gcsService
+              .fetchVisionInlineImages(post.photoUrls, 4)
+              .catch(() => [])
+          : [];
       const geminiRes = await this.geminiService.parsePost({
         content: post.content,
         groupName: post.groupName,
         authorName: post.authorName,
         modelOverride: config.geminiModel,
         regexPhones: post.phones,
+        ...(inlineImages.length > 0 ? { inlineImages } : {}),
       });
       parsedResult = geminiRes.parsed;
       summary.geminiCalls++;
@@ -969,7 +981,7 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
 
     const cityMatch = await this.cityMatcherService.matchLocation(
       parsedResult.locationHints,
-      post.content,
+      `${parsedResult.title || ''}\n${post.content || ''}`,
       post.groupName,
     );
     if (cityMatch.apiCallMade) {
@@ -978,8 +990,18 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       summary.placesCacheHits = (summary.placesCacheHits || 0) + 1;
     }
 
+    const hasVisionUploadOpts =
+      (Array.isArray(parsedResult.imageContactRedactions) &&
+        parsedResult.imageContactRedactions.length > 0) ||
+      typeof parsedResult.recommendedCoverIndex === 'number';
+
     const [gcsUpload, gcsAvatarUrl] = await Promise.all([
-      this.gcsService.reuploadFbImages(post.photoUrls, post.canonicalPostId),
+      hasVisionUploadOpts
+        ? this.gcsService.reuploadFbImages(post.photoUrls, post.canonicalPostId, {
+            redactions: parsedResult.imageContactRedactions,
+            recommendedCoverIndex: parsedResult.recommendedCoverIndex,
+          })
+        : this.gcsService.reuploadFbImages(post.photoUrls, post.canonicalPostId),
       this.gcsService.reuploadFbAvatar(
         post.authorAvatar,
         post.authorFbId || post.canonicalPostId,
@@ -990,6 +1012,49 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
     if (gcsUpload.uploadedUrls.length === 0 && gcsUpload.failedCount > 0) {
       aiNotes = `${aiNotes ? `${aiNotes} | ` : ''}${gcsUpload.failedCount} FB image(s) failed download (likely expired CDN link in snapshot); verify/upload photos before publishing.`;
     }
+    if ((gcsUpload.redactedCount || 0) > 0) {
+      aiNotes = `${aiNotes ? `${aiNotes} | ` : ''}${gcsUpload.redactedCount} photo(s) avec contact flouté automatiquement.`;
+    }
+
+    const priceEstimation = estimatePropertyPriceAriary({
+      type: parsedResult.type === 'sale' ? 'sale' : 'rent',
+      houseType: parsedResult.houseType,
+      fokontany: cityMatch.bestMatch?.label || null,
+      locationHints: parsedResult.locationHints,
+      rawText: `${post.content || ''}\n${parsedResult.description || ''}`,
+      rooms: parsedResult.rooms,
+      livingRoom: parsedResult.livingRoom,
+      kitchen: parsedResult.kitchen,
+      bathrooms: parsedResult.bathrooms,
+      toilet: parsedResult.toilet,
+      area: parsedResult.area,
+      estimatedArea: parsedResult.estimatedArea,
+      features: parsedResult.features,
+      visualCondition: parsedResult.visualCondition || null,
+      geminiEstimateAriary:
+        parsedResult.type === 'sale'
+          ? parsedResult.estimatedPriceAriary
+          : parsedResult.estimatedRentAriary,
+    });
+
+    const qualityScore = computePropertyQualityScore({
+      photoCount: gcsUpload.uploadedUrls.length,
+      visualCondition: parsedResult.visualCondition || null,
+      hasExplicitPrice: Boolean(
+        (parsedResult.type === 'sale' && (parsedResult.priceAriary || 0) > 0) ||
+          (parsedResult.type !== 'sale' && (parsedResult.rentAriary || 0) > 0),
+      ),
+      hasMatchedCity: Boolean(cityMatch.bestMatch?._id),
+      hasCoords: Boolean(cityMatch.resolvedCoords || cityMatch.bestMatch?.coords),
+      hasPhones: parsedResult.phones.length > 0,
+      rooms: parsedResult.rooms,
+      livingRoom: parsedResult.livingRoom,
+      area: parsedResult.area,
+      estimatedArea: parsedResult.estimatedArea,
+      descriptionLength: (parsedResult.description || '').length,
+      features: parsedResult.features,
+      publishedAt: post.datePosted,
+    });
 
     const missingFields = this.computeMissingFields({
       type: parsedResult.type,
@@ -1028,12 +1093,28 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
           houseType: parsedResult.houseType,
           price: parsedResult.priceAriary,
           rent: parsedResult.rentAriary,
+          estimatedPrice:
+            parsedResult.type === 'sale' ? priceEstimation.estimatedAmount : null,
+          estimatedRent:
+            parsedResult.type !== 'sale' ? priceEstimation.estimatedAmount : null,
+          estimatedPriceMin: priceEstimation.minAmount,
+          estimatedPriceMax: priceEstimation.maxAmount,
+          estimatedPriceConfidence: priceEstimation.confidence,
+          visualCondition: parsedResult.visualCondition || null,
+          qualityScore,
+          redactedPhotoCount: gcsUpload.redactedCount || 0,
           rooms: parsedResult.rooms,
           livingRoom: parsedResult.livingRoom,
           kitchen: parsedResult.kitchen,
           toilet: parsedResult.toilet,
           bathrooms: parsedResult.bathrooms,
           area: parsedResult.area,
+          estimatedArea: parsedResult.estimatedArea,
+          visitFee: parsedResult.visitFee,
+          cautionPercent: parsedResult.cautionPercent,
+          cautionAmount: parsedResult.cautionAmount,
+          commissionPercent: parsedResult.commissionPercent,
+          commissionAmount: parsedResult.commissionAmount,
           floor: parsedResult.floor,
           phone1: parsedResult.phones[0] || null,
           phone2: parsedResult.phones[1] || null,
@@ -1463,32 +1544,211 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       this.candidateModel.countDocuments({ status: 'rejected' }),
     ]);
 
-    const CRITICAL_MISSING_SET = new Set([
-      'carAccess',
-      'motoAccess',
-      'waterSupply',
-      'electricitySupply',
-      'furnishedProperty',
-    ]);
-    const hydratedItems = items.map((item: any) => {
-      const ex = item.extracted || {};
-      const verification = deriveFeatureVerification(
-        ex.features,
-        item.rawContent,
-        item.featureVerification,
-      );
-      const baseMissing = Array.isArray(item.missingFields)
-        ? item.missingFields.filter((f: string) => !CRITICAL_MISSING_SET.has(f))
-        : [];
-      baseMissing.push(
-        ...getMissingFeatureVerificationFields({
-          isCommercial: isCommercialHouseType(ex.houseType),
-          features: ex.features,
-          verification,
+    // Auto-resolve any pending candidate missing its city via Google Places -> nearest DB Fokontany
+    if (typeof this.cityMatcherService?.matchLocation === 'function') {
+      await Promise.all(
+        items.map(async (item: any) => {
+          if (item.matchedCityId || item.manualCityOverride) return;
+          try {
+            const ex = item.extracted || {};
+            const hints = Array.isArray(ex.locationHints)
+              ? ex.locationHints.map(String).filter(Boolean)
+              : [];
+            const cityMatch = await this.cityMatcherService.matchLocation(
+              hints,
+              `${ex.title || ''}\n${item.rawContent || ''}`,
+              item.groupName || '',
+            );
+            if (cityMatch.bestMatch || cityMatch.candidates.length > 0) {
+              item.matchedCityId = cityMatch.bestMatch?._id || null;
+              item.matchedCityLabel = cityMatch.bestMatch?.label || null;
+              item.cityCandidates = cityMatch.candidates.map((c) => ({
+                _id: c._id,
+                label: c.label,
+                score: c.score,
+                distanceMeters: c.distanceMeters ?? null,
+                coords: c.coords,
+              }));
+              item.resolvedCoords = cityMatch.resolvedCoords || null;
+              item.resolvedPlaceName = cityMatch.resolvedPlaceName || null;
+              item.resolvedAddress = cityMatch.resolvedAddress || null;
+              item.resolutionSource = cityMatch.resolutionSource || null;
+
+              if (item._id && this.candidateModel?.updateOne) {
+                void this.candidateModel
+                  .updateOne(
+                    { _id: item._id },
+                    {
+                      $set: {
+                        matchedCityId: item.matchedCityId,
+                        matchedCityLabel: item.matchedCityLabel,
+                        cityCandidates: item.cityCandidates,
+                        resolvedCoords: item.resolvedCoords,
+                        resolvedPlaceName: item.resolvedPlaceName,
+                        resolvedAddress: item.resolvedAddress,
+                        resolutionSource: item.resolutionSource,
+                      },
+                    },
+                  )
+                  .catch(() => undefined);
+              }
+            }
+          } catch {
+            // Non-blocking auto-resolution
+          }
         }),
       );
+    }
+
+    const hydratedItems = items.map((item: any) => {
+      const ex = { ...(item.extracted || {}) };
+      const isCommercial = isCommercialHouseType(ex.houseType);
+      const { features: mergedFeatures, featureVerification: verification } =
+        mergeGeminiAndDeterministicFeatures(
+          ex.features,
+          item.rawContent || '',
+          ex.description,
+          {
+            isCommercial,
+            existingVerification: item.featureVerification,
+          },
+        );
+
+      const resolvedRooms = resolveResidentialRoomDefaults({
+        rawText: `${item.rawContent || ''}\n${ex.description || ''}`,
+        isCommercial,
+        houseType: ex.houseType,
+        rooms: ex.rooms,
+        livingRoom: ex.livingRoom,
+        kitchen: ex.kitchen,
+        toilet: ex.toilet,
+        bathrooms: ex.bathrooms,
+        rentAriary: ex.rent,
+        priceAriary: ex.price,
+      });
+
+      const fees = extractAgencyFees(item.rawContent || '', ex, ex.rent);
+      const hydratedEx = {
+        ...ex,
+        rooms: resolvedRooms.rooms,
+        livingRoom: resolvedRooms.livingRoom,
+        kitchen: resolvedRooms.kitchen,
+        toilet: resolvedRooms.toilet,
+        bathrooms: resolvedRooms.bathrooms,
+        visitFee: ex.visitFee !== undefined && ex.visitFee !== null ? ex.visitFee : fees.visitFee,
+        cautionPercent:
+          ex.cautionPercent !== undefined && ex.cautionPercent !== null
+            ? ex.cautionPercent
+            : fees.cautionPercent,
+        cautionAmount:
+          ex.cautionAmount !== undefined && ex.cautionAmount !== null
+            ? ex.cautionAmount
+            : fees.cautionAmount,
+        commissionPercent:
+          ex.commissionPercent !== undefined && ex.commissionPercent !== null
+            ? ex.commissionPercent
+            : fees.commissionPercent,
+        commissionAmount:
+          ex.commissionAmount !== undefined && ex.commissionAmount !== null
+            ? ex.commissionAmount
+            : fees.commissionAmount,
+        features: mergedFeatures,
+      };
+      hydratedEx.estimatedArea = estimatePropertyArea({
+        houseType: hydratedEx.houseType,
+        rooms: hydratedEx.rooms,
+        livingRoom: hydratedEx.livingRoom,
+        kitchen: hydratedEx.kitchen,
+        toilet: hydratedEx.toilet,
+        bathrooms: hydratedEx.bathrooms,
+        area: hydratedEx.area,
+        features: mergedFeatures,
+      });
+
+      const priceEst = estimatePropertyPriceAriary({
+        type: hydratedEx.type === 'sale' ? 'sale' : 'rent',
+        houseType: hydratedEx.houseType,
+        fokontany: item.matchedCityLabel || null,
+        locationHints: hydratedEx.locationHints,
+        rawText: `${item.rawContent || ''}\n${hydratedEx.description || ''}`,
+        rooms: hydratedEx.rooms,
+        livingRoom: hydratedEx.livingRoom,
+        kitchen: hydratedEx.kitchen,
+        bathrooms: hydratedEx.bathrooms,
+        toilet: hydratedEx.toilet,
+        area: hydratedEx.area,
+        estimatedArea: hydratedEx.estimatedArea,
+        features: mergedFeatures,
+        visualCondition: hydratedEx.visualCondition || null,
+        geminiEstimateAriary:
+          hydratedEx.type === 'sale'
+            ? hydratedEx.estimatedPrice
+            : hydratedEx.estimatedRent,
+      });
+      hydratedEx.estimatedPrice =
+        hydratedEx.type === 'sale'
+          ? Number(hydratedEx.estimatedPrice) > 0
+            ? Math.round(Number(hydratedEx.estimatedPrice))
+            : priceEst.estimatedAmount
+          : null;
+      hydratedEx.estimatedRent =
+        hydratedEx.type !== 'sale'
+          ? Number(hydratedEx.estimatedRent) > 0
+            ? Math.round(Number(hydratedEx.estimatedRent))
+            : priceEst.estimatedAmount
+          : null;
+      hydratedEx.estimatedPriceMin =
+        Number(hydratedEx.estimatedPriceMin) > 0
+          ? Math.round(Number(hydratedEx.estimatedPriceMin))
+          : priceEst.minAmount;
+      hydratedEx.estimatedPriceMax =
+        Number(hydratedEx.estimatedPriceMax) > 0
+          ? Math.round(Number(hydratedEx.estimatedPriceMax))
+          : priceEst.maxAmount;
+      hydratedEx.estimatedPriceConfidence =
+        hydratedEx.estimatedPriceConfidence || priceEst.confidence;
+
+      hydratedEx.qualityScore =
+        Number(hydratedEx.qualityScore) > 0
+          ? Math.round(Number(hydratedEx.qualityScore))
+          : computePropertyQualityScore({
+              photoCount: Array.isArray(item.gcsImages) ? item.gcsImages.length : 0,
+              visualCondition: hydratedEx.visualCondition || null,
+              hasExplicitPrice: Boolean(
+                (hydratedEx.type === 'sale' && (hydratedEx.price || 0) > 0) ||
+                  (hydratedEx.type !== 'sale' && (hydratedEx.rent || 0) > 0),
+              ),
+              hasMatchedCity: Boolean(item.matchedCityId),
+              hasCoords: Boolean(item.resolvedCoords),
+              hasPhones: Boolean(hydratedEx.phone1 || hydratedEx.phone2 || hydratedEx.phone3),
+              rooms: hydratedEx.rooms,
+              livingRoom: hydratedEx.livingRoom,
+              area: hydratedEx.area,
+              estimatedArea: hydratedEx.estimatedArea,
+              descriptionLength: (hydratedEx.description || '').length,
+              features: mergedFeatures,
+              publishedAt: item.datePosted,
+            });
+
+      const baseMissing = this.computeMissingFields({
+        type: hydratedEx.type,
+        houseType: hydratedEx.houseType,
+        price: hydratedEx.price,
+        rent: hydratedEx.rent,
+        matchedCityId: item.matchedCityId,
+        rooms: hydratedEx.rooms,
+        toilet: hydratedEx.toilet,
+        bathrooms: hydratedEx.bathrooms,
+        area: hydratedEx.area,
+        phones: [hydratedEx.phone1, hydratedEx.phone2, hydratedEx.phone3],
+        features: mergedFeatures,
+        featureVerification: verification,
+        rawContent: item.rawContent,
+      });
+
       return {
         ...item,
+        extracted: hydratedEx,
         featureVerification: verification,
         missingFields: baseMissing,
       };
@@ -1520,12 +1780,25 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       'houseType',
       'price',
       'rent',
+      'estimatedPrice',
+      'estimatedRent',
+      'estimatedPriceMin',
+      'estimatedPriceMax',
+      'estimatedPriceConfidence',
+      'visualCondition',
+      'qualityScore',
       'rooms',
       'livingRoom',
       'kitchen',
       'toilet',
       'bathrooms',
       'area',
+      'estimatedArea',
+      'visitFee',
+      'cautionPercent',
+      'cautionAmount',
+      'commissionPercent',
+      'commissionAmount',
       'floor',
       'phone1',
       'phone2',
@@ -1544,6 +1817,36 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
         } else {
           extracted[key] = patch[key];
         }
+      }
+    }
+
+    // Recalculate cautionAmount / commissionAmount when rent or percentage changes
+    const currentRent =
+      typeof extracted.rent === 'number' && Number.isFinite(extracted.rent) && extracted.rent > 0
+        ? Math.round(extracted.rent)
+        : null;
+    if (currentRent) {
+      if (
+        ('cautionPercent' in patch || 'rent' in patch) &&
+        !('cautionAmount' in patch)
+      ) {
+        extracted.cautionAmount =
+          typeof extracted.cautionPercent === 'number' && extracted.cautionPercent > 0
+            ? Math.round((currentRent * extracted.cautionPercent) / 100)
+            : extracted.cautionPercent === 0
+              ? 0
+              : null;
+      }
+      if (
+        ('commissionPercent' in patch || 'rent' in patch) &&
+        !('commissionAmount' in patch)
+      ) {
+        extracted.commissionAmount =
+          typeof extracted.commissionPercent === 'number' && extracted.commissionPercent > 0
+            ? Math.round((currentRent * extracted.commissionPercent) / 100)
+            : extracted.commissionPercent === 0
+              ? 0
+              : null;
       }
     }
 
@@ -1579,12 +1882,15 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
             nextVerification.motoAccess = 'yes';
           }
         } else if (!patch.featureVerification?.carAccess) {
-          nextVerification.carAccess = 'unknown';
+          nextVerification.carAccess = mergedFeatures.motoAccess ? 'no' : 'unknown';
         }
       }
       if ('motoAccess' in patch.features) {
         if (patch.features.motoAccess) {
           nextVerification.motoAccess = 'yes';
+          if (!mergedFeatures.carAccess && patch.featureVerification?.carAccess !== 'yes') {
+            nextVerification.carAccess = 'no';
+          }
         } else if (!patch.featureVerification?.motoAccess) {
           nextVerification.motoAccess = 'unknown';
           if (mergedFeatures.carAccess) {
@@ -1624,7 +1930,7 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       ) {
         nextVerification.furnishedProperty = mergedFeatures.furnishedProperty
           ? 'yes'
-          : 'unknown';
+          : 'no';
       }
     }
 
@@ -1644,6 +1950,13 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
         if (incoming.motoAccess === 'no') {
           nextVerification.carAccess = 'no';
           mergedFeatures.carAccess = false;
+        } else if (
+          incoming.motoAccess === 'yes' &&
+          !mergedFeatures.carAccess &&
+          incoming.carAccess === undefined &&
+          nextVerification.carAccess === 'unknown'
+        ) {
+          nextVerification.carAccess = 'no';
         } else if (
           incoming.motoAccess === 'unknown' &&
           incoming.carAccess !== 'yes' &&
@@ -1683,6 +1996,62 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
     }
 
     extracted.features = mergedFeatures;
+    extracted.estimatedArea = estimatePropertyArea({
+      houseType: extracted.houseType,
+      rooms: extracted.rooms,
+      livingRoom: extracted.livingRoom,
+      kitchen: extracted.kitchen,
+      toilet: extracted.toilet,
+      bathrooms: extracted.bathrooms,
+      area: extracted.area,
+      features: mergedFeatures,
+    });
+
+    const priceEst = estimatePropertyPriceAriary({
+      type: extracted.type === 'sale' ? 'sale' : 'rent',
+      houseType: extracted.houseType,
+      fokontany: candidate.matchedCityLabel || null,
+      locationHints: extracted.locationHints,
+      rawText: `${candidate.rawContent || ''}\n${extracted.description || ''}`,
+      rooms: extracted.rooms,
+      livingRoom: extracted.livingRoom,
+      kitchen: extracted.kitchen,
+      bathrooms: extracted.bathrooms,
+      toilet: extracted.toilet,
+      area: extracted.area,
+      estimatedArea: extracted.estimatedArea,
+      features: mergedFeatures,
+      visualCondition: extracted.visualCondition || null,
+      geminiEstimateAriary:
+        extracted.type === 'sale'
+          ? extracted.estimatedPrice
+          : extracted.estimatedRent,
+    });
+    extracted.estimatedPrice =
+      extracted.type === 'sale' ? priceEst.estimatedAmount : null;
+    extracted.estimatedRent =
+      extracted.type !== 'sale' ? priceEst.estimatedAmount : null;
+    extracted.estimatedPriceMin = priceEst.minAmount;
+    extracted.estimatedPriceMax = priceEst.maxAmount;
+    extracted.estimatedPriceConfidence = priceEst.confidence;
+    extracted.qualityScore = computePropertyQualityScore({
+      photoCount: Array.isArray(candidate.gcsImages) ? candidate.gcsImages.length : 0,
+      visualCondition: extracted.visualCondition || null,
+      hasExplicitPrice: Boolean(
+        (extracted.type === 'sale' && (extracted.price || 0) > 0) ||
+          (extracted.type !== 'sale' && (extracted.rent || 0) > 0),
+      ),
+      hasMatchedCity: Boolean(candidate.matchedCityId),
+      hasCoords: Boolean(candidate.resolvedCoords),
+      hasPhones: Boolean(extracted.phone1 || extracted.phone2 || extracted.phone3),
+      rooms: extracted.rooms,
+      livingRoom: extracted.livingRoom,
+      area: extracted.area,
+      estimatedArea: extracted.estimatedArea,
+      descriptionLength: String(extracted.description || '').length,
+      features: mergedFeatures,
+      publishedAt: candidate.datePosted,
+    });
     (candidate as any).featureVerification = nextVerification;
 
     if (Array.isArray(patch.gcsImages)) {
@@ -1761,9 +2130,11 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
   }
 
   private applyDeterministicReanalysis(candidate: FbIngestedCandidateDocument): boolean {
+    const prevSnapshot = JSON.stringify(candidate.extracted || {});
     const extracted = { ...(candidate.extracted || {}) };
     const existingFeatures = extracted.features || {};
     const existingVerification = (candidate as any).featureVerification || {};
+    const isCommercial = isCommercialHouseType(extracted.houseType);
 
     const restoredDesc = preserveDescriptionLayout(
       candidate.rawContent || '',
@@ -1775,7 +2146,7 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
         candidate.rawContent || '',
         restoredDesc,
         {
-          isCommercial: isCommercialHouseType(extracted.houseType),
+          isCommercial,
           existingVerification,
         },
       );
@@ -1824,6 +2195,89 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       mergedFeatures.furnishedProperty = false;
     }
 
+    const resolvedRooms = resolveResidentialRoomDefaults({
+      rawText: `${candidate.rawContent || ''}\n${restoredDesc}`,
+      isCommercial,
+      houseType: extracted.houseType,
+      rooms: extracted.rooms,
+      livingRoom: extracted.livingRoom,
+      kitchen: extracted.kitchen,
+      toilet: extracted.toilet,
+      bathrooms: extracted.bathrooms,
+      rentAriary: extracted.rent,
+      priceAriary: extracted.price,
+    });
+
+    const fees = extractAgencyFees(candidate.rawContent || '', extracted, extracted.rent);
+    extracted.rooms = resolvedRooms.rooms;
+    extracted.livingRoom = resolvedRooms.livingRoom;
+    extracted.kitchen = resolvedRooms.kitchen;
+    extracted.toilet = resolvedRooms.toilet;
+    extracted.bathrooms = resolvedRooms.bathrooms;
+    extracted.visitFee = fees.visitFee ?? extracted.visitFee ?? null;
+    extracted.cautionPercent = fees.cautionPercent ?? extracted.cautionPercent ?? null;
+    extracted.cautionAmount = fees.cautionAmount ?? extracted.cautionAmount ?? null;
+    extracted.commissionPercent = fees.commissionPercent ?? extracted.commissionPercent ?? null;
+    extracted.commissionAmount = fees.commissionAmount ?? extracted.commissionAmount ?? null;
+    extracted.description = restoredDesc;
+    extracted.features = mergedFeatures;
+    extracted.estimatedArea = estimatePropertyArea({
+      houseType: extracted.houseType,
+      rooms: extracted.rooms,
+      livingRoom: extracted.livingRoom,
+      kitchen: extracted.kitchen,
+      toilet: extracted.toilet,
+      bathrooms: extracted.bathrooms,
+      area: extracted.area,
+      features: mergedFeatures,
+    });
+
+    const priceEst = estimatePropertyPriceAriary({
+      type: extracted.type === 'sale' ? 'sale' : 'rent',
+      houseType: extracted.houseType,
+      fokontany: candidate.matchedCityLabel || null,
+      locationHints: extracted.locationHints,
+      rawText: `${candidate.rawContent || ''}\n${restoredDesc}`,
+      rooms: extracted.rooms,
+      livingRoom: extracted.livingRoom,
+      kitchen: extracted.kitchen,
+      bathrooms: extracted.bathrooms,
+      toilet: extracted.toilet,
+      area: extracted.area,
+      estimatedArea: extracted.estimatedArea,
+      features: mergedFeatures,
+      visualCondition: extracted.visualCondition || null,
+      geminiEstimateAriary:
+        extracted.type === 'sale'
+          ? extracted.estimatedPrice
+          : extracted.estimatedRent,
+    });
+    extracted.estimatedPrice =
+      extracted.type === 'sale' ? priceEst.estimatedAmount : null;
+    extracted.estimatedRent =
+      extracted.type !== 'sale' ? priceEst.estimatedAmount : null;
+    extracted.estimatedPriceMin = priceEst.minAmount;
+    extracted.estimatedPriceMax = priceEst.maxAmount;
+    extracted.estimatedPriceConfidence = priceEst.confidence;
+    extracted.qualityScore = computePropertyQualityScore({
+      photoCount: Array.isArray(candidate.gcsImages) ? candidate.gcsImages.length : 0,
+      visualCondition: extracted.visualCondition || null,
+      hasExplicitPrice: Boolean(
+        (extracted.type === 'sale' && (extracted.price || 0) > 0) ||
+          (extracted.type !== 'sale' && (extracted.rent || 0) > 0),
+      ),
+      hasMatchedCity: Boolean(candidate.matchedCityId),
+      hasCoords: Boolean(candidate.resolvedCoords),
+      hasPhones: Boolean(extracted.phone1 || extracted.phone2 || extracted.phone3),
+      rooms: extracted.rooms,
+      livingRoom: extracted.livingRoom,
+      area: extracted.area,
+      estimatedArea: extracted.estimatedArea,
+      descriptionLength: restoredDesc.length,
+      features: mergedFeatures,
+      publishedAt: candidate.datePosted,
+    });
+
     const nextMissing = this.computeMissingFields({
       type: extracted.type,
       houseType: extracted.houseType,
@@ -1841,13 +2295,10 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
     });
 
     const changed =
-      restoredDesc !== extracted.description ||
-      JSON.stringify(mergedFeatures) !== JSON.stringify(existingFeatures) ||
+      JSON.stringify(extracted) !== prevSnapshot ||
       JSON.stringify(featureVerification) !== JSON.stringify(existingVerification) ||
       JSON.stringify(nextMissing) !== JSON.stringify(candidate.missingFields || []);
 
-    extracted.description = restoredDesc;
-    extracted.features = mergedFeatures;
     candidate.extracted = extracted;
     (candidate as any).featureVerification = featureVerification;
     candidate.missingFields = nextMissing;
@@ -1877,7 +2328,7 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
 
     const cityMatch = await this.cityMatcherService.matchLocation(
       hints,
-      candidate.rawContent || '',
+      `${candidate.extracted?.title || ''}\n${candidate.rawContent || ''}`,
       candidate.groupName || '',
     );
 
@@ -1983,11 +2434,35 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
     }
 
     const amount = ex.type === 'sale' ? Number(ex.price) : Number(ex.rent);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      throw new BadRequestException(
-        ex.type === 'sale' ? 'Sale price (Ar) is required' : 'Monthly rent (Ar) is required',
-      );
-    }
+    const hasExplicitAmount = Number.isFinite(amount) && amount > 0;
+    const fallbackEstimation = estimatePropertyPriceAriary({
+      type: ex.type === 'sale' ? 'sale' : 'rent',
+      houseType: ex.houseType,
+      fokontany: cityDoc.fokontany || null,
+      commune: cityDoc.commune || null,
+      district: cityDoc.district || null,
+      locationHints: ex.locationHints,
+      rawText: `${candidate.rawContent || ''}\n${ex.description || ''}`,
+      rooms: ex.rooms,
+      livingRoom: ex.livingRoom,
+      kitchen: ex.kitchen,
+      bathrooms: ex.bathrooms,
+      toilet: ex.toilet,
+      area: ex.area,
+      estimatedArea: ex.estimatedArea,
+      features: ex.features,
+      visualCondition: ex.visualCondition || null,
+      geminiEstimateAriary:
+        ex.type === 'sale' ? ex.estimatedPrice : ex.estimatedRent,
+    });
+    const resolvedEstimatedAmount =
+      ex.type === 'sale'
+        ? Number(ex.estimatedPrice) > 0
+          ? Math.round(Number(ex.estimatedPrice))
+          : fallbackEstimation.estimatedAmount
+        : Number(ex.estimatedRent) > 0
+          ? Math.round(Number(ex.estimatedRent))
+          : fallbackEstimation.estimatedAmount;
 
     const normalizedAuthorName =
       candidate.authorName &&
@@ -2063,13 +2538,86 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       city: String(cityDoc._id),
       type: ex.type,
       houseType: normalizeHouseType(ex.houseType) || 'maison',
-      ...(ex.type === 'sale' ? { price: Math.round(amount) } : { rent: Math.round(amount) }),
+      ...(ex.type === 'sale'
+        ? {
+            price: hasExplicitAmount ? Math.round(amount) : null,
+            estimatedPrice: resolvedEstimatedAmount,
+          }
+        : {
+            rent: hasExplicitAmount ? Math.round(amount) : null,
+            estimatedRent: resolvedEstimatedAmount,
+          }),
+      isPriceEstimated: !hasExplicitAmount,
+      estimatedPriceMin:
+        Number(ex.estimatedPriceMin) > 0
+          ? Math.round(Number(ex.estimatedPriceMin))
+          : fallbackEstimation.minAmount,
+      estimatedPriceMax:
+        Number(ex.estimatedPriceMax) > 0
+          ? Math.round(Number(ex.estimatedPriceMax))
+          : fallbackEstimation.maxAmount,
+      estimatedPriceConfidence:
+        ex.estimatedPriceConfidence || fallbackEstimation.confidence,
+      visualCondition: ex.visualCondition || null,
+      qualityScore:
+        Number(ex.qualityScore) > 0
+          ? Math.round(Number(ex.qualityScore))
+          : computePropertyQualityScore({
+              photoCount: Array.isArray(candidate.gcsImages)
+                ? candidate.gcsImages.length
+                : 0,
+              visualCondition: ex.visualCondition || null,
+              hasExplicitPrice: hasExplicitAmount,
+              hasMatchedCity: true,
+              hasCoords: Boolean(listingCoords),
+              hasPhones: Boolean(ex.phone1 || ex.phone2 || ex.phone3),
+              rooms: ex.rooms,
+              livingRoom: ex.livingRoom,
+              area: ex.area,
+              estimatedArea: ex.estimatedArea,
+              descriptionLength: String(ex.description || candidate.rawContent || '').length,
+              features: ex.features,
+              publishedAt: fbCreatedAt,
+            }),
+      contactAccessLocked: true,
+      contactUnlockCostJp: 50,
       rooms: Math.max(0, Number(ex.rooms ?? 0)),
       livingRoom: Math.max(0, Number(ex.livingRoom ?? 0)),
       kitchen: Math.max(0, Number(ex.kitchen ?? 0)),
       toilet: Math.max(0, Number(ex.toilet ?? 0)),
       bathrooms: Math.max(0, Number(ex.bathrooms ?? 0)),
       area: Math.max(0, Number(ex.area ?? 0)),
+      estimatedArea:
+        typeof ex.estimatedArea === 'number' && ex.estimatedArea > 0
+          ? Math.round(ex.estimatedArea)
+          : estimatePropertyArea({
+              houseType: ex.houseType,
+              rooms: ex.rooms,
+              livingRoom: ex.livingRoom,
+              kitchen: ex.kitchen,
+              toilet: ex.toilet,
+              bathrooms: ex.bathrooms,
+              area: ex.area,
+              features: ex.features,
+            }),
+      visitFee:
+        ex.visitFee !== undefined && ex.visitFee !== null ? Math.round(Number(ex.visitFee)) : null,
+      cautionPercent:
+        ex.cautionPercent !== undefined && ex.cautionPercent !== null
+          ? Math.round(Number(ex.cautionPercent))
+          : null,
+      cautionAmount:
+        ex.cautionAmount !== undefined && ex.cautionAmount !== null
+          ? Math.round(Number(ex.cautionAmount))
+          : null,
+      commissionPercent:
+        ex.commissionPercent !== undefined && ex.commissionPercent !== null
+          ? Math.round(Number(ex.commissionPercent))
+          : null,
+      commissionAmount:
+        ex.commissionAmount !== undefined && ex.commissionAmount !== null
+          ? Math.round(Number(ex.commissionAmount))
+          : null,
       floor: ex.floor || null,
       phone1: normalizePhone(ex.phone1),
       phone2: normalizePhone(ex.phone2),

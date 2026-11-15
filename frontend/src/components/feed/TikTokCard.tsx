@@ -33,6 +33,7 @@ import { useUserStore } from '@/store/userStore';
 import { useModalStore } from '@/store/modalStore';
 import { resolveProfileHref } from '@/services/user.service';
 import { getHouseTypeLabel } from '@/lib/propertyTypes';
+import { formatPublicationDateTime, formatExactPublicationDateTime } from '@/lib/dateFormat';
 
 const FEATURE_ICONS: Record<string, React.ElementType> = {
   electricityJirama: FaPlugCircleBolt,
@@ -72,25 +73,6 @@ const FEATURE_ICONS: Record<string, React.ElementType> = {
   panoramicView: GiSeatedMouse,
 };
 
-function formatDateAgo(dateString?: string) {
-  if (!dateString) return 'Nouveau';
-  const date = new Date(dateString);
-  const now = new Date();
-  const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-
-  if (diffInSeconds < 60) return "À l'instant";
-  const diffInMinutes = Math.floor(diffInSeconds / 60);
-  if (diffInMinutes < 60) return `Il y a ${diffInMinutes} min`;
-  const diffInHours = Math.floor(diffInMinutes / 60);
-  if (diffInHours < 24) return `Il y a ${diffInHours} h`;
-  const diffInDays = Math.floor(diffInHours / 24);
-  if (diffInDays < 30) return `Il y a ${diffInDays} j`;
-  const diffInMonths = Math.floor(diffInDays / 30);
-  if (diffInMonths < 12) return `Il y a ${diffInMonths} mois`;
-  const diffInYears = Math.floor(diffInMonths / 12);
-  return `Il y a ${diffInYears} an${diffInYears > 1 ? 's' : ''}`;
-}
-
 interface TikTokCardProps {
   property: FeedProperty;
   isActive: boolean;
@@ -128,7 +110,18 @@ export default function TikTokCard({
   const rawImages = property.images && property.images.length > 0 ? property.images : [];
   const images = rawImages.map((img) => (typeof img === 'string' ? img : img.src));
 
-  const displayPrice = property.type === 'rent' ? property.rent : property.price;
+  const explicitPrice = property.type === 'rent' ? property.rent : property.price;
+  const fallbackEstimatedPrice =
+    property.type === 'rent' ? property.estimatedRent : property.estimatedPrice;
+  const displayPrice =
+    explicitPrice && Number(explicitPrice) > 0
+      ? Number(explicitPrice)
+      : fallbackEstimatedPrice && Number(fallbackEstimatedPrice) > 0
+      ? Number(fallbackEstimatedPrice)
+      : null;
+  const isEstimatedDisplay =
+    !(explicitPrice && Number(explicitPrice) > 0) &&
+    Boolean(fallbackEstimatedPrice && Number(fallbackEstimatedPrice) > 0);
 
   const activeFeatures = property.features
     ? Object.entries(property.features)
@@ -310,8 +303,11 @@ export default function TikTokCard({
             {imageIndex + 1}/{images.length}
           </span>
         )}
-        <span className="px-3 py-1 rounded-full bg-black/50 backdrop-blur-md border border-white/10 text-white/90 text-xs font-medium">
-          {formatDateAgo(property.created_at)}
+        <span
+          className="px-3 py-1 rounded-full bg-black/50 backdrop-blur-md border border-white/10 text-white/90 text-xs font-medium"
+          title={formatExactPublicationDateTime(property.created_at) ? `Publiée le ${formatExactPublicationDateTime(property.created_at)}` : undefined}
+        >
+          {formatPublicationDateTime(property.created_at)}
         </span>
       </div>
 
@@ -584,9 +580,23 @@ export default function TikTokCard({
 
           {/* Price & Description Snippet */}
           <div className="flex items-center gap-2 pt-0.5">
-            <span className="px-3 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/20 text-brand-green text-sm font-black shadow-sm">
-              {displayPrice ? `${displayPrice.toLocaleString('fr-FR')} Ar` : 'Sur dmd'}
-              {property.type === 'rent' && <span className="text-[10px] text-zinc-300"> / mois</span>}
+            <span className="px-3 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/20 text-brand-green text-sm font-black shadow-sm inline-flex items-center gap-1.5">
+              <span>
+                {displayPrice
+                  ? `${isEstimatedDisplay ? '~' : ''}${displayPrice.toLocaleString('fr-FR')} Ar`
+                  : 'Sur dmd'}
+                {property.type === 'rent' && displayPrice && (
+                  <span className="text-[10px] text-zinc-300"> / mois</span>
+                )}
+              </span>
+              {isEstimatedDisplay && (
+                <span
+                  title="Estimation générée par TranoGasy"
+                  className="rounded-full bg-amber-500/25 border border-amber-400/40 px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wider text-amber-300"
+                >
+                  Est. IA
+                </span>
+              )}
             </span>
 
             <button

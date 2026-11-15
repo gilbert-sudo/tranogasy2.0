@@ -33,6 +33,8 @@ interface MemoryCacheEntry {
 const MAX_MEM_CACHE_SIZE = 4000;
 const OK_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 const NOT_FOUND_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const DEFAULT_TRANOGASY_GOOGLE_MAPS_KEY =
+  'AIzaSyBPQYtD-cm2GmdJGXhFcD7_2vXTkyPXqOs';
 
 /**
  * Resolves Madagascar place/neighborhood queries to coordinates via Google Maps Places API
@@ -63,7 +65,8 @@ export class FbPlacesService {
       this.configService?.get<string>('NEXT_PUBLIC_GOOGLE_MAPS_API_KEY')?.trim() ||
       process.env.GOOGLE_PLACES_API_KEY?.trim() ||
       process.env.GOOGLE_MAPS_API_KEY?.trim() ||
-      null;
+      process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY?.trim() ||
+      (process.env.NODE_ENV !== 'test' ? DEFAULT_TRANOGASY_GOOGLE_MAPS_KEY : null);
     return key || null;
   }
 
@@ -154,6 +157,7 @@ export class FbPlacesService {
     queryText: string;
     cacheKeyHint?: string;
     bias?: PlaceBiasCircle;
+    forceRefresh?: boolean;
   }): Promise<PlaceResolutionResult | null> {
     const cleanQuery = (params.queryText || '').trim();
     if (cleanQuery.length < 2) return null;
@@ -166,16 +170,20 @@ export class FbPlacesService {
     // Tier 1: In-memory LRU lookup
     const memHit = this.memoryCache.get(cacheKey);
     if (memHit && memHit.expiresAtMs > now) {
-      // Refresh recency
-      this.setMemoryEntry(cacheKey, memHit);
       if (memHit.status === 'not_found' || !memHit.result) {
-        return null;
+        if (!params.forceRefresh) {
+          this.setMemoryEntry(cacheKey, memHit);
+          return null;
+        }
+        this.memoryCache.delete(cacheKey);
+      } else {
+        this.setMemoryEntry(cacheKey, memHit);
+        return {
+          ...memHit.result,
+          source: 'cache',
+          apiCallMade: false,
+        };
       }
-      return {
-        ...memHit.result,
-        source: 'cache',
-        apiCallMade: false,
-      };
     }
 
     // Tier 3 (before DB+network): coalesce concurrent identical lookups across async workers
@@ -185,7 +193,12 @@ export class FbPlacesService {
       return flightRes ? { ...flightRes, source: 'cache', apiCallMade: false } : null;
     }
 
-    const work = this.lookupDbOrCallGoogle(cacheKey, cleanQuery, params.bias);
+    const work = this.lookupDbOrCallGoogle(
+      cacheKey,
+      cleanQuery,
+      params.bias,
+      Boolean(params.forceRefresh),
+    );
     this.inFlight.set(cacheKey, work);
     try {
       return await work;
@@ -198,6 +211,7 @@ export class FbPlacesService {
     cacheKey: string,
     queryText: string,
     bias?: PlaceBiasCircle,
+    forceRefresh = false,
   ): Promise<PlaceResolutionResult | null> {
     const now = new Date();
 
@@ -209,35 +223,39 @@ export class FbPlacesService {
           .lean();
 
         if (dbHit) {
-          void this.cacheModel
-            .updateOne({ _id: dbHit._id }, { $inc: { hitCount: 1 } })
-            .catch(() => undefined);
-
           if (dbHit.status === 'not_found' || !dbHit.coords) {
+            if (!forceRefresh && dbHit.provider && dbHit.provider !== 'none') {
+              void this.cacheModel
+                .updateOne({ _id: dbHit._id }, { $inc: { hitCount: 1 } })
+                .catch(() => undefined);
+              this.setMemoryEntry(cacheKey, {
+                status: 'not_found',
+                result: null,
+                expiresAtMs: new Date(dbHit.expiresAt).getTime(),
+              });
+              return null;
+            }
+          } else {
+            void this.cacheModel
+              .updateOne({ _id: dbHit._id }, { $inc: { hitCount: 1 } })
+              .catch(() => undefined);
+            const payload = {
+              coords: dbHit.coords,
+              placeId: dbHit.placeId || null,
+              placeName: dbHit.placeName || queryText,
+              formattedAddress: dbHit.formattedAddress || null,
+            };
             this.setMemoryEntry(cacheKey, {
-              status: 'not_found',
-              result: null,
+              status: 'ok',
+              result: payload,
               expiresAtMs: new Date(dbHit.expiresAt).getTime(),
             });
-            return null;
+            return {
+              ...payload,
+              source: 'cache',
+              apiCallMade: false,
+            };
           }
-
-          const payload = {
-            coords: dbHit.coords,
-            placeId: dbHit.placeId || null,
-            placeName: dbHit.placeName || queryText,
-            formattedAddress: dbHit.formattedAddress || null,
-          };
-          this.setMemoryEntry(cacheKey, {
-            status: 'ok',
-            result: payload,
-            expiresAtMs: new Date(dbHit.expiresAt).getTime(),
-          });
-          return {
-            ...payload,
-            source: 'cache',
-            apiCallMade: false,
-          };
         }
       } catch (err) {
         this.logger.warn(`Place cache DB read failed: ${(err as Error).message}`);
@@ -352,27 +370,40 @@ export class FbPlacesService {
     provider: 'places_v1' | 'places_legacy';
     transientError: boolean;
   }> {
-    if (this.detectedMode === 'legacy') {
-      return this.callLegacyFindPlace(apiKey, queryText, bias);
-    }
-
-    const v1Res = await this.callPlacesV1SearchText(apiKey, queryText, bias);
-    if (!v1Res.fallbackToLegacy) {
-      if (!v1Res.transientError) {
-        this.detectedMode = 'v1';
+    if (this.detectedMode !== 'legacy') {
+      const v1Res = await this.callPlacesV1SearchText(apiKey, queryText, bias);
+      if (!v1Res.fallbackToLegacy) {
+        if (!v1Res.transientError) {
+          this.detectedMode = 'v1';
+        }
+        if (v1Res.match || v1Res.transientError) {
+          return {
+            match: v1Res.match,
+            provider: 'places_v1',
+            transientError: v1Res.transientError,
+          };
+        }
+      } else {
+        this.detectedMode = 'legacy';
       }
-      return {
-        match: v1Res.match,
-        provider: 'places_v1',
-        transientError: v1Res.transientError,
-      };
     }
 
     const legacyRes = await this.callLegacyFindPlace(apiKey, queryText, bias);
     if (!legacyRes.transientError) {
       this.detectedMode = 'legacy';
     }
-    return legacyRes;
+    if (legacyRes.match || legacyRes.transientError) {
+      return legacyRes;
+    }
+
+    // Fallback 2: Google Place Autocomplete (country:mg) + Geocoding (same engine as /search omnibox)
+    // and direct Google Geocoding API for roads, corridors ("By-Pass"), and colloquial landmarks.
+    const autoGeoRes = await this.callAutocompleteOrGeocode(apiKey, queryText, bias);
+    return {
+      match: autoGeoRes.match,
+      provider: 'places_legacy',
+      transientError: autoGeoRes.transientError,
+    };
   }
 
   private async callPlacesV1SearchText(
@@ -541,6 +572,175 @@ export class FbPlacesService {
     } catch (err) {
       this.logger.warn(`Legacy Find Place error for "${queryText}": ${(err as Error).message}`);
       return { match: null, provider: 'places_legacy', transientError: true };
+    }
+  }
+
+  /**
+   * Resolves roads, corridors ("By-Pass"), and colloquial landmarks via
+   * Google Place Autocomplete (`components=country:mg`) + Google Geocoding API.
+   */
+  private async callAutocompleteOrGeocode(
+    apiKey: string,
+    queryText: string,
+    bias?: PlaceBiasCircle,
+  ): Promise<{
+    match: {
+      coords: { lat: number; lng: number };
+      placeId: string | null;
+      placeName: string;
+      formattedAddress: string | null;
+    } | null;
+    transientError: boolean;
+  }> {
+    // Strip trailing ", Antananarivo, Madagascar" for Autocomplete input so it matches
+    // colloquial inputs like "by pass" identically to the frontend /search omnibox.
+    const rawCore = queryText
+      .replace(/,\s*(?:antananarivo|tananarive|madagascar)\b.*$/i, '')
+      .trim() || queryText;
+
+    try {
+      const autoQs = new URLSearchParams({
+        input: rawCore,
+        components: 'country:mg',
+        language: 'fr',
+        key: apiKey,
+      });
+      if (bias) {
+        autoQs.set('location', `${bias.lat},${bias.lng}`);
+        autoQs.set('radius', String(Math.min(50000, Math.max(5000, bias.radiusMeters))));
+      }
+
+      const autoRes = await fetch(
+        `https://maps.googleapis.com/maps/api/place/autocomplete/json?${autoQs.toString()}`,
+        { signal: AbortSignal.timeout(5000) },
+      );
+
+      if (autoRes.ok) {
+        const autoData = (await autoRes.json()) as {
+          status?: string;
+          predictions?: Array<{
+            description?: string;
+            place_id?: string;
+            structured_formatting?: { main_text?: string; secondary_text?: string };
+          }>;
+        };
+
+        const predictions = autoData.predictions || [];
+        if (predictions.length > 0) {
+          // Prefer prediction matching the regional bias (e.g. Tananarive / Antananarivo)
+          const preferred =
+            bias?.regionTag === 'antananarivo'
+              ? predictions.find((p) =>
+                  /tananarive|antananarivo|analamanga|ambohimanambola|alasora|tanjombato|ankorondrano|ivandry|itaosy|ambohibao/i.test(
+                    p.description || '',
+                  ),
+                ) || predictions[0]
+              : predictions[0];
+
+          if (preferred?.place_id) {
+            const geoById = await this.callGeocodeApi(apiKey, {
+              placeId: preferred.place_id,
+              fallbackName:
+                preferred.structured_formatting?.main_text ||
+                preferred.description ||
+                rawCore,
+              bias,
+            });
+            if (geoById.match) {
+              return geoById;
+            }
+          }
+        }
+      }
+    } catch {
+      // Proceed to direct geocode fallback
+    }
+
+    return this.callGeocodeApi(apiKey, {
+      address: queryText,
+      fallbackName: rawCore,
+      bias,
+    });
+  }
+
+  private async callGeocodeApi(
+    apiKey: string,
+    opts: {
+      placeId?: string;
+      address?: string;
+      fallbackName: string;
+      bias?: PlaceBiasCircle;
+    },
+  ): Promise<{
+    match: {
+      coords: { lat: number; lng: number };
+      placeId: string | null;
+      placeName: string;
+      formattedAddress: string | null;
+    } | null;
+    transientError: boolean;
+  }> {
+    try {
+      const qs = new URLSearchParams({
+        region: 'mg',
+        language: 'fr',
+        key: apiKey,
+      });
+      if (opts.placeId) {
+        qs.set('place_id', opts.placeId);
+      } else if (opts.address) {
+        qs.set('address', opts.address);
+      } else {
+        return { match: null, transientError: false };
+      }
+
+      const res = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?${qs.toString()}`,
+        { signal: AbortSignal.timeout(5000) },
+      );
+      if (!res.ok) {
+        return { match: null, transientError: res.status === 429 || res.status >= 500 };
+      }
+
+      const data = (await res.json()) as {
+        status?: string;
+        results?: Array<{
+          place_id?: string;
+          formatted_address?: string;
+          address_components?: Array<{ long_name?: string; types?: string[] }>;
+          geometry?: { location?: { lat?: number; lng?: number } };
+        }>;
+      };
+
+      if (data.status === 'OVER_QUERY_LIMIT' || data.status === 'UNKNOWN_ERROR') {
+        return { match: null, transientError: true };
+      }
+
+      const candidates = (data.results || [])
+        .filter(
+          (r) =>
+            typeof r.geometry?.location?.lat === 'number' &&
+            typeof r.geometry?.location?.lng === 'number',
+        )
+        .map((r) => {
+          const primaryComp = r.address_components?.[0]?.long_name;
+          return {
+            coords: {
+              lat: r.geometry!.location!.lat!,
+              lng: r.geometry!.location!.lng!,
+            },
+            placeId: r.place_id || opts.placeId || null,
+            placeName: primaryComp || opts.fallbackName,
+            formattedAddress: r.formatted_address || null,
+          };
+        });
+
+      return {
+        match: this.pickBestMadagascarCandidate(candidates, opts.bias),
+        transientError: false,
+      };
+    } catch {
+      return { match: null, transientError: true };
     }
   }
 }

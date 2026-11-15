@@ -247,4 +247,51 @@ describe('FbPlacesService & FbCityMatcherService geo pipeline', () => {
     expect(match.resolvedCoords).toEqual({ lat: -18.8758, lng: 47.5238 });
     expect(match.bestMatch?._id).toBe('fkt_ivandry');
   });
+
+  it('automatically extracts "by pass" from raw Facebook text when locationHints is empty, resolves coords on Google Places, and picks nearest Fokontany', async () => {
+    const cities = [
+      {
+        _id: 'fkt_ankadiaivo',
+        fokontany: 'ankadiaivo',
+        commune: 'alasora',
+        district: 'antananarivo avaradrano',
+        region: 'analamanga',
+        coords: { lat: -18.9485, lng: 47.5521 },
+      },
+      {
+        _id: 'fkt_ivandry',
+        fokontany: 'ivandry',
+        commune: 'antananarivo renivohitra',
+        district: 'antananarivo v',
+        region: 'analamanga',
+        coords: { lat: -18.8758, lng: 47.5238 },
+      },
+    ];
+
+    const placesMock = {
+      resolvePlaceCoordinates: jest.fn().mockResolvedValue({
+        coords: { lat: -18.9504827, lng: 47.5509288 },
+        placeId: 'ChIJoUEtdkx88CER5W7HqiEE1tc',
+        placeName: 'By-Pass',
+        formattedAddress: 'By-Pass, Antananarivo, Madagascar',
+        source: 'places_legacy',
+        apiCallMade: true,
+      }),
+    } as any;
+
+    const matcher = new FbCityMatcherService(buildCityModel(cities), placesMock);
+    const match = await matcher.matchLocation(
+      [],
+      'Trano ahofa by pass mitsofoka accès moto 2million fmg efitrano misy jiro rano efitra 2 wc douche anatiny contact 0388008382',
+      'Trano amidy sy ahofa eto Antananarivo',
+    );
+
+    expect(placesMock.resolvePlaceCoordinates).toHaveBeenCalledTimes(1);
+    expect(placesMock.resolvePlaceCoordinates.mock.calls[0][0].queryText).toBe(
+      'by pass, Antananarivo, Madagascar',
+    );
+    expect(match.bestMatch?._id).toBe('fkt_ankadiaivo');
+    expect(match.resolvedPlaceName).toBe('By-Pass');
+    expect(match.resolvedCoords).toEqual({ lat: -18.9504827, lng: 47.5509288 });
+  });
 });

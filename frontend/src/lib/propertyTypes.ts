@@ -41,7 +41,7 @@ export const PROPERTY_TYPE_DEFS: readonly PropertyTypeDef[] = [
     usageFamily: 'residential',
     usesFloor: false,
     icon: Home,
-    requiredMissingSpecs: ['rooms', 'toilet', 'bathrooms', 'area'],
+    requiredMissingSpecs: ['rooms', 'toilet', 'bathrooms'],
   },
   {
     id: 'villa',
@@ -53,7 +53,7 @@ export const PROPERTY_TYPE_DEFS: readonly PropertyTypeDef[] = [
     usageFamily: 'residential',
     usesFloor: false,
     icon: Landmark,
-    requiredMissingSpecs: ['rooms', 'toilet', 'bathrooms', 'area'],
+    requiredMissingSpecs: ['rooms', 'toilet', 'bathrooms'],
   },
   {
     id: 'appartement',
@@ -65,7 +65,7 @@ export const PROPERTY_TYPE_DEFS: readonly PropertyTypeDef[] = [
     usageFamily: 'residential',
     usesFloor: true,
     icon: Building2,
-    requiredMissingSpecs: ['rooms', 'toilet', 'bathrooms', 'area'],
+    requiredMissingSpecs: ['rooms', 'toilet', 'bathrooms'],
   },
   {
     id: 'bureau',
@@ -235,7 +235,7 @@ export function getRequiredMissingSpecs(
 ): readonly PropertyMissingSpecKey[] {
   const normalized = normalizeHouseType(raw);
   if (!normalized) {
-    return ['rooms', 'toilet', 'bathrooms', 'area'];
+    return ['rooms', 'toilet', 'bathrooms'];
   }
   return PROPERTY_TYPE_MAP[normalized].requiredMissingSpecs;
 }

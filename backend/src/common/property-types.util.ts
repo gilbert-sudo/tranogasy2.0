@@ -26,21 +26,21 @@ export const HOUSE_TYPE_META: Record<HouseType, HouseTypeMetadata> = {
     label: 'Maison',
     usageFamily: 'residential',
     usesFloor: false,
-    requiredMissingSpecs: ['rooms', 'toilet', 'bathrooms', 'area'],
+    requiredMissingSpecs: ['rooms', 'toilet', 'bathrooms'],
   },
   villa: {
     id: 'villa',
     label: 'Villa',
     usageFamily: 'residential',
     usesFloor: false,
-    requiredMissingSpecs: ['rooms', 'toilet', 'bathrooms', 'area'],
+    requiredMissingSpecs: ['rooms', 'toilet', 'bathrooms'],
   },
   appartement: {
     id: 'appartement',
     label: 'Appartement',
     usageFamily: 'residential',
     usesFloor: true,
-    requiredMissingSpecs: ['rooms', 'toilet', 'bathrooms', 'area'],
+    requiredMissingSpecs: ['rooms', 'toilet', 'bathrooms'],
   },
   bureau: {
     id: 'bureau',
@@ -116,7 +116,7 @@ export function getRequiredMissingSpecs(
 ): readonly PropertyMissingSpecKey[] {
   const normalized = normalizeHouseType(rawHouseType);
   if (!normalized) {
-    return ['rooms', 'toilet', 'bathrooms', 'area'];
+    return ['rooms', 'toilet', 'bathrooms'];
   }
   return HOUSE_TYPE_META[normalized].requiredMissingSpecs;
 }

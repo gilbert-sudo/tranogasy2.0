@@ -19,7 +19,46 @@ export function sanitizeOwnerForViewer(owner: any, isAdmin = false): any {
   return copy;
 }
 
-export function sanitizePropertyForViewer(property: any, isAdmin = false): any {
+/**
+ * Scrub Malagasy phone numbers, WhatsApp/Facebook links, and email addresses
+ * from public text when a property's contact access is locked.
+ */
+export function redactContactsFromText(text: string | null | undefined): string {
+  if (!text || typeof text !== 'string') return text || '';
+  return text
+    // Malagasy phone numbers (with or without +261 / 00261 and separators)
+    .replace(
+      /(?:\+?261[\s.\-/]*|00261[\s.\-/]*|0)(?:3[23478]|20)(?:[\s.\-/]*\d){7}\b/g,
+      '[Contact protégé]',
+    )
+    // WhatsApp / FB links
+    .replace(
+      /https?:\/\/(?:www\.|m\.|web\.)?(?:facebook\.com|fb\.com|fb\.me|wa\.me|api\.whatsapp\.com)\/[^\s)]+/gi,
+      '[Lien protégé]',
+    )
+    // Email addresses
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[Contact protégé]');
+}
+
+/**
+ * Format a Malagasy phone number into a masked preview like `034 •• ••• ••`.
+ */
+export function maskPhonePreview(phone: string | null | undefined): string | null {
+  if (!phone || typeof phone !== 'string') return null;
+  const digits = phone.replace(/\D/g, '');
+  let local = digits;
+  if (local.startsWith('261') && local.length === 12) {
+    local = '0' + local.slice(3);
+  }
+  const prefix = local.length >= 3 ? local.slice(0, 3) : '034';
+  return `${prefix} •• ••• ••`;
+}
+
+export function sanitizePropertyForViewer(
+  property: any,
+  isAdmin = false,
+  viewerUserId?: string | null,
+): any {
   if (!property || typeof property !== 'object') return property;
 
   const clean: Record<string, any> = {
@@ -31,11 +70,64 @@ export function sanitizePropertyForViewer(property: any, isAdmin = false): any {
     return clean;
   }
 
-  // Never expose scraper audit markers or external Facebook URLs to public callers.
+  const normalizedViewerId = viewerUserId ? String(viewerUserId).trim() : '';
+  const ownerId =
+    clean.owner && typeof clean.owner === 'object'
+      ? String(clean.owner._id || clean.owner.id || '')
+      : typeof clean.owner === 'string'
+        ? clean.owner
+        : '';
+
+  const unlockedList: string[] = Array.isArray(property.unlockedByUsers)
+    ? property.unlockedByUsers.map((id: any) => String(id))
+    : [];
+
+  const isUnlockedForViewer =
+    !property.contactAccessLocked ||
+    Boolean(
+      normalizedViewerId &&
+        (normalizedViewerId === ownerId || unlockedList.includes(normalizedViewerId)),
+    );
+
+  // Never expose scraper audit markers, server-only estimatedArea/qualityScore, or external Facebook URLs to public callers.
   delete clean.origin;
   delete clean.claimStatus;
   delete clean.claimedBy;
   delete clean.claimedAt;
+  delete clean.estimatedArea;
+  delete clean.qualityScore;
+  delete clean.visualCondition;
+  delete clean.unlockedByUsers;
+  delete clean.contactAccessLocked;
+
+  if (!isUnlockedForViewer) {
+    const primaryPhone =
+      clean.phone1 ||
+      clean.phone2 ||
+      clean.phone3 ||
+      (clean.owner && typeof clean.owner === 'object' ? clean.owner.phone : null);
+    clean.contactLocked = true;
+    clean.contactUnlockCostJp = Number(property.contactUnlockCostJp) > 0 ? Number(property.contactUnlockCostJp) : 50;
+    clean.maskedPhonePreview = maskPhonePreview(primaryPhone) || '034 •• ••• ••';
+    clean.phone1 = null;
+    clean.phone2 = null;
+    clean.phone3 = null;
+    if (clean.owner && typeof clean.owner === 'object') {
+      clean.owner = {
+        ...clean.owner,
+        phone: null,
+        email: null,
+      };
+    }
+    if (typeof clean.description === 'string') {
+      clean.description = redactContactsFromText(clean.description);
+    }
+    if (typeof clean.title === 'string') {
+      clean.title = redactContactsFromText(clean.title);
+    }
+  } else {
+    clean.contactLocked = false;
+  }
 
   // Backward-compatibility fallback only when a legacy unmigrated listing still
   // uses an admin account as owner alongside `sources.username`/`sources.avatar`.

@@ -263,6 +263,77 @@ export class FbCityMatcherService implements OnModuleInit {
   }
 
   /**
+   * Deterministic extractor for location phrases from raw Malagasy/French listing text
+   * when Gemini's `locationHints` is empty or incomplete (e.g., "Trano ahofa by pass mitsofoka...",
+   * "rond point Ivandry", "route d'Ambohitrarahaba", "67ha", "en face Jumbo Score").
+   */
+  public extractFallbackLocationHintsFromText(rawText: string): string[] {
+    if (!rawText || typeof rawText !== 'string') return [];
+    const results: string[] = [];
+    const pushClean = (val?: string | null) => {
+      if (!val) return;
+      const cleaned = val
+        .replace(
+          /\b(?:mitsofoka(?:\s+kely)?|acces|accès|moto|voiture|fiara|efitra|efitrano|chambre|chambres|living|salon|loyer|ofany|hofany|prix|vidiny|ar|ariary|fmg|million|millions|misy|jiro|rano|wc|douche|contact|mpanera|proprio|direct)\b.*$/i,
+          '',
+        )
+        .replace(/^[\s,.:;\-–—/()]+|[\s,.:;\-–—/()]+$/g, '')
+        .trim();
+      if (cleaned.length >= 3 && cleaned.length <= 55) {
+        results.push(cleaned);
+      }
+    };
+
+    // 1. Explicit well-known corridors & landmarks in Antananarivo / Madagascar
+    const corridorRegexes = [
+      /\b(by[\s-]*pass(?:\s+[a-zàâäéèêëîïôöùûüç]{3,18})?)\b/gi,
+      /\b(boulevard\s+de\s+tokyo)\b/gi,
+      /\b(marais\s+masay)\b/gi,
+      /\b(67\s*h(?:a|ectares?)(?:\s+[a-z0-9]{2,12})?)\b/gi,
+      /\b(route\s+(?:d['’]|de\s+|du\s+)?(?:la\s+)?[a-zàâäéèêëîïôöùûüç]{3,20})\b/gi,
+      /\b(rond[\s-]*point\s+[a-zàâäéèêëîïôöùûüç]{3,20})\b/gi,
+      /\b((?:terminus|arr[eê]t)\s+[a-z0-9àâäéèêëîïôöùûüç]{2,20})\b/gi,
+      /\b((?:akaikin['’]ny|akaiky|ampitan['’]ny|en\s+face(?:\s+de|\s+du)?|pr[eè]s(?:\s+de|\s+du)?|derri[eè]re)\s+[a-z0-9àâäéèêëîïôöùûüç\s'-]{3,28})/gi,
+    ];
+
+    for (const rx of corridorRegexes) {
+      let m: RegExpExecArray | null;
+      while ((m = rx.exec(rawText)) !== null) {
+        pushClean(m[1]);
+      }
+    }
+
+    // 2. Place immediately following "trano ahofa / amidy [eny / ao]" or title "- <Place>"
+    const introRegexes = [
+      /\btrano\s+(?:ahofa|amidy|haparitaka)\s+(?:eny\s+(?:amin['’]ny\s+)?|ao\s+|à\s+|a\s+)?([a-z0-9àâäéèêëîïôöùûüç\s'-]{3,32})/gi,
+      /\b(?:maison|villa|appartement|studio|chambre|local|bureau|tsena)\s+(?:t\d\s+|f\d\s+)?(?:à\s+louer|a\s+louer|à\s+vendre|a\s+vendre)\s*(?:[-–—]|à|a|eny|ao)\s*([a-z0-9àâäéèêëîïôöùûüç\s'-]{3,30})/gi,
+    ];
+    for (const rx of introRegexes) {
+      let m: RegExpExecArray | null;
+      while ((m = rx.exec(rawText)) !== null) {
+        pushClean(m[1]);
+      }
+    }
+
+    // 3. Scan against loaded Fokontany / Commune names if still empty
+    if (results.length === 0 && this.indexedCities.length > 0) {
+      const normRaw = ` ${normalizeTextForHash(rawText)} `;
+      for (const city of this.indexedCities) {
+        if (
+          city.normFokontany.length >= 5 &&
+          !BROAD_ONLY_TOKENS.has(city.normFokontany) &&
+          normRaw.includes(` ${city.normFokontany} `)
+        ) {
+          results.push(city.fokontany);
+          if (results.length >= 2) break;
+        }
+      }
+    }
+
+    return results;
+  }
+
+  /**
    * Builds up to 2 deduplicated, specific Google Places queries from raw hints
    * (avoiding broad "Antananarivo"/"Tana" center hits and filtering non-location descriptors).
    */
@@ -271,7 +342,9 @@ export class FbCityMatcherService implements OnModuleInit {
     rawText: string,
     groupName: string,
   ): Array<{ queryText: string; cacheKeyHint: string; hintTerm: string }> {
-    const bias = this.inferRegionalBias(locationHints, rawText, groupName);
+    const fallbackHints = this.extractFallbackLocationHintsFromText(rawText);
+    const combinedRawHints = [...(locationHints || []), ...fallbackHints];
+    const bias = this.inferRegionalBias(combinedRawHints, rawText, groupName);
     const regionLabel =
       bias.regionTag === 'antananarivo'
         ? 'Antananarivo'
@@ -281,7 +354,7 @@ export class FbCityMatcherService implements OnModuleInit {
             .join(' ');
 
     const specificCleaned: Array<{ raw: string; norm: string }> = [];
-    for (const rawHint of locationHints || []) {
+    for (const rawHint of combinedRawHints) {
       const cleaned = String(rawHint || '').trim();
       if (cleaned.length < 2) continue;
       if (GENERIC_NON_PLACE_PATTERNS.some((rx) => rx.test(cleaned))) continue;
@@ -462,6 +535,7 @@ export class FbCityMatcherService implements OnModuleInit {
       queryText: formattedQuery,
       cacheKeyHint: norm,
       bias,
+      forceRefresh: true,
     });
 
     if (place) {
