@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { X, Share2, Phone, MapPin, Heart, ChevronLeft, BedDouble, Expand, Home, Utensils, Droplets, Grid2X2, ChevronRight, MessageCircle, Send, Layers } from 'lucide-react';
@@ -118,6 +118,7 @@ function PropertyDetailsContent({
   const [currentMobileImageIndex, setCurrentMobileImageIndex] = useState(0);
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
   const lightboxRef = useRef<HTMLDivElement | null>(null);
+  const initialLightboxIndexRef = useRef<number>(0);
 
   const userStore = useUserStore(state => state.user);
   const currentUser = userStore?.user || userStore;
@@ -157,6 +158,33 @@ function PropertyDetailsContent({
     ? property.images.map((img: any) => typeof img === 'string' ? img : img.src)
     : ['https://via.placeholder.com/1200x800?text=TranoGasy'];
 
+  const openLightbox = (index: number) => {
+    if (!images.length) return;
+    const clampedIndex = Math.max(0, Math.min(index, images.length - 1));
+    initialLightboxIndexRef.current = clampedIndex;
+    setLightboxIndex(clampedIndex);
+  };
+
+  const scrollLightboxToIndex = useCallback((targetIndex: number) => {
+    if (!lightboxRef.current || images.length === 0) return;
+    const clampedIndex = Math.max(0, Math.min(targetIndex, images.length - 1));
+    lightboxRef.current.scrollTo({
+      left: lightboxRef.current.clientWidth * clampedIndex,
+      behavior: 'smooth',
+    });
+  }, [images.length]);
+
+  const setLightboxContainerRef = useCallback((el: HTMLDivElement | null) => {
+    lightboxRef.current = el;
+    if (el && !el.dataset.initialized) {
+      el.scrollTo({
+        left: el.clientWidth * initialLightboxIndexRef.current,
+        behavior: 'instant',
+      });
+      el.dataset.initialized = 'true';
+    }
+  }, []);
+
   useEffect(() => {
     if (lightboxIndex === null) return;
 
@@ -164,19 +192,15 @@ function PropertyDetailsContent({
       if (e.key === 'Escape') {
         setLightboxIndex(null);
       } else if (e.key === 'ArrowLeft' && lightboxIndex > 0) {
-        if (lightboxRef.current) {
-          lightboxRef.current.scrollBy({ left: -window.innerWidth, behavior: 'smooth' });
-        }
+        scrollLightboxToIndex(lightboxIndex - 1);
       } else if (e.key === 'ArrowRight' && lightboxIndex < images.length - 1) {
-        if (lightboxRef.current) {
-          lightboxRef.current.scrollBy({ left: window.innerWidth, behavior: 'smooth' });
-        }
+        scrollLightboxToIndex(lightboxIndex + 1);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [lightboxIndex, images.length]);
+  }, [lightboxIndex, images.length, scrollLightboxToIndex]);
 
   const explicitPrice = property?.type === 'rent' ? property?.rent : property?.price;
   const fallbackEstimatedPrice =
@@ -329,7 +353,7 @@ function PropertyDetailsContent({
           <div 
             key={idx} 
             className="w-full flex-shrink-0 h-full relative snap-center" 
-            onClick={() => setLightboxIndex(idx)}
+            onClick={() => openLightbox(idx)}
             style={{ opacity: (idx === 0 && isTransitioning) ? 0 : 1 }}
           >
             <Image src={img} fill className="object-cover" alt={`Photo ${idx+1}`} priority={idx === 0} />
@@ -388,7 +412,7 @@ function PropertyDetailsContent({
         <div 
           data-detail-hero-image={property?._id}
           className="hidden lg:block w-full min-w-[340px] xl:min-w-[420px] min-h-[360px] xl:min-h-[420px] max-h-[80vh] aspect-[16/10] relative rounded-2xl lg:rounded-3xl overflow-hidden cursor-pointer group shadow-xs mb-6" 
-          onClick={() => setLightboxIndex(0)}
+          onClick={() => openLightbox(0)}
           style={{ opacity: isTransitioning ? 0 : 1 }}
         >
           <Image src={images[0]} fill className="object-cover group-hover:scale-105 transition-transform duration-700" alt="Principale" priority />
@@ -403,76 +427,64 @@ function PropertyDetailsContent({
 
     // Build alternating rows: 2 items, 3 items, 2 items, etc. (max 7 items for preview)
     while (i < images.length && i < 7) {
+      // Freeze the starting index for this row so tile click handlers don't close over mutable `i`.
+      const rowStartIndex = i;
       const isEvenRow = rowIndex % 2 === 0;
       const itemsInRow = isEvenRow ? 2 : 3;
-      const rowImages = images.slice(i, i + itemsInRow);
-      
-      if (rowImages.length === 1) {
-        rows.push(
-          <div key={`row-${rowIndex}`} className="flex gap-[3px] w-full flex-1 min-h-[160px] max-h-[38vh]">
-            <div 
-              {...(i === 0 ? { 'data-detail-hero-image': property?._id, style: { opacity: isTransitioning ? 0 : 1 } } : {})}
-              className="flex-1 relative cursor-pointer group overflow-hidden" 
-              onClick={() => setLightboxIndex(i)}
-            >
-              <Image src={rowImages[0]} fill className="object-cover group-hover:scale-105 transition-transform duration-700" alt={`Photo ${i + 1}`} />
-              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-500" />
-            </div>
-          </div>
-        );
-      } else if (rowImages.length === 2) {
-        // Dynamic proportion: 40% / 60% split
-        rows.push(
-          <div key={`row-${rowIndex}`} className="flex gap-[3px] w-full flex-[1.2] min-h-[170px] max-h-[40vh]">
-            <div 
-              {...(i === 0 ? { 'data-detail-hero-image': property?._id, style: { opacity: isTransitioning ? 0 : 1 } } : {})}
-              className="flex-[4] relative cursor-pointer group overflow-hidden" 
-              onClick={() => setLightboxIndex(i)}
-            >
-              <Image src={rowImages[0]} fill className="object-cover group-hover:scale-105 transition-transform duration-700" alt={`Photo ${i + 1}`} />
-              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-500" />
-            </div>
-            <div className="flex-[6] relative cursor-pointer group overflow-hidden" onClick={() => setLightboxIndex(i + 1)}>
-              <Image src={rowImages[1]} fill className="object-cover group-hover:scale-105 transition-transform duration-700" alt={`Photo ${i + 2}`} />
-              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-500" />
-              {i + 1 === 6 && images.length > 7 && (
-                <div className="absolute inset-0 bg-black/50 hover:bg-black/60 transition-colors flex flex-col items-center justify-center text-white text-center backdrop-blur-[2px]">
-                  <Grid2X2 className="h-6 w-6 mb-1.5" />
-                  <span className="font-bold text-xs sm:text-sm tracking-wide">+{images.length - 7} photos</span>
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      } else if (rowImages.length === 3) {
-        // Dynamic 3-item row: equal 1/3 split
-        rows.push(
-          <div key={`row-${rowIndex}`} className="flex gap-[3px] w-full flex-1 min-h-[130px] max-h-[32vh]">
-            {rowImages.map((img: string, idx: number) => {
-              const globalIdx = i + idx;
-              const isLast = globalIdx === 6 && images.length > 7;
-              return (
-                <div 
-                  key={globalIdx} 
-                  {...(globalIdx === 0 ? { 'data-detail-hero-image': property?._id, style: { opacity: isTransitioning ? 0 : 1 } } : {})}
-                  className="flex-1 relative cursor-pointer group overflow-hidden" 
-                  onClick={() => setLightboxIndex(globalIdx)}
-                >
-                  <Image src={img} fill className="object-cover group-hover:scale-105 transition-transform duration-700" alt={`Photo ${globalIdx + 1}`} />
-                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-500" />
-                  {isLast && (
-                    <div className="absolute inset-0 bg-black/50 hover:bg-black/60 transition-colors flex flex-col items-center justify-center text-white text-center backdrop-blur-[2px]">
-                      <Grid2X2 className="h-6 w-6 mb-1.5" />
-                      <span className="font-bold text-xs sm:text-sm tracking-wide">+{images.length - 7} photos</span>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        );
-      }
-      
+      const rowImages = images.slice(rowStartIndex, rowStartIndex + itemsInRow);
+
+      const rowClassName =
+        rowImages.length === 2
+          ? 'flex gap-[3px] w-full flex-[1.2] min-h-[170px] max-h-[40vh]'
+          : rowImages.length === 1
+          ? 'flex gap-[3px] w-full flex-1 min-h-[160px] max-h-[38vh]'
+          : 'flex gap-[3px] w-full flex-1 min-h-[130px] max-h-[32vh]';
+
+      rows.push(
+        <div key={`row-${rowIndex}`} className={rowClassName}>
+          {rowImages.map((img: string, idx: number) => {
+            const globalIdx = rowStartIndex + idx;
+            const isOverflowTile = globalIdx === 6 && images.length > 7;
+            const tileFlexClass =
+              rowImages.length === 2
+                ? idx === 0
+                  ? 'flex-[4]'
+                  : 'flex-[6]'
+                : 'flex-1';
+
+            return (
+              <div
+                key={globalIdx}
+                {...(globalIdx === 0
+                  ? {
+                      'data-detail-hero-image': property?._id,
+                      style: { opacity: isTransitioning ? 0 : 1 },
+                    }
+                  : {})}
+                className={`${tileFlexClass} relative cursor-pointer group overflow-hidden`}
+                onClick={() => openLightbox(globalIdx)}
+              >
+                <Image
+                  src={img}
+                  fill
+                  className="object-cover group-hover:scale-105 transition-transform duration-700"
+                  alt={`Photo ${globalIdx + 1}`}
+                />
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-500" />
+                {isOverflowTile && (
+                  <div className="absolute inset-0 bg-black/50 hover:bg-black/60 transition-colors flex flex-col items-center justify-center text-white text-center backdrop-blur-[2px]">
+                    <Grid2X2 className="h-6 w-6 mb-1.5" />
+                    <span className="font-bold text-xs sm:text-sm tracking-wide">
+                      +{images.length - 7} photos
+                    </span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      );
+
       i += itemsInRow;
       rowIndex++;
     }
@@ -596,7 +608,7 @@ function PropertyDetailsContent({
       {/* MOBILE GALLERY */}
       {renderMobileGallery()}
 
-      <div className="relative z-10 max-w-[1680px] mx-auto px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 2xl:px-20 lg:py-4 pb-0 lg:pb-6">
+      <div className="relative z-10 max-w-[1680px] mx-auto px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 2xl:px-20 lg:pt-4 pb-[calc(7.5rem+env(safe-area-inset-bottom))] lg:pb-14">
         
         {/* DESKTOP NAVIGATION (STICKY ON SCROLL) */}
         <div className="hidden lg:flex items-center justify-between mb-4 lg:mb-5 sticky top-5 z-50 pointer-events-none">
@@ -897,9 +909,7 @@ function PropertyDetailsContent({
               className="hidden md:flex absolute left-8 z-20 h-14 w-14 rounded-full bg-white/10 items-center justify-center text-white hover:bg-white/20 hover:scale-110 transition-all border border-white/20"
               onClick={(e) => { 
                 e.stopPropagation(); 
-                if (lightboxRef.current) {
-                  lightboxRef.current.scrollBy({ left: -window.innerWidth, behavior: 'smooth' });
-                }
+                scrollLightboxToIndex(lightboxIndex - 1);
               }}
             >
               <ChevronLeft className="h-7 w-7" />
@@ -912,9 +922,7 @@ function PropertyDetailsContent({
               className="hidden md:flex absolute right-8 z-20 h-14 w-14 rounded-full bg-white/10 items-center justify-center text-white hover:bg-white/20 hover:scale-110 transition-all border border-white/20"
               onClick={(e) => { 
                 e.stopPropagation(); 
-                if (lightboxRef.current) {
-                  lightboxRef.current.scrollBy({ left: window.innerWidth, behavior: 'smooth' });
-                }
+                scrollLightboxToIndex(lightboxIndex + 1);
               }}
             >
               <ChevronRight className="h-7 w-7" />
@@ -923,19 +931,17 @@ function PropertyDetailsContent({
 
           {/* Image Container with Scroll Snap */}
           <div
-            ref={(el) => {
-              if (el && !el.dataset.initialized) {
-                el.scrollTo({ left: el.clientWidth * lightboxIndex, behavior: 'instant' });
-                el.dataset.initialized = 'true';
-              }
-              lightboxRef.current = el;
-            }}
+            ref={setLightboxContainerRef}
             className="w-full h-full flex overflow-x-auto snap-x snap-mandatory"
             style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
             onClick={(e) => e.stopPropagation()}
             onScroll={(e) => {
                const target = e.currentTarget;
-               const index = Math.round(target.scrollLeft / target.clientWidth);
+               if (!target.clientWidth) return;
+               const index = Math.max(
+                 0,
+                 Math.min(Math.round(target.scrollLeft / target.clientWidth), images.length - 1)
+               );
                if (index !== lightboxIndex) {
                  setLightboxIndex(index);
                }
