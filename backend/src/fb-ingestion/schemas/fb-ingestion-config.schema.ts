@@ -12,6 +12,19 @@ export interface FbRunProgress {
   detail?: string | null;
 }
 
+export interface FbActiveRunState {
+  ownerId: string;
+  ownerHost: string;
+  ownerPid: number;
+  heartbeatAt: Date;
+  status: 'running' | 'importing_snapshot';
+  phase: string;
+  message: string | null;
+  snapshotId: string | null;
+  startedAt: Date;
+  progress: FbRunProgress | null;
+}
+
 export interface FbBackfillJobState {
   status: 'idle' | 'running' | 'completed' | 'cancelled' | 'error';
   phase: string;
@@ -31,6 +44,13 @@ export interface FbBackfillJobState {
   startedAt: string | null;
   finishedAt: string | null;
   updatedAt: string | null;
+}
+
+export interface FbActiveBackfillState extends FbBackfillJobState {
+  ownerId?: string;
+  ownerHost?: string;
+  ownerPid?: number;
+  heartbeatAt?: string;
 }
 
 /**
@@ -100,6 +120,12 @@ export class FbIngestionConfig {
 
   @Prop({ type: Object, default: null })
   backfillJob: FbBackfillJobState | null;
+
+  @Prop({ type: Object, default: null })
+  activeRun?: FbActiveRunState | null;
+
+  @Prop({ type: Object, default: null })
+  activeBackfill?: FbActiveBackfillState | null;
 
   @Prop({ default: 0 })
   totalRuns: number;

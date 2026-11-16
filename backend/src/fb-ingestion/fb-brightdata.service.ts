@@ -273,8 +273,9 @@ export class FbBrightDataService {
     snapshotId: string,
     externalSignal?: AbortSignal,
   ): Promise<BrightDataPostRecord[]> {
-    const { signal, cleanup } = this.createRequestSignal(60000, externalSignal);
+    const { signal, cleanup } = this.createRequestSignal(90000, externalSignal);
     let res: Response;
+    let text = '';
     try {
       res = await fetch(
         `${this.baseUrl}/snapshot/${encodeURIComponent(snapshotId)}?format=json`,
@@ -283,15 +284,15 @@ export class FbBrightDataService {
           signal,
         },
       );
+      if (!res.ok) {
+        const errTxt = await res.text();
+        throw new Error(`Bright Data snapshot download failed (${res.status}): ${errTxt}`);
+      }
+      text = await res.text();
     } finally {
       cleanup();
     }
-    if (!res.ok) {
-      const txt = await res.text();
-      throw new Error(`Bright Data snapshot download failed (${res.status}): ${txt}`);
-    }
 
-    const text = await res.text();
     const trimmed = text.trim();
     if (!trimmed) return [];
 

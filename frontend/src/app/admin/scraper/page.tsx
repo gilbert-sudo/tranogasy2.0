@@ -275,6 +275,11 @@ export default function AdminScraperPage() {
         ]);
         serverConfigRef.current = cfg;
         setConfig(cfg);
+        if (cfg.lastPollStatus === 'importing_snapshot') {
+          setLaunchingMode('snapshot');
+        } else if (cfg.lastPollStatus === 'running') {
+          setLaunchingMode('scrape');
+        }
         if (cfg.lastRunSummary) {
           setLastSummary(cfg.lastRunSummary);
         }
@@ -328,6 +333,11 @@ export default function AdminScraperPage() {
         if (!active) return;
         serverConfigRef.current = cfg;
         setConfig(cfg);
+        if (cfg.lastPollStatus === 'importing_snapshot') {
+          setLaunchingMode('snapshot');
+        } else if (cfg.lastPollStatus === 'running') {
+          setLaunchingMode('scrape');
+        }
         if (cfg.lastRunSummary) {
           setLastSummary(cfg.lastRunSummary);
         }
@@ -373,6 +383,11 @@ export default function AdminScraperPage() {
       runPollFailuresRef.current = 0;
       setRunPollWarning(null);
       serverConfigRef.current = cfg;
+      if (cfg.lastPollStatus === 'importing_snapshot') {
+        setLaunchingMode('snapshot');
+      } else if (cfg.lastPollStatus === 'running') {
+        setLaunchingMode('scrape');
+      }
       setConfig((prev) => {
         if (!prev) return cfg;
         // Preserve any optimistic config toggle made concurrently
@@ -918,6 +933,11 @@ export default function AdminScraperPage() {
         const cfg = await fbIngestionService.getConfig(userId);
         serverConfigRef.current = cfg;
         setConfig(cfg);
+        if (cfg.lastPollStatus === 'importing_snapshot') {
+          setLaunchingMode('snapshot');
+        } else if (cfg.lastPollStatus === 'running') {
+          setLaunchingMode('scrape');
+        }
       } catch (err) {
         if (prevConfig) {
           setConfig(prevConfig);

@@ -111,9 +111,9 @@ describe('FbIngestionService background job tracking & recovery', () => {
         avatarsPersisted: 1,
         errorCount: 0,
         lastError: null,
-        startedAt: new Date().toISOString(),
+        startedAt: new Date(Date.now() - 180_000).toISOString(),
         finishedAt: null,
-        updatedAt: new Date().toISOString(),
+        updatedAt: new Date(Date.now() - 180_000).toISOString(),
       },
     });
 
@@ -979,5 +979,339 @@ describe('FbIngestionService background job tracking & recovery', () => {
     expect(approvedDoc.reviewedAt).toBeNull();
     expect(approvedDoc.save).toHaveBeenCalledTimes(1);
     expect(res.candidate).toBe(approvedDoc);
+  });
+
+  it('prevents a second backend instance from interrupting an active lease and respects stale expiry', async () => {
+    let sharedConfig: Record<string, any> = {
+      key: 'default',
+      isLive: true,
+      pollIntervalMinutes: 30,
+      onlyActiveHours: false,
+      activeHourStart: 6,
+      activeHourEnd: 22,
+      geminiModel: 'gemini-3.5-flash-lite',
+      lastPollStatus: 'idle',
+      lastPollPhase: 'idle',
+      lastPollMessage: null,
+      lastPollStartedAt: new Date(Date.now() - 45 * 60_000),
+      lastRunProgress: null,
+      lastError: null,
+      activeRun: null,
+      activeBackfill: null,
+      backfillJob: null,
+    };
+
+    const setNestedPath = (obj: Record<string, any>, pathKey: string, val: any) => {
+      const parts = pathKey.split('.');
+      let cur = obj;
+      for (let i = 0; i < parts.length - 1; i++) {
+        if (!cur[parts[i]] || typeof cur[parts[i]] !== 'object') {
+          cur[parts[i]] = {};
+        }
+        cur = cur[parts[i]];
+      }
+      cur[parts[parts.length - 1]] = val;
+    };
+
+    const applyUpdate = (update: any) => {
+      if (update?.$set) {
+        for (const [k, v] of Object.entries(update.$set)) {
+          if (k.includes('.')) {
+            setNestedPath(sharedConfig, k, v);
+          } else {
+            sharedConfig[k] = v;
+          }
+        }
+      }
+      if (update?.$inc) {
+        for (const [k, v] of Object.entries(update.$inc)) {
+          sharedConfig[k] = (Number(sharedConfig[k]) || 0) + Number(v);
+        }
+      }
+    };
+
+    const sharedConfigModel: any = {
+      findOne: jest.fn(() => {
+        const snapshot = {
+          ...sharedConfig,
+          activeRun: sharedConfig.activeRun ? { ...sharedConfig.activeRun } : null,
+        };
+        return {
+          lean: jest.fn().mockImplementation(async () => ({ ...snapshot })),
+          ...snapshot,
+          then: (resolve: (val: any) => void) => resolve({ ...snapshot }),
+        };
+      }),
+      updateOne: jest.fn(async (_filter: any, update: any) => {
+        applyUpdate(update);
+        return { modifiedCount: 1 };
+      }),
+      findOneAndUpdate: jest.fn(async (_filter: any, update: any) => {
+        const activeRun = sharedConfig.activeRun;
+        const staleMs = 120_000;
+        const activeHeartbeatFresh =
+          activeRun &&
+          activeRun.heartbeatAt &&
+          Date.now() - new Date(activeRun.heartbeatAt).getTime() < staleMs;
+        if (activeHeartbeatFresh) {
+          return null;
+        }
+        applyUpdate(update);
+        return { ...sharedConfig };
+      }),
+    };
+
+    let releaseDownload!: () => void;
+    const brightDataA: any = {
+      downloadSnapshot: jest.fn(
+        () =>
+          new Promise<any[]>((resolve) => {
+            releaseDownload = () => resolve([]);
+          }),
+      ),
+    };
+    const brightDataB: any = {
+      triggerCollection: jest.fn(),
+      downloadSnapshot: jest.fn().mockResolvedValue([]),
+    };
+
+    const makeService = (brightData: any) =>
+      new FbIngestionService(
+        sharedConfigModel,
+        {
+          countDocuments: jest.fn().mockResolvedValue(1),
+          find: jest.fn(() => createChainableQuery([])),
+        } as any,
+        { findOne: jest.fn().mockResolvedValue(null), create: jest.fn() } as any,
+        { find: jest.fn(() => createChainableQuery([])) } as any,
+        { find: jest.fn(() => createChainableQuery([])) } as any,
+        { findById: jest.fn() } as any,
+        { findOne: jest.fn().mockResolvedValue({ role: 'admin' }) } as any,
+        { create: jest.fn() } as any,
+        brightData,
+        {} as any,
+        {} as any,
+        {
+          isPermanentGcsUrl: jest.fn().mockReturnValue(true),
+          reuploadFbAvatar: jest.fn().mockResolvedValue(null),
+        } as any,
+        { get: jest.fn().mockReturnValue(undefined) } as any,
+      );
+
+    const instanceA = makeService(brightDataA);
+    const instanceB = makeService(brightDataB);
+
+    const startRes = await instanceA.startImportInBackground('sd_shared_1');
+    expect(startRes.started).toBe(true);
+    // Underlying root status stays non-running so legacy servers never mark it interrupted
+    expect(sharedConfig.lastPollStatus).toBe('idle');
+    expect(sharedConfig.activeRun?.status).toBe('importing_snapshot');
+
+    // Instance B polling config sees projected running state and MUST NOT kill Instance A's run
+    const cfgFromB = await instanceB.getConfig();
+    expect(cfgFromB.lastPollStatus).toBe('importing_snapshot');
+    expect(sharedConfig.activeRun?.status).toBe('importing_snapshot');
+
+    // Instance B schedulerTick and concurrent import must skip/reject while lease is active
+    await (instanceB as any).schedulerTick();
+    expect(brightDataB.triggerCollection).not.toHaveBeenCalled();
+    await expect(instanceB.startImportInBackground('sd_other')).rejects.toThrow(
+      'An ingestion run is already in progress',
+    );
+
+    // Finish Instance A's download and let background import settle cleanly
+    releaseDownload();
+    await new Promise((r) => setTimeout(r, 30));
+    const afterFinish = await instanceB.getConfig();
+    expect(afterFinish.lastPollStatus).toBe('idle');
+    expect(afterFinish.lastPollPhase).toBe('completed');
+    expect(sharedConfig.activeRun).toBeNull();
+
+    // Now simulate a truly dead remote host lease (> 2 min stale heartbeat)
+    sharedConfig.activeRun = {
+      ownerId: 'remote-crashed-host:999:uuid',
+      ownerHost: 'remote-crashed-host',
+      ownerPid: 999,
+      heartbeatAt: new Date(Date.now() - 180_000),
+      status: 'running',
+      phase: 'waiting_brightdata',
+      message: 'Stale run',
+      snapshotId: 'sd_stale',
+      startedAt: new Date(Date.now() - 200_000),
+      progress: { current: 20, total: 100, percent: 21, unit: 'percent' },
+    };
+    const recovered = await instanceB.getConfig();
+    expect(recovered.lastPollStatus).toBe('error');
+    expect(recovered.lastPollPhase).toBe('interrupted');
+    expect(sharedConfig.activeRun).toBeNull();
+  });
+
+  it('does not prematurely interrupt a legacy running state whose updated_at is fresh', async () => {
+    const { service, getStoredConfig } = createHarness({
+      lastPollStatus: 'running',
+      lastPollPhase: 'waiting_brightdata',
+      updated_at: new Date(),
+    });
+
+    const cfg = await service.getConfig();
+    expect(cfg.lastPollStatus).toBe('running');
+    expect(getStoredConfig().lastPollStatus).toBe('running');
+  });
+
+  it('continues processing remaining snapshot posts when seenModel hits duplicate key or post prep fails', async () => {
+    const { service, configModel } = createHarness();
+    const seenModel = (service as any).seenModel;
+    let createCalls = 0;
+    seenModel.create = jest.fn().mockImplementation(async () => {
+      createCalls++;
+      if (createCalls === 1) {
+        const dupErr: any = new Error('E11000 duplicate key');
+        dupErr.code = 11000;
+        throw dupErr;
+      }
+      return {};
+    });
+    seenModel.deleteOne = jest.fn().mockResolvedValue({ deletedCount: 1 });
+    seenModel.find = jest.fn(() => {
+      const q: any = {
+        sort: jest.fn(() => q),
+        limit: jest.fn(() => q),
+        lean: jest.fn().mockResolvedValue([]),
+        then: (resolve: (val: any) => void, reject?: (err: any) => void) =>
+          Promise.resolve([]).then(resolve, reject),
+      };
+      return q;
+    });
+
+    (service as any).propertyModel.findOne = jest.fn(() => createChainableQuery(null));
+    (service as any).propertyModel.find = jest.fn(() => createChainableQuery([]));
+    (service as any).geminiService = {
+      parsePost: jest
+        .fn()
+        .mockResolvedValueOnce({
+          modelUsed: 'gemini-3.5-flash-lite',
+          parsed: {
+            category: 'house_or_apartment',
+            type: 'rent',
+            houseType: 'maison',
+            title: 'Maison test 1',
+            description: 'Maison test 1',
+            priceAriary: null,
+            rentAriary: 400000,
+            estimatedPriceAriary: null,
+            estimatedRentAriary: 400000,
+            estimatedPriceMin: 350000,
+            estimatedPriceMax: 450000,
+            estimatedPriceConfidence: 'medium',
+            rooms: 2,
+            livingRoom: 1,
+            kitchen: 1,
+            toilet: 1,
+            bathrooms: 1,
+            area: null,
+            estimatedArea: 60,
+            visualCondition: 'good',
+            qualityScore: 80,
+            recommendedCoverIndex: 0,
+            imageContactRedactions: [],
+            visitFee: null,
+            cautionPercent: null,
+            cautionAmount: null,
+            commissionPercent: null,
+            commissionAmount: null,
+            floor: null,
+            locationHints: ['Ivandry'],
+            phones: ['0341234567'],
+            features: {},
+            featureVerification: {},
+            aiConfidence: 'high',
+            aiNotes: '',
+          },
+        })
+        .mockResolvedValueOnce({
+          modelUsed: 'gemini-3.5-flash-lite',
+          parsed: {
+            category: 'spam_or_other',
+            type: null,
+            houseType: null,
+            title: 'Spam',
+            description: 'Spam',
+            priceAriary: null,
+            rentAriary: null,
+            estimatedPriceAriary: null,
+            estimatedRentAriary: null,
+            estimatedPriceMin: null,
+            estimatedPriceMax: null,
+            estimatedPriceConfidence: 'low',
+            rooms: null,
+            livingRoom: null,
+            kitchen: null,
+            toilet: null,
+            bathrooms: null,
+            area: null,
+            estimatedArea: null,
+            visualCondition: 'average',
+            qualityScore: 10,
+            recommendedCoverIndex: null,
+            imageContactRedactions: [],
+            visitFee: null,
+            cautionPercent: null,
+            cautionAmount: null,
+            commissionPercent: null,
+            commissionAmount: null,
+            floor: null,
+            locationHints: [],
+            phones: [],
+            features: {},
+            featureVerification: {},
+            aiConfidence: 'low',
+            aiNotes: '',
+          },
+        }),
+    };
+    (service as any).cityMatcherService = {
+      matchLocation: jest.fn().mockRejectedValueOnce(new Error('Transient city failure')),
+    };
+
+    const summary = await service.processSnapshotRecords(
+      'sd_resilient',
+      [
+        {
+          post_id: 'p_dup',
+          group_id: 'g1',
+          group_name: 'Groupe 1',
+          url: 'https://www.facebook.com/groups/g1/posts/p_dup/',
+          content: 'Maison a louer Ivandry 0341111111',
+          attachments: [{ type: 'Photo', url: 'https://fb.example/1.jpg' }],
+        },
+        {
+          post_id: 'p_prep_err',
+          group_id: 'g1',
+          group_name: 'Groupe 1',
+          url: 'https://www.facebook.com/groups/g1/posts/p_prep_err/',
+          content: 'Maison a louer Ivandry 0342222222',
+          attachments: [{ type: 'Photo', url: 'https://fb.example/2.jpg' }],
+        },
+        {
+          post_id: 'p_ok_spam',
+          group_id: 'g1',
+          group_name: 'Groupe 1',
+          url: 'https://www.facebook.com/groups/g1/posts/p_ok_spam/',
+          content: 'Vente camera wifi 0343333333',
+          attachments: [{ type: 'Photo', url: 'https://fb.example/3.jpg' }],
+        },
+      ],
+      true,
+    );
+
+    expect(summary.duplicateSkipped).toBe(1);
+    expect(summary.spamSkipped).toBe(1);
+    expect(summary.errors).toHaveLength(1);
+    expect(summary.errors[0]).toContain('Transient city failure');
+    expect(seenModel.deleteOne).toHaveBeenCalledWith({ canonicalPostId: 'p_prep_err' });
+    const progressUpdates = configModel.updateOne.mock.calls
+      .map(([, u]: any[]) => u?.$set?.lastRunProgress)
+      .filter(Boolean);
+    expect(progressUpdates[progressUpdates.length - 1]?.percent).toBe(100);
   });
 });
