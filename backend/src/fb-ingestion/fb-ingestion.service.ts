@@ -67,15 +67,21 @@ import {
 import {
   FbActiveBackfillState,
   FbActiveRunState,
+  FbActivityLogEntry,
   FbBackfillJobState,
   FbIngestionConfig,
   FbIngestionConfigDocument,
+  FbRunHistoryEntry,
   FbRunProgress,
+  FbRunTrigger,
+  FbSchedulerDiagnostics,
+  FbSchedulerStatus,
 } from './schemas/fb-ingestion-config.schema';
 import { FbSeenPost, FbSeenPostDocument } from './schemas/fb-seen-post.schema';
 
 const RUN_HEARTBEAT_INTERVAL_MS = 15_000;
 const RUN_STALE_LEASE_MS = 120_000;
+const SCHEDULER_TICK_INTERVAL_MS = 15_000;
 
 export interface RunSummary {
   snapshotId: string;
@@ -101,9 +107,18 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
   private readonly ownerPid = process.pid;
   private readonly instanceId = `${this.ownerHost}:${this.ownerPid}:${crypto.randomUUID()}`;
   private schedulerTimer: NodeJS.Timeout | null = null;
+  private precisionTriggerTimer: NodeJS.Timeout | null = null;
+  private isSchedulerLoopStarted = false;
+  private lastHeartbeatWriteMs = 0;
+  private lastSchedulerDecisionLogged: string | null = null;
   private runHeartbeatTimer: NodeJS.Timeout | null = null;
   private backfillHeartbeatTimer: NodeJS.Timeout | null = null;
   private isRunInProgress = false;
+  private activeRunMeta: {
+    trigger: FbRunTrigger;
+    startedAtMs: number;
+    snapshotId: string | null;
+  } | null = null;
   private runAbortController: AbortController | null = null;
   private isRunCancelRequested = false;
   private isBackfillInProgress = false;
@@ -136,12 +151,17 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
   async onModuleInit(): Promise<void> {
     await this.ensureBootstrapped();
     await this.recoverOrphanedJobsOnStartup();
-    // Check every 60s whether the dynamic poll interval has elapsed while isLive=true.
+    this.isSchedulerLoopStarted = true;
+    // Check every 15s (plus precision timer near boundary) whether the poll interval has elapsed while isLive=true.
     this.schedulerTimer = setInterval(() => {
       void this.schedulerTick();
-    }, 60_000);
+    }, SCHEDULER_TICK_INTERVAL_MS);
     this.schedulerTimer.unref?.();
-    this.logger.log('FbIngestion scheduler initialized (starts PAUSED unless isLive=true in DB)');
+    const initialKick = setTimeout(() => {
+      void this.schedulerTick();
+    }, 1500);
+    initialKick.unref?.();
+    this.logger.log('FbIngestion scheduler initialized (15s heartbeat; starts PAUSED unless isLive=true in DB)');
   }
 
   private isLocalOwnerProcessDead(ownerHost?: string | null, ownerPid?: number | null): boolean {
@@ -202,6 +222,7 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       if (activeRun.progress !== undefined) mutable.lastRunProgress = activeRun.progress;
       if (activeRun.snapshotId) mutable.lastSnapshotId = activeRun.snapshotId;
       if (activeRun.startedAt) mutable.lastPollStartedAt = activeRun.startedAt;
+      if (activeRun.trigger) mutable.lastRunTrigger = activeRun.trigger;
       mutable.lastError = null;
     }
 
@@ -301,6 +322,13 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
           if (activeRun.ownerId) {
             filter['activeRun.ownerId'] = activeRun.ownerId;
           }
+          await this.appendActivityLog({
+            kind: 'run_error',
+            trigger: activeRun.trigger || 'system',
+            title: 'Collecte interrompue (redémarrage serveur)',
+            detail: msg,
+            snapshotId: activeRun.snapshotId || null,
+          });
         }
       } else if (
         !this.isRunInProgress &&
@@ -389,9 +417,14 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
   }
 
   onModuleDestroy(): void {
+    this.isSchedulerLoopStarted = false;
     if (this.schedulerTimer) {
       clearInterval(this.schedulerTimer);
       this.schedulerTimer = null;
+    }
+    if (this.precisionTriggerTimer) {
+      clearTimeout(this.precisionTriggerTimer);
+      this.precisionTriggerTimer = null;
     }
     this.stopRunHeartbeat();
     this.stopBackfillHeartbeat();
@@ -572,16 +605,223 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  private getMadagascarHour(): number {
-    const utcHour = new Date().getUTCHours();
-    return (utcHour + 3) % 24;
+  private getMadagascarHour(nowMs = Date.now()): number {
+    return this.computeMadagascarTimeParts(nowMs).tanaHour;
+  }
+
+  private computeMadagascarTimeParts(
+    nowMs = Date.now(),
+    activeHourStart = 6,
+    activeHourEnd = 22,
+  ): {
+    tanaHour: number;
+    tanaMinute: number;
+    tanaTimeLabel: string;
+    nextWakeupUtcMs: number;
+  } {
+    const tanaOffsetMs = 3 * 3600_000;
+    const tanaDate = new Date(nowMs + tanaOffsetMs);
+    const tanaHour = tanaDate.getUTCHours();
+    const tanaMinute = tanaDate.getUTCMinutes();
+    const tanaTimeLabel = `${String(tanaHour).padStart(2, '0')}:${String(tanaMinute).padStart(2, '0')} (UTC+3)`;
+
+    const dayOffset = tanaHour >= activeHourEnd ? 1 : 0;
+    const tanaWakeupMs = Date.UTC(
+      tanaDate.getUTCFullYear(),
+      tanaDate.getUTCMonth(),
+      tanaDate.getUTCDate() + dayOffset,
+      activeHourStart,
+      0,
+      0,
+      0,
+    );
+    return {
+      tanaHour,
+      tanaMinute,
+      tanaTimeLabel,
+      nextWakeupUtcMs: tanaWakeupMs - tanaOffsetMs,
+    };
+  }
+
+  private schedulePrecisionTick(delayMs: number): void {
+    if (this.precisionTriggerTimer) {
+      clearTimeout(this.precisionTriggerTimer);
+      this.precisionTriggerTimer = null;
+    }
+    const clampedDelay = Math.max(400, Math.min(delayMs, 70_000));
+    this.precisionTriggerTimer = setTimeout(() => {
+      this.precisionTriggerTimer = null;
+      void this.schedulerTick();
+    }, clampedDelay);
+    this.precisionTriggerTimer.unref?.();
+  }
+
+  private async appendActivityLog(
+    entry: Omit<FbActivityLogEntry, 'id' | 'at'> & { at?: string; id?: string },
+  ): Promise<void> {
+    try {
+      const fullEntry: FbActivityLogEntry = {
+        id: entry.id || crypto.randomUUID(),
+        at: entry.at || new Date().toISOString(),
+        kind: entry.kind,
+        trigger: entry.trigger,
+        title: entry.title,
+        detail: entry.detail ?? null,
+        snapshotId: entry.snapshotId ?? null,
+        durationSec: entry.durationSec ?? null,
+        stats: entry.stats ?? null,
+      };
+      await this.configModel.updateOne(
+        { key: 'default' },
+        {
+          $push: {
+            activityLog: {
+              $each: [fullEntry],
+              $slice: -30,
+            },
+          },
+        } as any,
+      );
+    } catch {
+      // Telemetry log writes must never interrupt ingestion execution
+    }
+  }
+
+  private async appendRunHistory(entry: FbRunHistoryEntry): Promise<void> {
+    try {
+      await this.configModel.updateOne(
+        { key: 'default' },
+        {
+          $push: {
+            runHistory: {
+              $each: [entry],
+              $slice: -12,
+            },
+          },
+        } as any,
+      );
+    } catch {
+      // Telemetry history writes must never interrupt ingestion execution
+    }
+  }
+
+  private computeSchedulerDiagnostics(
+    cfg: Record<string, any>,
+    activeGroupsCount: number,
+    totalGroupsCount: number,
+    nowMs = Date.now(),
+  ): FbSchedulerDiagnostics {
+    const activeStart = typeof cfg.activeHourStart === 'number' ? cfg.activeHourStart : 6;
+    const activeEnd = typeof cfg.activeHourEnd === 'number' ? cfg.activeHourEnd : 22;
+    const intervalMinutes = Math.max(5, Number(cfg.pollIntervalMinutes || 30));
+    const intervalMs = intervalMinutes * 60_000;
+    const cycleDurationSeconds = Math.round(intervalMs / 1000);
+
+    const tana = this.computeMadagascarTimeParts(nowMs, activeStart, activeEnd);
+    const isWithinActiveHours =
+      !cfg.onlyActiveHours ||
+      (activeStart < activeEnd
+        ? tana.tanaHour >= activeStart && tana.tanaHour < activeEnd
+        : true);
+
+    const lastRunMs = cfg.lastPollStartedAt ? new Date(cfg.lastPollStartedAt).getTime() : 0;
+    const validLastRunMs = Number.isFinite(lastRunMs) && lastRunMs > 0 ? lastRunMs : 0;
+    const cycleElapsedSeconds =
+      validLastRunMs > 0
+        ? Math.max(0, Math.min(cycleDurationSeconds, Math.floor((nowMs - validLastRunMs) / 1000)))
+        : 0;
+
+    const tickMs = cfg.lastSchedulerTickAt ? new Date(cfg.lastSchedulerTickAt).getTime() : NaN;
+    const activeRunHeartbeatMs = cfg.activeRun?.heartbeatAt
+      ? new Date(cfg.activeRun.heartbeatAt).getTime()
+      : NaN;
+    const freshestBeatMs = Math.max(
+      Number.isFinite(tickMs) ? tickMs : 0,
+      Number.isFinite(activeRunHeartbeatMs) ? activeRunHeartbeatMs : 0,
+    );
+    const schedulerHeartbeatAgeSeconds =
+      freshestBeatMs > 0 ? Math.max(0, Math.round((nowMs - freshestBeatMs) / 1000)) : null;
+    const schedulerLoopAlive =
+      this.isSchedulerLoopStarted ||
+      (schedulerHeartbeatAgeSeconds !== null && schedulerHeartbeatAgeSeconds <= 90);
+
+    let state: FbSchedulerStatus;
+    let headline: string;
+    let detail: string;
+    let nextScheduledRunAt: string | null = null;
+    let secondsUntilNextRun: number | null = null;
+
+    if (cfg.lastPollStatus === 'running') {
+      state = 'running';
+      headline = 'Collecte Facebook & analyse IA en cours';
+      detail = cfg.lastPollMessage || 'Traitement des publications Facebook en cours sur le serveur...';
+    } else if (cfg.lastPollStatus === 'importing_snapshot') {
+      state = 'importing_snapshot';
+      headline = 'Importation de snapshot en cours';
+      detail = cfg.lastPollMessage || 'Traitement du snapshot Bright Data en cours...';
+    } else if (!cfg.isLive) {
+      state = 'paused';
+      headline = 'Scraper en pause';
+      detail = 'Aucune collecte automatique ne sera déclenchée tant que le mode LIVE est désactivé (0 crédit consommé).';
+    } else if (activeGroupsCount === 0) {
+      state = 'no_active_groups';
+      headline = 'En attente — Aucun groupe Facebook actif';
+      detail = `Le mode LIVE est activé mais 0 / ${totalGroupsCount} groupe(s) sont actifs. Activez au moins un groupe cible.`;
+    } else if (cfg.onlyActiveHours && !isWithinActiveHours) {
+      state = 'sleeping_night';
+      const targetMs = Math.max(
+        tana.nextWakeupUtcMs,
+        validLastRunMs > 0 ? validLastRunMs + intervalMs : 0,
+      );
+      secondsUntilNextRun = Math.max(0, Math.ceil((targetMs - nowMs) / 1000));
+      nextScheduledRunAt = new Date(targetMs).toISOString();
+      headline = 'En veille nocturne (repos)';
+      detail = `Hors heures actives Tana (${activeStart}h–${activeEnd}h UTC+3). Le scraper se repose jusqu'à ${String(activeStart).padStart(2, '0')}h00 heure Tana.`;
+    } else {
+      const targetMs = validLastRunMs > 0 ? validLastRunMs + intervalMs : nowMs;
+      const remainingMs = targetMs - nowMs;
+      if (remainingMs <= 0) {
+        state = 'due_now';
+        secondsUntilNextRun = 0;
+        nextScheduledRunAt = new Date(nowMs).toISOString();
+        headline = 'Cycle atteint — Déclenchement imminent';
+        detail = `Le délai de ${intervalMinutes} min est écoulé. La collecte sur ${activeGroupsCount} groupe(s) actif(s) démarre dans quelques secondes.`;
+      } else {
+        state = 'waiting_next_cycle';
+        secondsUntilNextRun = Math.ceil(remainingMs / 1000);
+        nextScheduledRunAt = new Date(targetMs).toISOString();
+        headline = 'En attente du prochain cycle';
+        detail = `Boucle de ${intervalMinutes} min active sur ${activeGroupsCount} groupe(s). Le scraper patiente avant le prochain déclenchement Bright Data.`;
+      }
+    }
+
+    return {
+      state,
+      headline,
+      detail,
+      serverTimeIso: new Date(nowMs).toISOString(),
+      tanaHour: tana.tanaHour,
+      tanaMinute: tana.tanaMinute,
+      tanaTimeLabel: tana.tanaTimeLabel,
+      isWithinActiveHours,
+      activeGroupsCount,
+      totalGroupsCount,
+      nextScheduledRunAt,
+      secondsUntilNextRun,
+      cycleDurationSeconds,
+      cycleElapsedSeconds,
+      lastRunTrigger: (cfg.lastRunTrigger as FbRunTrigger) || null,
+      lastSchedulerTickAt: freshestBeatMs > 0 ? new Date(freshestBeatMs).toISOString() : null,
+      schedulerHeartbeatAgeSeconds,
+      schedulerLoopAlive,
+      schedulerTickIntervalSeconds: Math.round(SCHEDULER_TICK_INTERVAL_MS / 1000),
+    };
   }
 
   private async schedulerTick(): Promise<void> {
     if (this.isRunInProgress) return;
     try {
       const config = await this.getConfig();
-      if (!config.isLive) return;
       if (
         config.lastPollStatus === 'running' ||
         config.lastPollStatus === 'importing_snapshot'
@@ -589,25 +829,88 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
         return;
       }
 
-      if (config.onlyActiveHours) {
-        const mgHour = this.getMadagascarHour();
-        if (mgHour < config.activeHourStart || mgHour >= config.activeHourEnd) {
-          return;
+      const now = new Date();
+      const nowMs = now.getTime();
+      const [activeGroupsCount, totalGroupsCount] =
+        typeof (this.groupModel as any)?.countDocuments === 'function'
+          ? await Promise.all([
+              this.groupModel.countDocuments({ isActive: true }),
+              this.groupModel.countDocuments({}),
+            ])
+          : [1, 1];
+
+      const diag = this.computeSchedulerDiagnostics(
+        config,
+        activeGroupsCount,
+        totalGroupsCount,
+        nowMs,
+      );
+
+      const stateChanged = config.lastSchedulerStatus !== diag.state;
+      if (stateChanged || nowMs - this.lastHeartbeatWriteMs >= 30_000) {
+        this.lastHeartbeatWriteMs = nowMs;
+        await this.configModel
+          .updateOne(
+            { key: 'default' },
+            {
+              $set: {
+                lastSchedulerTickAt: now,
+                lastSchedulerStatus: diag.state,
+                lastSchedulerNote: diag.detail,
+              },
+            },
+          )
+          .catch(() => undefined);
+      }
+
+      if (stateChanged) {
+        if (diag.state === 'sleeping_night' && this.lastSchedulerDecisionLogged !== 'sleeping_night') {
+          this.lastSchedulerDecisionLogged = 'sleeping_night';
+          await this.appendActivityLog({
+            kind: 'scheduler_sleep',
+            trigger: 'system',
+            title: 'Mise en veille nocturne',
+            detail: diag.detail,
+          });
+        } else if (
+          diag.state === 'no_active_groups' &&
+          this.lastSchedulerDecisionLogged !== 'no_active_groups'
+        ) {
+          this.lastSchedulerDecisionLogged = 'no_active_groups';
+          await this.appendActivityLog({
+            kind: 'groups_warning',
+            trigger: 'system',
+            title: 'Collecte impossible : aucun groupe actif',
+            detail: diag.detail,
+          });
+        } else if (diag.state === 'waiting_next_cycle' || diag.state === 'paused') {
+          this.lastSchedulerDecisionLogged = diag.state;
         }
+      }
+
+      if (!config.isLive || activeGroupsCount === 0) return;
+
+      if (config.onlyActiveHours && !diag.isWithinActiveHours) {
+        return;
       }
 
       const lastRunMs = config.lastPollStartedAt
         ? new Date(config.lastPollStartedAt).getTime()
         : 0;
       const intervalMs = Math.max(5, config.pollIntervalMinutes) * 60_000;
-      if (Date.now() - lastRunMs < intervalMs) {
+      const remainingMs = lastRunMs > 0 ? lastRunMs + intervalMs - nowMs : 0;
+
+      if (remainingMs > 0) {
+        if (this.isSchedulerLoopStarted && remainingMs <= 65_000) {
+          this.schedulePrecisionTick(remainingMs + 250);
+        }
         return;
       }
 
       this.logger.log(
         `Scheduled poll triggered (interval=${config.pollIntervalMinutes}m, model=${config.geminiModel})`,
       );
-      await this.runActiveGroupsInternal(undefined, intervalMs);
+      await this.runActiveGroupsInternal(undefined, intervalMs, 'scheduled');
     } catch (err) {
       if (err instanceof BadRequestException) {
         this.logger.debug(`Scheduler tick skipped: ${(err as Error).message}`);
@@ -637,16 +940,42 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
     const cfg = await this.getConfig();
     const raw = typeof cfg.toObject === 'function' ? cfg.toObject() : { ...cfg };
     this.applyActiveStateOverlay(raw);
+    const activeRunHeartbeat = raw.activeRun?.heartbeatAt || null;
     delete raw.activeRun;
     delete raw.activeBackfill;
+
     const placesApiConfigured = this.fbPlacesService?.isConfigured() ?? false;
-    const placesCacheEntries = this.fbPlacesService
-      ? await this.fbPlacesService.getCacheEntryCount().catch(() => 0)
-      : 0;
+    const [placesCacheEntries, activeGroupsCount, totalGroupsCount] = await Promise.all([
+      this.fbPlacesService
+        ? this.fbPlacesService.getCacheEntryCount().catch(() => 0)
+        : Promise.resolve(0),
+      typeof (this.groupModel as any)?.countDocuments === 'function'
+        ? this.groupModel.countDocuments({ isActive: true }).catch(() => 0)
+        : Promise.resolve(0),
+      typeof (this.groupModel as any)?.countDocuments === 'function'
+        ? this.groupModel.countDocuments({}).catch(() => 0)
+        : Promise.resolve(0),
+    ]);
+
+    const schedulerDiagnostics = this.computeSchedulerDiagnostics(
+      {
+        ...raw,
+        ...(activeRunHeartbeat ? { activeRun: { heartbeatAt: activeRunHeartbeat } } : {}),
+      },
+      activeGroupsCount,
+      totalGroupsCount,
+    );
+
+    const activityLog = Array.isArray(raw.activityLog) ? [...raw.activityLog].reverse() : [];
+    const runHistory = Array.isArray(raw.runHistory) ? [...raw.runHistory].reverse() : [];
+
     return {
       ...raw,
+      activityLog,
+      runHistory,
       placesApiConfigured,
       placesCacheEntries,
+      schedulerDiagnostics,
     };
   }
 
@@ -659,8 +988,8 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
 
   async updateConfig(
     patch: Partial<FbIngestionConfig> & { lastError?: string | null },
-  ): Promise<FbIngestionConfigDocument> {
-    await this.getConfig();
+  ): Promise<any> {
+    const prev = await this.getConfig();
     const allowed: Record<string, any> = {};
     if (typeof patch.isLive === 'boolean') allowed.isLive = patch.isLive;
     if (typeof patch.pollIntervalMinutes === 'number') {
@@ -694,12 +1023,80 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       allowed.lastError = null;
     }
 
-    const updated = await this.configModel.findOneAndUpdate(
+    await this.configModel.findOneAndUpdate(
       { key: 'default' },
       { $set: allowed },
       { new: true },
     );
-    return updated!;
+
+    const nextInterval = allowed.pollIntervalMinutes ?? prev.pollIntervalMinutes;
+    const nextActiveHours = allowed.onlyActiveHours ?? prev.onlyActiveHours;
+    const nextStart = allowed.activeHourStart ?? prev.activeHourStart;
+    const nextEnd = allowed.activeHourEnd ?? prev.activeHourEnd;
+
+    if (typeof allowed.isLive === 'boolean' && allowed.isLive !== prev.isLive) {
+      if (allowed.isLive) {
+        await this.appendActivityLog({
+          kind: 'scheduler_started',
+          trigger: 'manual',
+          title: 'Mode LIVE activé',
+          detail: `Surveillance automatique toutes les ${nextInterval} min (${
+            nextActiveHours ? `heures actives ${nextStart}h–${nextEnd}h Tana` : '24h/24'
+          }).`,
+        });
+      } else {
+        await this.appendActivityLog({
+          kind: 'scheduler_paused',
+          trigger: 'manual',
+          title: 'Scraper mis en PAUSE',
+          detail: 'Aucune collecte automatique ne sera déclenchée (0 crédit consommé).',
+        });
+      }
+    } else {
+      const changes: string[] = [];
+      if (
+        typeof allowed.pollIntervalMinutes === 'number' &&
+        allowed.pollIntervalMinutes !== prev.pollIntervalMinutes
+      ) {
+        changes.push(`Fréquence : ${allowed.pollIntervalMinutes} min`);
+      }
+      if (
+        typeof allowed.onlyActiveHours === 'boolean' &&
+        allowed.onlyActiveHours !== prev.onlyActiveHours
+      ) {
+        changes.push(
+          allowed.onlyActiveHours ? `Heures actives ${nextStart}h–${nextEnd}h` : 'Mode 24h/24',
+        );
+      }
+      if (typeof allowed.geminiModel === 'string' && allowed.geminiModel !== prev.geminiModel) {
+        changes.push(`Modèle : ${allowed.geminiModel}`);
+      }
+      if (
+        typeof allowed.autoApproveEnabled === 'boolean' &&
+        allowed.autoApproveEnabled !== prev.autoApproveEnabled
+      ) {
+        changes.push(`Zero-Touch : ${allowed.autoApproveEnabled ? 'ACTIF' : 'MANUEL'}`);
+      }
+      if (changes.length > 0) {
+        await this.appendActivityLog({
+          kind: 'config_changed',
+          trigger: 'manual',
+          title: 'Configuration mise à jour',
+          detail: changes.join(' • '),
+        });
+      }
+    }
+
+    if (
+      this.isSchedulerLoopStarted &&
+      (allowed.isLive === true ||
+        typeof allowed.pollIntervalMinutes === 'number' ||
+        typeof allowed.onlyActiveHours === 'boolean')
+    ) {
+      this.schedulePrecisionTick(600);
+    }
+
+    return this.getConfigWithDiagnostics();
   }
 
   // ---------------------------------------------------------------------------
@@ -846,6 +1243,9 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
         }
         if (patch.lastSnapshotId !== undefined) {
           setPatch['activeRun.snapshotId'] = patch.lastSnapshotId;
+          if (this.activeRunMeta) {
+            this.activeRunMeta.snapshotId = patch.lastSnapshotId;
+          }
         }
         filter.$or = [
           { 'activeRun.ownerId': this.instanceId },
@@ -902,6 +1302,7 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
     message: string,
     snapshotId?: string,
     scheduledIntervalMs?: number,
+    trigger: FbRunTrigger = status === 'importing_snapshot' ? 'snapshot' : 'manual',
   ): Promise<void> {
     if (this.isRunInProgress) {
       throw new BadRequestException('An ingestion run is already in progress');
@@ -941,6 +1342,7 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       snapshotId: snapshotId || null,
       startedAt: now,
       progress: initialProgress,
+      trigger,
     };
 
     const setPatch: Record<string, any> = {
@@ -949,6 +1351,10 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       lastPollPhase: phase,
       lastPollMessage: message,
       lastRunProgress: initialProgress,
+      lastRunTrigger: trigger,
+      lastSchedulerTickAt: now,
+      lastSchedulerStatus: status,
+      lastSchedulerNote: message,
       lastError: null,
     };
     if (snapshotId) {
@@ -1006,16 +1412,43 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
 
     this.isRunInProgress = true;
     this.isRunCancelRequested = false;
+    this.activeRunMeta = {
+      trigger,
+      startedAtMs: now.getTime(),
+      snapshotId: snapshotId || null,
+    };
     this.runAbortController = new AbortController();
     this.startRunHeartbeat();
+
+    const logTitle =
+      trigger === 'scheduled'
+        ? 'Collecte automatique déclenchée'
+        : trigger === 'snapshot'
+        ? `Import snapshot ${snapshotId || ''} démarré`
+        : 'Collecte manuelle démarrée';
+    await this.appendActivityLog({
+      kind: 'run_started',
+      trigger,
+      title: logTitle,
+      detail: message,
+      snapshotId: snapshotId || null,
+    });
   }
 
   private async finalizeRunSuccess(summary: RunSummary): Promise<void> {
+    const finishedAt = new Date();
+    const meta = this.activeRunMeta;
+    const trigger: FbRunTrigger = meta?.trigger || 'manual';
+    const startedAtMs = meta?.startedAtMs || finishedAt.getTime();
+    const durationSec = Math.max(1, Math.round((finishedAt.getTime() - startedAtMs) / 1000));
+
     const errNote = summary.errors.length > 0 ? ` (${summary.errors.length} erreur)` : '';
     const autoNote =
       (summary.autoApprovedCount || 0) > 0
         ? ` (dont ${summary.autoApprovedCount} auto-publiée(s))`
         : '';
+    const finalMessage = `Terminé (${summary.snapshotId}) : +${summary.candidatesCreated} annonce(s)${autoNote}, ${summary.duplicateSkipped} doublons${errNote}.`;
+
     await this.configModel.updateOne(
       {
         key: 'default',
@@ -1028,12 +1461,14 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       {
         $set: {
           activeRun: null,
-          lastPollFinishedAt: new Date(),
+          lastPollFinishedAt: finishedAt,
           lastPollStatus: 'idle',
           lastPollPhase: 'completed',
-          lastPollMessage: `Terminé (${summary.snapshotId}) : +${summary.candidatesCreated} annonce(s)${autoNote}, ${summary.duplicateSkipped} doublons${errNote}.`,
+          lastPollMessage: finalMessage,
           lastRunProgress: null,
           lastRunSummary: summary,
+          lastRunTrigger: trigger,
+          lastSchedulerTickAt: finishedAt,
           lastError: summary.errors.length > 0 ? summary.errors[0] : null,
         },
         $inc: {
@@ -1041,23 +1476,106 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
         },
       },
     );
+
+    await Promise.all([
+      this.appendRunHistory({
+        id: crypto.randomUUID(),
+        trigger,
+        status: 'completed',
+        snapshotId: summary.snapshotId || null,
+        startedAt: new Date(startedAtMs).toISOString(),
+        finishedAt: finishedAt.toISOString(),
+        durationSec,
+        totalRawRecords: summary.totalRawRecords,
+        candidatesCreated: summary.candidatesCreated,
+        autoApprovedCount: summary.autoApprovedCount || 0,
+        duplicateSkipped: summary.duplicateSkipped,
+        landSkipped: summary.landSkipped,
+        videoOnlySkipped: summary.videoOnlySkipped,
+        spamSkipped: summary.spamSkipped,
+        geminiCalls: summary.geminiCalls,
+        placesApiCalls: summary.placesApiCalls || 0,
+        placesCacheHits: summary.placesCacheHits || 0,
+        errorMessage: summary.errors.length > 0 ? summary.errors[0] : null,
+      }),
+      this.appendActivityLog({
+        kind: 'run_completed',
+        trigger,
+        title:
+          trigger === 'scheduled'
+            ? 'Collecte automatique terminée'
+            : trigger === 'snapshot'
+            ? 'Import snapshot terminé'
+            : 'Collecte manuelle terminée',
+        detail: finalMessage,
+        snapshotId: summary.snapshotId || null,
+        durationSec,
+        stats: {
+          rawRecords: summary.totalRawRecords,
+          candidatesCreated: summary.candidatesCreated,
+          autoApprovedCount: summary.autoApprovedCount || 0,
+          duplicateSkipped: summary.duplicateSkipped,
+          geminiCalls: summary.geminiCalls,
+        },
+      }),
+    ]);
+    this.activeRunMeta = null;
   }
 
   private async finalizeRunCancelled(): Promise<void> {
+    const finishedAt = new Date();
+    const meta = this.activeRunMeta;
+    const trigger: FbRunTrigger = meta?.trigger || 'manual';
+    const startedAtMs = meta?.startedAtMs || finishedAt.getTime();
+    const durationSec = Math.max(1, Math.round((finishedAt.getTime() - startedAtMs) / 1000));
+
     await this.configModel.updateOne(
       { key: 'default' },
       {
         $set: {
           activeRun: null,
-          lastPollFinishedAt: new Date(),
+          lastPollFinishedAt: finishedAt,
           lastPollStatus: 'idle',
           lastPollPhase: 'cancelled',
           lastPollMessage: 'Opération annulée par l’administrateur.',
           lastRunProgress: null,
+          lastSchedulerTickAt: finishedAt,
           lastError: null,
         },
       },
     );
+
+    if (meta) {
+      await Promise.all([
+        this.appendRunHistory({
+          id: crypto.randomUUID(),
+          trigger,
+          status: 'cancelled',
+          snapshotId: meta.snapshotId,
+          startedAt: new Date(startedAtMs).toISOString(),
+          finishedAt: finishedAt.toISOString(),
+          durationSec,
+          totalRawRecords: 0,
+          candidatesCreated: 0,
+          autoApprovedCount: 0,
+          duplicateSkipped: 0,
+          landSkipped: 0,
+          videoOnlySkipped: 0,
+          spamSkipped: 0,
+          geminiCalls: 0,
+          errorMessage: 'Opération annulée par l’administrateur.',
+        }),
+        this.appendActivityLog({
+          kind: 'run_cancelled',
+          trigger,
+          title: 'Collecte annulée',
+          detail: 'Opération arrêtée par l’administrateur.',
+          snapshotId: meta.snapshotId,
+          durationSec,
+        }),
+      ]);
+      this.activeRunMeta = null;
+    }
   }
 
   private async finalizeRunError(err: unknown): Promise<string> {
@@ -1065,7 +1583,13 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       await this.finalizeRunCancelled();
       return 'Opération annulée par l’administrateur.';
     }
+    const finishedAt = new Date();
+    const meta = this.activeRunMeta;
+    const trigger: FbRunTrigger = meta?.trigger || 'manual';
+    const startedAtMs = meta?.startedAtMs || finishedAt.getTime();
+    const durationSec = Math.max(1, Math.round((finishedAt.getTime() - startedAtMs) / 1000));
     const msg = (err as Error).message || 'Unknown error';
+
     await this.configModel.updateOne(
       {
         key: 'default',
@@ -1078,24 +1602,60 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       {
         $set: {
           activeRun: null,
-          lastPollFinishedAt: new Date(),
+          lastPollFinishedAt: finishedAt,
           lastPollStatus: 'error',
           lastPollPhase: 'error',
           lastPollMessage: msg,
           lastRunProgress: null,
+          lastSchedulerTickAt: finishedAt,
           lastError: msg,
         },
       },
     );
+
+    await Promise.all([
+      this.appendRunHistory({
+        id: crypto.randomUUID(),
+        trigger,
+        status: 'error',
+        snapshotId: meta?.snapshotId || null,
+        startedAt: new Date(startedAtMs).toISOString(),
+        finishedAt: finishedAt.toISOString(),
+        durationSec,
+        totalRawRecords: 0,
+        candidatesCreated: 0,
+        autoApprovedCount: 0,
+        duplicateSkipped: 0,
+        landSkipped: 0,
+        videoOnlySkipped: 0,
+        spamSkipped: 0,
+        geminiCalls: 0,
+        errorMessage: msg,
+      }),
+      this.appendActivityLog({
+        kind: 'run_error',
+        trigger,
+        title:
+          trigger === 'scheduled'
+            ? 'Échec collecte automatique'
+            : trigger === 'snapshot'
+            ? 'Échec import snapshot'
+            : 'Échec collecte manuelle',
+        detail: msg,
+        snapshotId: meta?.snapshotId || null,
+        durationSec,
+      }),
+    ]);
+    this.activeRunMeta = null;
     return msg;
   }
 
-  async cancelActiveRun(): Promise<FbIngestionConfigDocument> {
+  async cancelActiveRun() {
     this.isRunCancelRequested = true;
     this.runAbortController?.abort(new Error('Collecte annulée par l’administrateur.'));
     this.stopRunHeartbeat();
     await this.finalizeRunCancelled();
-    return this.getConfig();
+    return this.getConfigWithDiagnostics();
   }
 
   private async executeRunActiveGroups(
@@ -1228,6 +1788,9 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       'running',
       'triggering_brightdata',
       `Déclenchement Bright Data sur ${targets.length} groupe(s)...`,
+      undefined,
+      undefined,
+      'manual',
     );
 
     void this.executeRunActiveGroups(config, targets).catch((err) => {
@@ -1245,6 +1808,7 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
   private async runActiveGroupsInternal(
     groupIds?: string[],
     scheduledIntervalMs?: number,
+    trigger: FbRunTrigger = 'manual',
   ): Promise<RunSummary> {
     const { config, targets } = await this.prepareActiveTargets(groupIds);
     await this.markRunStarted(
@@ -1253,12 +1817,13 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       `Déclenchement Bright Data sur ${targets.length} groupe(s)...`,
       undefined,
       scheduledIntervalMs,
+      trigger,
     );
     return this.executeRunActiveGroups(config, targets);
   }
 
   async runActiveGroups(groupIds?: string[]): Promise<RunSummary> {
-    return this.runActiveGroupsInternal(groupIds);
+    return this.runActiveGroupsInternal(groupIds, undefined, 'manual');
   }
 
   async startImportInBackground(snapshotId: string) {
@@ -1280,6 +1845,8 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       'downloading_snapshot',
       `Importation du snapshot ${cleanId}...`,
       cleanId,
+      undefined,
+      'snapshot',
     );
 
     void this.executeImportSnapshot(cleanId).catch((err) => {
@@ -1316,6 +1883,8 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       'downloading_snapshot',
       `Importation du snapshot ${cleanId}...`,
       cleanId,
+      undefined,
+      'snapshot',
     );
     return this.executeImportSnapshot(cleanId);
   }

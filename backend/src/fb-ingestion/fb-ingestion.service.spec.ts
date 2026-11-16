@@ -1314,4 +1314,135 @@ describe('FbIngestionService background job tracking & recovery', () => {
       .filter(Boolean);
     expect(progressUpdates[progressUpdates.length - 1]?.percent).toBe(100);
   });
+
+  it('computes live schedulerDiagnostics, countdowns, night sleep, and records activityLog & runHistory', async () => {
+    let storedConfig: Record<string, any> = {
+      key: 'default',
+      isLive: false,
+      pollIntervalMinutes: 15,
+      onlyActiveHours: false,
+      activeHourStart: 6,
+      activeHourEnd: 22,
+      geminiModel: 'gemini-3.5-flash-lite',
+      lastPollStatus: 'idle',
+      lastPollPhase: 'idle',
+      lastPollMessage: null,
+      lastPollStartedAt: new Date(Date.now() - 5 * 60_000),
+      lastRunProgress: null,
+      lastError: null,
+      activeRun: null,
+      activeBackfill: null,
+      backfillJob: null,
+      activityLog: [],
+      runHistory: [],
+    };
+
+    const applyUpdate = (update: any) => {
+      if (update?.$set) {
+        storedConfig = { ...storedConfig, ...update.$set };
+      }
+      if (update?.$inc) {
+        for (const [k, v] of Object.entries(update.$inc)) {
+          storedConfig[k] = (Number(storedConfig[k]) || 0) + Number(v);
+        }
+      }
+      if (update?.$push) {
+        for (const [k, spec] of Object.entries<any>(update.$push)) {
+          const existing = Array.isArray(storedConfig[k]) ? storedConfig[k] : [];
+          const items = Array.isArray(spec?.$each) ? spec.$each : [spec];
+          const combined = [...existing, ...items];
+          const slice = typeof spec?.$slice === 'number' ? spec.$slice : 0;
+          storedConfig[k] = slice < 0 ? combined.slice(slice) : combined;
+        }
+      }
+    };
+
+    const configModel: any = {
+      findOne: jest.fn(() => ({
+        lean: jest.fn().mockImplementation(async () => ({ ...storedConfig })),
+        ...storedConfig,
+        then: (resolve: (val: any) => void) => resolve({ ...storedConfig }),
+      })),
+      updateOne: jest.fn(async (_filter: any, update: any) => {
+        applyUpdate(update);
+        return { modifiedCount: 1 };
+      }),
+      findOneAndUpdate: jest.fn(async (_filter: any, update: any) => {
+        applyUpdate(update);
+        return { ...storedConfig };
+      }),
+    };
+
+    let activeCount = 3;
+    const groupModel: any = {
+      countDocuments: jest.fn(async (filter?: any) =>
+        filter && filter.isActive === true ? activeCount : 5,
+      ),
+    };
+
+    const service = new FbIngestionService(
+      configModel,
+      groupModel,
+      { findOne: jest.fn().mockResolvedValue(null), create: jest.fn() } as any,
+      { find: jest.fn(() => createChainableQuery([])) } as any,
+      { find: jest.fn(() => createChainableQuery([])) } as any,
+      { findById: jest.fn() } as any,
+      { findOne: jest.fn().mockResolvedValue({ role: 'admin' }) } as any,
+      { create: jest.fn() } as any,
+      { downloadSnapshot: jest.fn().mockResolvedValue([]) } as any,
+      {} as any,
+      {} as any,
+      {
+        isPermanentGcsUrl: jest.fn().mockReturnValue(true),
+        reuploadFbAvatar: jest.fn().mockResolvedValue(null),
+      } as any,
+      { get: jest.fn().mockReturnValue(undefined) } as any,
+    );
+
+    // 1. Paused state
+    const pausedDiag = await service.getConfigWithDiagnostics();
+    expect(pausedDiag.schedulerDiagnostics.state).toBe('paused');
+    expect(pausedDiag.schedulerDiagnostics.nextScheduledRunAt).toBeNull();
+    expect(pausedDiag.schedulerDiagnostics.activeGroupsCount).toBe(3);
+
+    // 2. Enabling LIVE logs scheduler_started and calculates ~10 min remaining on 15-min cycle
+    const liveDiag = await service.updateConfig({ isLive: true });
+    expect(liveDiag.schedulerDiagnostics.state).toBe('waiting_next_cycle');
+    expect(liveDiag.schedulerDiagnostics.cycleDurationSeconds).toBe(900);
+    expect(liveDiag.schedulerDiagnostics.secondsUntilNextRun).toBeGreaterThan(500);
+    expect(liveDiag.schedulerDiagnostics.secondsUntilNextRun).toBeLessThanOrEqual(605);
+    expect(liveDiag.activityLog[0]?.kind).toBe('scheduler_started');
+
+    // 3. No active groups overrides waiting state
+    activeCount = 0;
+    const noGroupDiag = await service.getConfigWithDiagnostics();
+    expect(noGroupDiag.schedulerDiagnostics.state).toBe('no_active_groups');
+
+    // 4. Night sleep computation in UTC+3 (23:00 Tana -> wakes at 06:00 Tana = 7h)
+    activeCount = 3;
+    const nightNowMs = Date.UTC(2026, 10, 16, 20, 0, 0); // 23:00 UTC+3
+    const nightDiag = (service as any).computeSchedulerDiagnostics(
+      { ...storedConfig, onlyActiveHours: true, activeHourStart: 6, activeHourEnd: 22 },
+      3,
+      5,
+      nightNowMs,
+    );
+    expect(nightDiag.state).toBe('sleeping_night');
+    expect(nightDiag.isWithinActiveHours).toBe(false);
+    expect(nightDiag.secondsUntilNextRun).toBe(7 * 3600);
+
+    // 5. Importing a snapshot records run_started, run_completed, and runHistory entry
+    await service.importSnapshot('sd_diag_test');
+    const afterImport = await service.getConfigWithDiagnostics();
+    expect(afterImport.runHistory).toHaveLength(1);
+    expect(afterImport.runHistory[0]?.snapshotId).toBe('sd_diag_test');
+    expect(afterImport.runHistory[0]?.trigger).toBe('snapshot');
+    expect(afterImport.runHistory[0]?.status).toBe('completed');
+    expect(afterImport.activityLog.some((e: any) => e.kind === 'run_completed')).toBe(true);
+
+    // 6. Pausing records scheduler_paused
+    const afterPause = await service.updateConfig({ isLive: false });
+    expect(afterPause.schedulerDiagnostics.state).toBe('paused');
+    expect(afterPause.activityLog[0]?.kind).toBe('scheduler_paused');
+  });
 });

@@ -12,6 +12,87 @@ export interface FbRunProgress {
   detail?: string | null;
 }
 
+export type FbSchedulerStatus =
+  | 'paused'
+  | 'waiting_next_cycle'
+  | 'due_now'
+  | 'running'
+  | 'importing_snapshot'
+  | 'sleeping_night'
+  | 'no_active_groups';
+
+export type FbRunTrigger = 'scheduled' | 'manual' | 'snapshot';
+
+export interface FbActivityLogEntry {
+  id: string;
+  at: string;
+  kind:
+    | 'scheduler_started'
+    | 'scheduler_paused'
+    | 'scheduler_sleep'
+    | 'run_started'
+    | 'run_completed'
+    | 'run_cancelled'
+    | 'run_error'
+    | 'config_changed'
+    | 'groups_warning';
+  trigger?: FbRunTrigger | 'system';
+  title: string;
+  detail?: string | null;
+  snapshotId?: string | null;
+  durationSec?: number | null;
+  stats?: {
+    rawRecords?: number;
+    candidatesCreated?: number;
+    autoApprovedCount?: number;
+    duplicateSkipped?: number;
+    geminiCalls?: number;
+  } | null;
+}
+
+export interface FbRunHistoryEntry {
+  id: string;
+  trigger: FbRunTrigger;
+  status: 'completed' | 'cancelled' | 'error';
+  snapshotId: string | null;
+  startedAt: string;
+  finishedAt: string;
+  durationSec: number;
+  totalRawRecords: number;
+  candidatesCreated: number;
+  autoApprovedCount: number;
+  duplicateSkipped: number;
+  landSkipped: number;
+  videoOnlySkipped: number;
+  spamSkipped: number;
+  geminiCalls: number;
+  placesApiCalls?: number;
+  placesCacheHits?: number;
+  errorMessage?: string | null;
+}
+
+export interface FbSchedulerDiagnostics {
+  state: FbSchedulerStatus;
+  headline: string;
+  detail: string;
+  serverTimeIso: string;
+  tanaHour: number;
+  tanaMinute: number;
+  tanaTimeLabel: string;
+  isWithinActiveHours: boolean;
+  activeGroupsCount: number;
+  totalGroupsCount: number;
+  nextScheduledRunAt: string | null;
+  secondsUntilNextRun: number | null;
+  cycleDurationSeconds: number;
+  cycleElapsedSeconds: number;
+  lastRunTrigger: FbRunTrigger | null;
+  lastSchedulerTickAt: string | null;
+  schedulerHeartbeatAgeSeconds: number | null;
+  schedulerLoopAlive: boolean;
+  schedulerTickIntervalSeconds: number;
+}
+
 export interface FbActiveRunState {
   ownerId: string;
   ownerHost: string;
@@ -23,6 +104,7 @@ export interface FbActiveRunState {
   snapshotId: string | null;
   startedAt: Date;
   progress: FbRunProgress | null;
+  trigger?: FbRunTrigger;
 }
 
 export interface FbBackfillJobState {
@@ -135,6 +217,24 @@ export class FbIngestionConfig {
 
   @Prop({ default: 0 })
   totalGeminiCalls: number;
+
+  @Prop({ type: String, default: null })
+  lastRunTrigger?: FbRunTrigger | null;
+
+  @Prop({ type: Date, default: null })
+  lastSchedulerTickAt?: Date | null;
+
+  @Prop({ type: String, default: null })
+  lastSchedulerStatus?: string | null;
+
+  @Prop({ type: String, default: null })
+  lastSchedulerNote?: string | null;
+
+  @Prop({ type: [Object], default: [] })
+  activityLog?: FbActivityLogEntry[];
+
+  @Prop({ type: [Object], default: [] })
+  runHistory?: FbRunHistoryEntry[];
 }
 
 export const FbIngestionConfigSchema = SchemaFactory.createForClass(FbIngestionConfig);

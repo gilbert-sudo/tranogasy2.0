@@ -3,7 +3,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
-  Activity,
   AlertTriangle,
   ArrowLeft,
   Ban,
@@ -45,6 +44,7 @@ import FloatingOperationHud, {
   type HudToast,
 } from '@/components/admin/scraper/FloatingOperationHud';
 import AsyncToggleSwitch from '@/components/admin/scraper/AsyncToggleSwitch';
+import ScraperCycleCockpit from '@/components/admin/scraper/ScraperCycleCockpit';
 
 type AdminTab = 'queue' | 'groups' | 'matrix' | 'origins';
 
@@ -145,6 +145,9 @@ export default function AdminScraperPage() {
   const [syncingConfig, setSyncingConfig] = useState(false);
 
   const isPollingCompletionRef = useRef(false);
+  const wasRunActiveRef = useRef(false);
+  const hasLoadedConfigRef = useRef(false);
+  const lastKnownFinishedAtRef = useRef<string | null>(null);
   const isBackfillCompletionRef = useRef(false);
   const runPollFailuresRef = useRef(0);
   const backfillPollFailuresRef = useRef(0);
@@ -244,6 +247,16 @@ export default function AdminScraperPage() {
     config?.lastPollStatus === 'running' ||
     config?.lastPollStatus === 'importing_snapshot';
 
+  const autoSyncIntervalSec = runActive
+    ? 2
+    : config?.isLive
+    ? config.schedulerDiagnostics?.secondsUntilNextRun !== null &&
+      config.schedulerDiagnostics?.secondsUntilNextRun !== undefined &&
+      config.schedulerDiagnostics.secondsUntilNextRun <= 25
+      ? 3
+      : 10
+    : 30;
+
   const backfillActive = backfillJob?.status === 'running';
   const displayedSummary = lastSummary || config?.lastRunSummary || null;
 
@@ -274,6 +287,10 @@ export default function AdminScraperPage() {
           fbIngestionService.getOverlapMatrix(userId),
         ]);
         serverConfigRef.current = cfg;
+        hasLoadedConfigRef.current = true;
+        wasRunActiveRef.current =
+          cfg.lastPollStatus === 'running' || cfg.lastPollStatus === 'importing_snapshot';
+        lastKnownFinishedAtRef.current = cfg.lastPollFinishedAt || null;
         setConfig(cfg);
         if (cfg.lastPollStatus === 'importing_snapshot') {
           setLaunchingMode('snapshot');
@@ -332,6 +349,10 @@ export default function AdminScraperPage() {
         ]);
         if (!active) return;
         serverConfigRef.current = cfg;
+        hasLoadedConfigRef.current = true;
+        wasRunActiveRef.current =
+          cfg.lastPollStatus === 'running' || cfg.lastPollStatus === 'importing_snapshot';
+        lastKnownFinishedAtRef.current = cfg.lastPollFinishedAt || null;
         setConfig(cfg);
         if (cfg.lastPollStatus === 'importing_snapshot') {
           setLaunchingMode('snapshot');
@@ -402,10 +423,40 @@ export default function AdminScraperPage() {
         return merged;
       });
 
+      const wasActive = wasRunActiveRef.current;
       const stillRunning =
         cfg.lastPollStatus === 'running' || cfg.lastPollStatus === 'importing_snapshot';
-      if (!stillRunning && !isPollingCompletionRef.current) {
+      wasRunActiveRef.current = stillRunning;
+
+      if (!wasActive && stillRunning) {
+        setRunOutcomeCard(null);
+        const title =
+          cfg.lastPollStatus === 'importing_snapshot'
+            ? 'Import snapshot démarré'
+            : cfg.lastRunTrigger === 'scheduled'
+            ? 'Collecte automatique démarrée'
+            : 'Collecte démarrée';
+        pushToast(
+          {
+            kind: 'ok',
+            title,
+            text: cfg.lastPollMessage || 'Suivi en temps réel actif...',
+          },
+          4500,
+        );
+        return;
+      }
+
+      const newRemoteFinishDetected =
+        !wasActive &&
+        !stillRunning &&
+        hasLoadedConfigRef.current &&
+        Boolean(cfg.lastPollFinishedAt) &&
+        cfg.lastPollFinishedAt !== lastKnownFinishedAtRef.current;
+
+      if ((wasActive || newRemoteFinishDetected) && !stillRunning && !isPollingCompletionRef.current) {
         isPollingCompletionRef.current = true;
+        lastKnownFinishedAtRef.current = cfg.lastPollFinishedAt || null;
         setIsCancellingRun(false);
         if (cfg.lastRunSummary) {
           setLastSummary(cfg.lastRunSummary);
@@ -455,6 +506,8 @@ export default function AdminScraperPage() {
 
         await loadAll({ refreshSubTabs: true });
         isPollingCompletionRef.current = false;
+      } else if (!stillRunning && cfg.lastPollFinishedAt) {
+        lastKnownFinishedAtRef.current = cfg.lastPollFinishedAt;
       }
     } catch (err) {
       runPollFailuresRef.current += 1;
@@ -466,17 +519,28 @@ export default function AdminScraperPage() {
     }
   }, [userId, isAdmin, loadAll, pushToast]);
 
-  // Live poll every 2 seconds whenever an ingestion or snapshot import is running
+  // Continuous adaptive polling: 2s while running, 3s near cycle boundary, 10s while LIVE idle, 30s while paused
+  const hasConfig = Boolean(config);
   useEffect(() => {
-    if (!userId || !isAdmin || !runActive) return;
+    if (!userId || !isAdmin || !hasConfig) return;
     runPollFailuresRef.current = 0;
 
     const intervalId = setInterval(() => {
       void pollRunStatusNow();
-    }, 2000);
+    }, autoSyncIntervalSec * 1000);
 
-    return () => clearInterval(intervalId);
-  }, [userId, isAdmin, runActive, pollRunStatusNow]);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        void pollRunStatusNow();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [userId, isAdmin, hasConfig, autoSyncIntervalSec, pollRunStatusNow]);
 
   const pollBackfillStatusNow = useCallback(async () => {
     if (!userId || !isAdmin) return;
@@ -885,6 +949,7 @@ export default function AdminScraperPage() {
       const startedAtIso = new Date().toISOString();
 
       setLaunchingMode(mode);
+      wasRunActiveRef.current = true;
       setRunOutcomeCard(null);
       setRunPollWarning(null);
       setConfig((prev) =>
@@ -932,6 +997,10 @@ export default function AdminScraperPage() {
 
         const cfg = await fbIngestionService.getConfig(userId);
         serverConfigRef.current = cfg;
+        hasLoadedConfigRef.current = true;
+        wasRunActiveRef.current =
+          cfg.lastPollStatus === 'running' || cfg.lastPollStatus === 'importing_snapshot';
+        lastKnownFinishedAtRef.current = cfg.lastPollFinishedAt || null;
         setConfig(cfg);
         if (cfg.lastPollStatus === 'importing_snapshot') {
           setLaunchingMode('snapshot');
@@ -939,6 +1008,11 @@ export default function AdminScraperPage() {
           setLaunchingMode('scrape');
         }
       } catch (err) {
+        wasRunActiveRef.current = Boolean(
+          prevConfig &&
+            (prevConfig.lastPollStatus === 'running' ||
+              prevConfig.lastPollStatus === 'importing_snapshot'),
+        );
         if (prevConfig) {
           setConfig(prevConfig);
         }
@@ -977,6 +1051,8 @@ export default function AdminScraperPage() {
     try {
       const cfg = await fbIngestionService.cancelRun(userId);
       serverConfigRef.current = cfg;
+      wasRunActiveRef.current = false;
+      lastKnownFinishedAtRef.current = cfg.lastPollFinishedAt || null;
       setConfig(cfg);
       setRunPollWarning(null);
       const msg = 'Collecte annulée / état réinitialisé.';
@@ -1492,55 +1568,29 @@ export default function AdminScraperPage() {
             </div>
           )}
 
-          {/* Telemetry Footer */}
+          {/* Live Cycle Cockpit, Countdown, Heartbeat & Activity Log */}
           {config && (
             <div className="space-y-3 pt-1">
-              <div className="flex flex-wrap items-center gap-4 text-[11px] text-zinc-500">
-                <span className="inline-flex items-center gap-1">
-                  <Activity className="w-3.5 h-3.5 text-brand-green" />
-                  Statut : <strong>{config.lastPollStatus}</strong>
-                </span>
-                <span>Runs : {config.totalRuns}</span>
-                <span>Posts récupérés : {config.totalBrightDataRecords}</span>
-                <span>Appels Gemini : {config.totalGeminiCalls}</span>
-                <span className="inline-flex items-center gap-1 font-semibold text-brand-green">
-                  <Zap className="w-3 h-3" /> Auto-publiés : {config.totalAutoApproved ?? 0}
-                </span>
-                {typeof config.placesApiConfigured === 'boolean' && (
-                  <span
-                    className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                      config.placesApiConfigured
-                        ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
-                        : 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'
-                    }`}
-                    title={
-                      config.placesApiConfigured
-                        ? 'Résolution Google Places active avec index spatial Fokontany + cache persistant 90j'
-                        : 'Ajoutez GOOGLE_MAPS_API_KEY dans backend/.env pour activer la géolocalisation Google Places'
-                    }
-                  >
-                    <span
-                      className={`w-1.5 h-1.5 rounded-full ${
-                        config.placesApiConfigured ? 'bg-emerald-500' : 'bg-amber-500'
-                      }`}
-                    />
-                    {config.placesApiConfigured
-                      ? `Places Geo actif (${config.placesCacheEntries ?? 0} en cache)`
-                      : `Places Geo inactif — Fallback texte (${config.placesCacheEntries ?? 0} en cache)`}
-                  </span>
-                )}
-                {config.lastSnapshotId && (
-                  <span className="font-mono text-zinc-600 dark:text-zinc-300">
-                    Snapshot : {config.lastSnapshotId}
-                  </span>
-                )}
-                {config.lastPollFinishedAt && (
-                  <span>
-                    Dernière synchro :{' '}
-                    {new Date(config.lastPollFinishedAt).toLocaleString('fr-FR')}
-                  </span>
-                )}
-              </div>
+              <ScraperCycleCockpit
+                config={config}
+                groups={groups}
+                runActive={runActive}
+                launchingMode={launchingMode}
+                isRefreshing={isRefreshing}
+                autoSyncIntervalSec={autoSyncIntervalSec}
+                onToggleLive={() => void updateConfigPatch({ isLive: !config.isLive })}
+                onRunNow={() => void handleRunActiveGroups()}
+                onOpenGroupsTab={() => selectTab('groups')}
+                onSelectSnapshotId={(id) => {
+                  setSnapshotInput(id);
+                  pushToast({
+                    kind: 'ok',
+                    title: 'Snapshot prêt à importer',
+                    text: `${id} sélectionné dans le champ d'import gratuit.`,
+                  }, 3000);
+                }}
+                onRefreshNow={() => void pollRunStatusNow()}
+              />
 
               {runActive ? (
                 <OperationProgressCard

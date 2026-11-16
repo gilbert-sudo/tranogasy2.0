@@ -37,6 +37,87 @@ export interface StartBackfillResponse {
   job: BackfillJobState;
 }
 
+export type FbSchedulerStatus =
+  | 'paused'
+  | 'waiting_next_cycle'
+  | 'due_now'
+  | 'running'
+  | 'importing_snapshot'
+  | 'sleeping_night'
+  | 'no_active_groups';
+
+export type FbRunTrigger = 'scheduled' | 'manual' | 'snapshot';
+
+export interface FbActivityLogEntry {
+  id: string;
+  at: string;
+  kind:
+    | 'scheduler_started'
+    | 'scheduler_paused'
+    | 'scheduler_sleep'
+    | 'run_started'
+    | 'run_completed'
+    | 'run_cancelled'
+    | 'run_error'
+    | 'config_changed'
+    | 'groups_warning';
+  trigger?: FbRunTrigger | 'system';
+  title: string;
+  detail?: string | null;
+  snapshotId?: string | null;
+  durationSec?: number | null;
+  stats?: {
+    rawRecords?: number;
+    candidatesCreated?: number;
+    autoApprovedCount?: number;
+    duplicateSkipped?: number;
+    geminiCalls?: number;
+  } | null;
+}
+
+export interface FbRunHistoryEntry {
+  id: string;
+  trigger: FbRunTrigger;
+  status: 'completed' | 'cancelled' | 'error';
+  snapshotId: string | null;
+  startedAt: string;
+  finishedAt: string;
+  durationSec: number;
+  totalRawRecords: number;
+  candidatesCreated: number;
+  autoApprovedCount: number;
+  duplicateSkipped: number;
+  landSkipped: number;
+  videoOnlySkipped: number;
+  spamSkipped: number;
+  geminiCalls: number;
+  placesApiCalls?: number;
+  placesCacheHits?: number;
+  errorMessage?: string | null;
+}
+
+export interface FbSchedulerDiagnostics {
+  state: FbSchedulerStatus;
+  headline: string;
+  detail: string;
+  serverTimeIso: string;
+  tanaHour: number;
+  tanaMinute: number;
+  tanaTimeLabel: string;
+  isWithinActiveHours: boolean;
+  activeGroupsCount: number;
+  totalGroupsCount: number;
+  nextScheduledRunAt: string | null;
+  secondsUntilNextRun: number | null;
+  cycleDurationSeconds: number;
+  cycleElapsedSeconds: number;
+  lastRunTrigger: FbRunTrigger | null;
+  lastSchedulerTickAt: string | null;
+  schedulerHeartbeatAgeSeconds: number | null;
+  schedulerLoopAlive: boolean;
+  schedulerTickIntervalSeconds: number;
+}
+
 export interface FbIngestionConfig {
   key: string;
   isLive: boolean;
@@ -64,6 +145,13 @@ export interface FbIngestionConfig {
   totalGeminiCalls: number;
   placesApiConfigured?: boolean;
   placesCacheEntries?: number;
+  lastRunTrigger?: FbRunTrigger | null;
+  lastSchedulerTickAt?: string | null;
+  lastSchedulerStatus?: string | null;
+  lastSchedulerNote?: string | null;
+  activityLog?: FbActivityLogEntry[];
+  runHistory?: FbRunHistoryEntry[];
+  schedulerDiagnostics?: FbSchedulerDiagnostics;
 }
 
 export interface AsyncRunStartResponse {

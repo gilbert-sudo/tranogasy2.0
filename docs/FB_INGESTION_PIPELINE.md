@@ -64,7 +64,7 @@ flowchart TD
 ### Detailed Pipeline Stages
 
 #### Stage 1: Scheduling, Proportional Scaling & Distributed Lease Locking
-- **Tick Loop (`fb-ingestion.service.ts`):** `onModuleInit()` initializes a `60_000`ms (`60s`) `setInterval` (`schedulerTimer`) after bootstrapping default config, target groups, and running orphaned-job recovery.
+- **Tick Loop (`fb-ingestion.service.ts`):** `onModuleInit()` initializes a `15_000`ms (`15s`) `setInterval` (`schedulerTimer`) plus a precision `setTimeout` (`precisionTriggerTimer`) when a cycle boundary is within `65s`, after bootstrapping default config, target groups, and running orphaned-job recovery. `schedulerTick()` persists heartbeats (`lastSchedulerTickAt`, `lastSchedulerStatus`, `lastSchedulerNote`), appends state transitions/runs to `activityLog` (capped to 30) and `runHistory` (capped to 12), and `getConfigWithDiagnostics()` computes live `schedulerDiagnostics` (`paused`, `waiting_next_cycle`, `due_now`, `running`, `importing_snapshot`, `sleeping_night`, `no_active_groups`).
 - **Multi-Instance Safe Distributed Leases (`activeRun` & `activeBackfill`):**
   - Because local dev and production (e.g. Render) can point to the same MongoDB Atlas database, runs and backfills never rely solely on in-memory flags.
   - Each process identifies itself via `instanceId = "${os.hostname()}:${process.pid}:${crypto.randomUUID()}"`.
@@ -158,7 +158,7 @@ Scraped properties published to `properties` look native on the public site whil
 
 ## 4. Admin Console (`/admin/scraper`)
 
-Guarded by an inline Admin Login gate (`POST /api/fb-ingestion/admin-login` supporting phone or email + password) and `FbAdminGuard`, the page polls active runs every `2s`, active backfill jobs every `1.5s`, keeps visited tabs mounted for instant switching, and renders a persistent bottom-right `FloatingOperationHud`:
+Guarded by an inline Admin Login gate (`POST /api/fb-ingestion/admin-login` supporting phone or email + password) and `FbAdminGuard`, the page polls adaptively (`2s` while running, `3s` within `25s` of a cycle boundary, `10s` while LIVE idle, `30s` while paused, plus `visibilitychange` refresh), polls active backfill jobs every `1.5s`, keeps visited tabs mounted for instant switching, and renders `ScraperCycleCockpit` + a persistent bottom-right `FloatingOperationHud`:
 
 | Tab | Key Capabilities |
 | :--- | :--- |
@@ -167,7 +167,7 @@ Guarded by an inline Admin Login gate (`POST /api/fb-ingestion/admin-login` supp
 | **Matrice de similarité** (`OverlapMatrixTab.tsx`) | Redundancy leaderboard sorting groups by duplicate overlap percentage with shared-post pair badges and instant pause switches. |
 | **Origines & Réclamations** (`PublishedOriginsTab.tsx`) | Live `properties` audit list filtered by `origin` (`facebook_scraper`, `user`, `admin_manual`), `claimStatus` (`unclaimed`, `claimed`), and search; Shadow User & GCS Avatar backfill launcher with live `OperationProgressCard` + cancel/retry. |
 
-Top control bar features **LIVE/PAUSE** toggle, poll interval selector (`10m`, `15m`, `30m`, `60m`), Gemini model selector, **Tana active-hours** toggle, **Zero-Touch Auto-Validation** settings (`autoApproveEnabled`, min quality score `65`/`75`/`85`, `Inclure Prix Estimé IA`), **Free Snapshot Importer** (`sd_...` datalist), live Google Places cache badge, dismissible error alert, and run summary pills.
+Top control bar features **LIVE/PAUSE** toggle, poll interval selector (`10m`, `15m`, `30m`, `60m`), Gemini model selector, **Tana active-hours** toggle, **Zero-Touch Auto-Validation** settings (`autoApproveEnabled`, min quality score `65`/`75`/`85`, `Inclure Prix Estimé IA`), **Free Snapshot Importer** (`sd_...` datalist), and `ScraperCycleCockpit` (SVG circular countdown ring synced to server UTC+3 clock, cycle progress bar, 4-stage continuous loop visualizer, backend heartbeat badge, KPI pills, and expandable chronological **Faits & gestes** activity log + run history).
 
 ---
 
@@ -180,7 +180,7 @@ Top control bar features **LIVE/PAUSE** toggle, poll interval selector (`10m`, `
 | `fb-ingestion/fb-ingestion.module.ts` | Registers `FbIngestionConfig`, `FbGroupTarget`, `FbSeenPost`, `FbIngestedCandidate`, `FbPlaceGeoCache`, `Property`, `City`, and `User` schemas and module providers. |
 | `fb-ingestion/fb-ingestion.controller.ts` | Exposes public `POST /api/fb-ingestion/admin-login` and `@UseGuards(FbAdminGuard)` admin routes. |
 | `fb-ingestion/fb-admin.guard.ts` | Validates `x-user-id` ObjectId against `User` (`role === 'admin' \|\| 'superadmin'`). |
-| `fb-ingestion/fb-ingestion.service.ts` | Bootstrapping, `60s` scheduler loop, `15s` lease heartbeats (`activeRun`/`activeBackfill`), `120s` stale recovery, 2-worker AI/GCS orchestrator, triage, approve/unpublish/reject, Shadow Users, and legacy backfill. |
+| `fb-ingestion/fb-ingestion.service.ts` | Bootstrapping, `15s` scheduler loop + precision timer, `schedulerDiagnostics`, `activityLog`/`runHistory`, `15s` lease heartbeats (`activeRun`/`activeBackfill`), `120s` stale recovery, 2-worker AI/GCS orchestrator, triage, approve/unpublish/reject, Shadow Users, and legacy backfill. |
 | `fb-ingestion/fb-brightdata.service.ts` | Bright Data Dataset v3 client (`listSnapshots`, `triggerCollection`, `waitForSnapshot` 4s poll, `downloadSnapshot` 90s full-body timeout). |
 | `fb-ingestion/fb-gemini.service.ts` | Multimodal Gemini REST JSON-Schema parser + 5-model Free-Tier failover pool. |
 | `fb-ingestion/fb-feature-analyzer.util.ts` | Deterministic FR/MG/EN parser: layout preservation, 37 features, 5-axis verification, agency fees, room defaults, habitable area, hybrid market pricing, and 0–100 quality scoring. |
@@ -209,6 +209,7 @@ Top control bar features **LIVE/PAUSE** toggle, poll interval selector (`10m`, `
 | `components/admin/scraper/OverlapMatrixTab.tsx` | Group redundancy matrix & instant pause controls. |
 | `components/admin/scraper/PublishedOriginsTab.tsx` | Live property origin & claim audit view + Shadow User backfill console. |
 | `components/admin/scraper/OperationProgressCard.tsx` | Shared live progress bar, step indicator, elapsed timer hook, ETA, cancel, retry, and stat chips. |
+| `components/admin/scraper/ScraperCycleCockpit.tsx` | Live circular cycle countdown ring, Tana UTC+3 clock sync, 4-step continuous loop visualizer, backend scheduler heartbeat indicator, KPI pills, and expandable chronological activity feed + run history. |
 | `components/admin/scraper/FloatingOperationHud.tsx` | Sticky bottom-right progress mini-cards and auto-dismissing toast stack. |
 | `components/admin/scraper/AdminPhotoGalleryModal.tsx` | Fullscreen zoomable photo modal with keyboard navigation, cover promotion, and image deletion. |
 | `components/admin/scraper/AsyncToggleSwitch.tsx` | Optimistic, non-blocking toggle switch component. |
