@@ -1,3 +1,4 @@
+import { BrightDataSnapshotTimeoutError } from './fb-brightdata.service';
 import { FbIngestionService } from './fb-ingestion.service';
 
 function createChainableQuery<T>(result: T) {
@@ -798,7 +799,7 @@ describe('FbIngestionService background job tracking & recovery', () => {
       authorUrl: 'https://facebook.com/rabe.auto',
       authorFbId: 'fb_auto_1',
       authorAvatarUrl: null,
-      datePosted: new Date('2026-11-15T09:00:00Z'),
+      datePosted: new Date(Date.now() - 2 * 3600 * 1000),
       matchedCityId: validCityId,
       resolutionSource: 'google_places_api',
       resolvedCoords: { lat: -18.88, lng: 47.53 },
@@ -1444,5 +1445,139 @@ describe('FbIngestionService background job tracking & recovery', () => {
     const afterPause = await service.updateConfig({ isLive: false });
     expect(afterPause.schedulerDiagnostics.state).toBe('paused');
     expect(afterPause.activityLog[0]?.kind).toBe('scheduler_paused');
+  });
+
+  it('chunks >7 groups into smaller Bright Data batches, saves timed-out snapshots, and auto-recovers without double-triggering', async () => {
+    let storedConfig: Record<string, any> = {
+      key: 'default',
+      isLive: true,
+      pollIntervalMinutes: 15,
+      onlyActiveHours: false,
+      activeHourStart: 6,
+      activeHourEnd: 22,
+      geminiModel: 'gemini-3.5-flash-lite',
+      lastPollStatus: 'idle',
+      lastPollPhase: 'idle',
+      lastPollMessage: null,
+      lastPollStartedAt: new Date(Date.now() - 20 * 60_000),
+      lastRunProgress: null,
+      lastError: null,
+      activeRun: null,
+      activeBackfill: null,
+      backfillJob: null,
+      activityLog: [],
+      runHistory: [],
+      pendingSnapshots: [],
+    };
+
+    const applyUpdate = (update: any) => {
+      if (update?.$set) {
+        storedConfig = { ...storedConfig, ...update.$set };
+      }
+      if (update?.$inc) {
+        for (const [k, v] of Object.entries(update.$inc)) {
+          storedConfig[k] = (Number(storedConfig[k]) || 0) + Number(v);
+        }
+      }
+      if (update?.$push) {
+        for (const [k, spec] of Object.entries<any>(update.$push)) {
+          const existing = Array.isArray(storedConfig[k]) ? storedConfig[k] : [];
+          const items = Array.isArray(spec?.$each) ? spec.$each : [spec];
+          const combined = [...existing, ...items];
+          const slice = typeof spec?.$slice === 'number' ? spec.$slice : 0;
+          storedConfig[k] = slice < 0 ? combined.slice(slice) : combined;
+        }
+      }
+    };
+
+    const configModel: any = {
+      findOne: jest.fn(() => ({
+        lean: jest.fn().mockImplementation(async () => ({ ...storedConfig })),
+        ...storedConfig,
+        then: (resolve: (val: any) => void) => resolve({ ...storedConfig }),
+      })),
+      updateOne: jest.fn(async (_filter: any, update: any) => {
+        applyUpdate(update);
+        return { modifiedCount: 1 };
+      }),
+      findOneAndUpdate: jest.fn(async (_filter: any, update: any) => {
+        applyUpdate(update);
+        return { ...storedConfig };
+      }),
+    };
+
+    const targets = Array.from({ length: 10 }, (_, idx) => ({
+      groupId: `g_${idx + 1}`,
+      name: `Groupe ${idx + 1}`,
+      url: `https://www.facebook.com/groups/g_${idx + 1}/`,
+      isActive: true,
+      scrapeLimitPer30Min: 5,
+      recentPostIds: [],
+    }));
+
+    const groupModel: any = {
+      countDocuments: jest.fn().mockResolvedValue(10),
+      find: jest.fn(() => createChainableQuery(targets)),
+    };
+
+    const brightDataService: any = {
+      triggerCollection: jest
+        .fn()
+        .mockResolvedValueOnce('sd_batch_1')
+        .mockResolvedValueOnce('sd_batch_2'),
+      waitForSnapshot: jest
+        .fn()
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValueOnce(
+          new BrightDataSnapshotTimeoutError('sd_batch_2', 600, 'running', 4),
+        ),
+      downloadSnapshot: jest.fn().mockResolvedValue([]),
+      getSnapshotProgress: jest
+        .fn()
+        .mockResolvedValueOnce({ status: 'running', records: 6 })
+        .mockResolvedValueOnce({ status: 'ready', records: 9 }),
+    };
+
+    const service = new FbIngestionService(
+      configModel,
+      groupModel,
+      { findOne: jest.fn().mockResolvedValue(null), create: jest.fn() } as any,
+      { find: jest.fn(() => createChainableQuery([])) } as any,
+      { find: jest.fn(() => createChainableQuery([])) } as any,
+      { findById: jest.fn() } as any,
+      { findOne: jest.fn().mockResolvedValue({ role: 'admin' }) } as any,
+      { create: jest.fn() } as any,
+      brightDataService,
+      {} as any,
+      {} as any,
+      {
+        isPermanentGcsUrl: jest.fn().mockReturnValue(true),
+        reuploadFbAvatar: jest.fn().mockResolvedValue(null),
+      } as any,
+      { get: jest.fn().mockReturnValue(undefined) } as any,
+    );
+
+    // 1. Run 10 active groups -> splits into batch 1 (7 groups) and batch 2 (3 groups)
+    const runRes = await service.runActiveGroups();
+    expect(brightDataService.triggerCollection).toHaveBeenCalledTimes(2);
+    expect(brightDataService.triggerCollection.mock.calls[0][0]).toHaveLength(7);
+    expect(brightDataService.triggerCollection.mock.calls[1][0]).toHaveLength(3);
+    expect(runRes.errors).toHaveLength(1);
+    expect(storedConfig.pendingSnapshots).toHaveLength(1);
+    expect(storedConfig.pendingSnapshots[0]?.snapshotId).toBe('sd_batch_2');
+
+    // 2. While pending snapshot is still running upstream, schedulerTick must NOT trigger a new paid job
+    (service as any).lastPendingCheckMs = 0;
+    await (service as any).schedulerTick();
+    expect(brightDataService.getSnapshotProgress).toHaveBeenCalledWith('sd_batch_2');
+    expect(brightDataService.triggerCollection).toHaveBeenCalledTimes(2);
+    expect(storedConfig.pendingSnapshots[0]?.lastRecords).toBe(6);
+
+    // 3. Once Bright Data reports ready, schedulerTick auto-recovers sd_batch_2 for free & clears pendingSnapshots
+    (service as any).lastPendingCheckMs = 0;
+    await (service as any).schedulerTick();
+    expect(brightDataService.downloadSnapshot).toHaveBeenCalledWith('sd_batch_2', expect.anything());
+    expect(storedConfig.pendingSnapshots).toHaveLength(0);
+    expect(brightDataService.triggerCollection).toHaveBeenCalledTimes(2);
   });
 });

@@ -16,12 +16,23 @@ export type FbSchedulerStatus =
   | 'paused'
   | 'waiting_next_cycle'
   | 'due_now'
+  | 'waiting_pending_snapshot'
   | 'running'
   | 'importing_snapshot'
   | 'sleeping_night'
   | 'no_active_groups';
 
 export type FbRunTrigger = 'scheduled' | 'manual' | 'snapshot';
+
+export interface FbPendingSnapshotEntry {
+  snapshotId: string;
+  triggeredAt: string;
+  groupsCount: number;
+  groupNames?: string[];
+  lastStatus?: string | null;
+  lastRecords?: number | null;
+  lastCheckedAt?: string | null;
+}
 
 export interface FbActivityLogEntry {
   id: string;
@@ -235,6 +246,9 @@ export class FbIngestionConfig {
 
   @Prop({ type: [Object], default: [] })
   runHistory?: FbRunHistoryEntry[];
+
+  @Prop({ type: [Object], default: [] })
+  pendingSnapshots?: FbPendingSnapshotEntry[];
 }
 
 export const FbIngestionConfigSchema = SchemaFactory.createForClass(FbIngestionConfig);

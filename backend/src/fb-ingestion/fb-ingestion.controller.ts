@@ -128,6 +128,16 @@ export class FbIngestionController {
     return this.fbIngestionService.importSnapshot(body?.snapshotId);
   }
 
+  @Post('pending-snapshots/recover')
+  recoverPendingSnapshot(@Body() body?: { snapshotId?: string }) {
+    return this.fbIngestionService.recoverPendingSnapshot(body?.snapshotId);
+  }
+
+  @Delete('pending-snapshots/:snapshotId')
+  dismissPendingSnapshot(@Param('snapshotId') snapshotId: string) {
+    return this.fbIngestionService.dismissPendingSnapshot(snapshotId);
+  }
+
   @Get('candidates')
   listCandidates(
     @Query('status') status?: string,

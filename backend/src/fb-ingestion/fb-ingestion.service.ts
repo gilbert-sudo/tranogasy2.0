@@ -25,7 +25,10 @@ import { City, CityDocument } from '../cities/schemas/city.schema';
 import { Property, PropertyDocument } from '../properties/schemas/property.schema';
 import { PropertiesService } from '../properties/properties.service';
 import { User, UserDocument } from '../users/schemas/user.schema';
-import { FbBrightDataService } from './fb-brightdata.service';
+import {
+  BrightDataSnapshotTimeoutError,
+  FbBrightDataService,
+} from './fb-brightdata.service';
 import { FbCityMatcherService } from './fb-city-matcher.service';
 import {
   BrightDataPostRecord,
@@ -71,6 +74,7 @@ import {
   FbBackfillJobState,
   FbIngestionConfig,
   FbIngestionConfigDocument,
+  FbPendingSnapshotEntry,
   FbRunHistoryEntry,
   FbRunProgress,
   FbRunTrigger,
@@ -82,6 +86,11 @@ import { FbSeenPost, FbSeenPostDocument } from './schemas/fb-seen-post.schema';
 const RUN_HEARTBEAT_INTERVAL_MS = 15_000;
 const RUN_STALE_LEASE_MS = 120_000;
 const SCHEDULER_TICK_INTERVAL_MS = 15_000;
+const MAX_GROUPS_PER_SNAPSHOT = 7;
+const SINGLE_BATCH_WAIT_TIMEOUT_MS = 900_000; // 15 min for <= 7 groups
+const MULTI_BATCH_WAIT_TIMEOUT_MS = 600_000; // 10 min per <= 7-group batch
+const PENDING_SNAPSHOT_CHECK_INTERVAL_MS = 45_000;
+const PENDING_SNAPSHOT_TTL_MS = 35 * 60_000; // 35 min max auto-recovery window
 
 export interface RunSummary {
   snapshotId: string;
@@ -110,6 +119,7 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
   private precisionTriggerTimer: NodeJS.Timeout | null = null;
   private isSchedulerLoopStarted = false;
   private lastHeartbeatWriteMs = 0;
+  private lastPendingCheckMs = 0;
   private lastSchedulerDecisionLogged: string | null = null;
   private runHeartbeatTimer: NodeJS.Timeout | null = null;
   private backfillHeartbeatTimer: NodeJS.Timeout | null = null;
@@ -322,11 +332,35 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
           if (activeRun.ownerId) {
             filter['activeRun.ownerId'] = activeRun.ownerId;
           }
+          if (
+            activeRun.snapshotId &&
+            (activeRun.phase === 'waiting_brightdata' ||
+              activeRun.phase === 'downloading_snapshot')
+          ) {
+            const existingPending = this.filterActivePendingSnapshots(
+              target.pendingSnapshots,
+              now.getTime(),
+            );
+            if (!existingPending.some((p) => p.snapshotId === activeRun.snapshotId)) {
+              patch.pendingSnapshots = [
+                ...existingPending,
+                {
+                  snapshotId: activeRun.snapshotId,
+                  triggeredAt: new Date(activeRun.startedAt || now).toISOString(),
+                  groupsCount: 0,
+                  lastStatus: 'running',
+                  lastCheckedAt: now.toISOString(),
+                },
+              ].slice(-6);
+            }
+          }
           await this.appendActivityLog({
             kind: 'run_error',
             trigger: activeRun.trigger || 'system',
             title: 'Collecte interrompue (redémarrage serveur)',
-            detail: msg,
+            detail: activeRun.snapshotId
+              ? `${msg} Snapshot ${activeRun.snapshotId} conservé pour récupération gratuite.`
+              : msg,
             snapshotId: activeRun.snapshotId || null,
           });
         }
@@ -705,6 +739,121 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  private filterActivePendingSnapshots(
+    rawList: unknown,
+    nowMs = Date.now(),
+  ): FbPendingSnapshotEntry[] {
+    if (!Array.isArray(rawList)) return [];
+    return rawList.filter((item): item is FbPendingSnapshotEntry => {
+      if (!item || typeof item.snapshotId !== 'string' || !item.snapshotId.trim()) {
+        return false;
+      }
+      const ts = item.triggeredAt ? new Date(item.triggeredAt).getTime() : NaN;
+      if (!Number.isFinite(ts)) return true;
+      return nowMs - ts <= PENDING_SNAPSHOT_TTL_MS;
+    });
+  }
+
+  private async addPendingSnapshot(entry: FbPendingSnapshotEntry): Promise<void> {
+    try {
+      const doc = await this.configModel.findOne({ key: 'default' }).lean();
+      const existing = this.filterActivePendingSnapshots(doc?.pendingSnapshots);
+      const filtered = existing.filter((p) => p.snapshotId !== entry.snapshotId);
+      const next = [...filtered, entry].slice(-6);
+      await this.configModel.updateOne(
+        { key: 'default' },
+        { $set: { pendingSnapshots: next } },
+      );
+    } catch {
+      // Never abort run cleanup if pending snapshot persistence fails
+    }
+  }
+
+  private async removePendingSnapshot(snapshotId: string): Promise<void> {
+    try {
+      const doc = await this.configModel.findOne({ key: 'default' }).lean();
+      const raw = Array.isArray(doc?.pendingSnapshots) ? doc.pendingSnapshots : [];
+      if (raw.length === 0) return;
+      const next = this.filterActivePendingSnapshots(raw).filter(
+        (p) => p.snapshotId !== snapshotId,
+      );
+      if (next.length !== raw.length) {
+        await this.configModel.updateOne(
+          { key: 'default' },
+          { $set: { pendingSnapshots: next } },
+        );
+      }
+    } catch {
+      // Never abort run completion if pending snapshot cleanup fails
+    }
+  }
+
+  private async updatePendingSnapshotMeta(
+    snapshotId: string,
+    patch: Partial<FbPendingSnapshotEntry>,
+  ): Promise<void> {
+    try {
+      const doc = await this.configModel.findOne({ key: 'default' }).lean();
+      const current = this.filterActivePendingSnapshots(doc?.pendingSnapshots);
+      const idx = current.findIndex((p) => p.snapshotId === snapshotId);
+      if (idx < 0) return;
+      current[idx] = { ...current[idx], ...patch };
+      await this.configModel.updateOne(
+        { key: 'default' },
+        { $set: { pendingSnapshots: current } },
+      );
+    } catch {
+      // Ignore metadata update glitches
+    }
+  }
+
+  private chunkArray<T>(items: T[], size: number): T[][] {
+    const safeSize = Math.max(1, size);
+    const out: T[][] = [];
+    for (let i = 0; i < items.length; i += safeSize) {
+      out.push(items.slice(i, i + safeSize));
+    }
+    return out;
+  }
+
+  private mergeRunSummaries(summaries: RunSummary[], fallbackSnapshotId = ''): RunSummary {
+    if (summaries.length === 1) return summaries[0];
+    return summaries.reduce<RunSummary>(
+      (acc, cur) => ({
+        snapshotId: cur.snapshotId || acc.snapshotId,
+        totalRawRecords: acc.totalRawRecords + (cur.totalRawRecords || 0),
+        unwrappedCount: acc.unwrappedCount + (cur.unwrappedCount || 0),
+        videoOnlySkipped: acc.videoOnlySkipped + (cur.videoOnlySkipped || 0),
+        duplicateSkipped: acc.duplicateSkipped + (cur.duplicateSkipped || 0),
+        crossGroupOverlaps: acc.crossGroupOverlaps + (cur.crossGroupOverlaps || 0),
+        landSkipped: acc.landSkipped + (cur.landSkipped || 0),
+        spamSkipped: acc.spamSkipped + (cur.spamSkipped || 0),
+        candidatesCreated: acc.candidatesCreated + (cur.candidatesCreated || 0),
+        autoApprovedCount: (acc.autoApprovedCount || 0) + (cur.autoApprovedCount || 0),
+        geminiCalls: acc.geminiCalls + (cur.geminiCalls || 0),
+        placesApiCalls: (acc.placesApiCalls || 0) + (cur.placesApiCalls || 0),
+        placesCacheHits: (acc.placesCacheHits || 0) + (cur.placesCacheHits || 0),
+        errors: [...acc.errors, ...(cur.errors || [])],
+      }),
+      {
+        snapshotId: fallbackSnapshotId,
+        totalRawRecords: 0,
+        unwrappedCount: 0,
+        videoOnlySkipped: 0,
+        duplicateSkipped: 0,
+        crossGroupOverlaps: 0,
+        landSkipped: 0,
+        spamSkipped: 0,
+        candidatesCreated: 0,
+        autoApprovedCount: 0,
+        geminiCalls: 0,
+        placesApiCalls: 0,
+        placesCacheHits: 0,
+        errors: [],
+      },
+    );
+  }
+
   private computeSchedulerDiagnostics(
     cfg: Record<string, any>,
     activeGroupsCount: number,
@@ -744,6 +893,7 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
     const schedulerLoopAlive =
       this.isSchedulerLoopStarted ||
       (schedulerHeartbeatAgeSeconds !== null && schedulerHeartbeatAgeSeconds <= 90);
+    const activePending = this.filterActivePendingSnapshots(cfg.pendingSnapshots, nowMs);
 
     let state: FbSchedulerStatus;
     let headline: string;
@@ -777,6 +927,11 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       nextScheduledRunAt = new Date(targetMs).toISOString();
       headline = 'En veille nocturne (repos)';
       detail = `Hors heures actives Tana (${activeStart}h–${activeEnd}h UTC+3). Le scraper se repose jusqu'à ${String(activeStart).padStart(2, '0')}h00 heure Tana.`;
+    } else if (activePending.length > 0) {
+      state = 'waiting_pending_snapshot';
+      const firstPending = activePending[0];
+      headline = 'Récupération snapshot Bright Data en attente';
+      detail = `Le snapshot ${firstPending.snapshotId} est encore en cours chez Bright Data. Vérification automatique gratuite toutes les 45s (aucun double crédit dépensé).`;
     } else {
       const targetMs = validLastRunMs > 0 ? validLastRunMs + intervalMs : nowMs;
       const remainingMs = targetMs - nowMs;
@@ -816,6 +971,132 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       schedulerLoopAlive,
       schedulerTickIntervalSeconds: Math.round(SCHEDULER_TICK_INTERVAL_MS / 1000),
     };
+  }
+
+  private async checkAndRecoverOnePendingSnapshot(
+    pending: FbPendingSnapshotEntry,
+    trigger: FbRunTrigger = 'scheduled',
+  ): Promise<{
+    action: 'importing' | 'still_running' | 'failed';
+    snapshotId: string;
+    status?: string;
+    records?: number | null;
+    message: string;
+  }> {
+    if (typeof this.brightDataService?.getSnapshotProgress !== 'function') {
+      return {
+        action: 'still_running',
+        snapshotId: pending.snapshotId,
+        status: 'running',
+        records: pending.lastRecords ?? null,
+        message: `Vérification indisponible pour ${pending.snapshotId}.`,
+      };
+    }
+
+    const progress = await this.brightDataService.getSnapshotProgress(pending.snapshotId);
+    const checkedAt = new Date().toISOString();
+
+    if (progress.status === 'ready') {
+      await this.appendActivityLog({
+        kind: 'run_started',
+        trigger,
+        title: `Snapshot ${pending.snapshotId} prêt — récupération gratuite`,
+        detail: `Bright Data a terminé ${pending.snapshotId}. Téléchargement et filtrage sans dépense supplémentaire.`,
+        snapshotId: pending.snapshotId,
+      });
+
+      if (trigger === 'manual') {
+        await this.startImportInBackground(pending.snapshotId);
+      } else {
+        await this.markRunStarted(
+          'importing_snapshot',
+          'downloading_snapshot',
+          `Récupération gratuite du snapshot ${pending.snapshotId}...`,
+          pending.snapshotId,
+          undefined,
+          trigger,
+        );
+        await this.executeImportSnapshot(pending.snapshotId);
+      }
+
+      return {
+        action: 'importing',
+        snapshotId: pending.snapshotId,
+        status: 'ready',
+        records: progress.records ?? null,
+        message: `Snapshot ${pending.snapshotId} prêt — importation gratuite démarrée.`,
+      };
+    }
+
+    if (progress.status === 'failed' || progress.status === 'canceled') {
+      await this.removePendingSnapshot(pending.snapshotId);
+      const msg = `Bright Data a terminé ${pending.snapshotId} avec le statut : ${progress.status}.`;
+      await this.appendActivityLog({
+        kind: 'run_error',
+        trigger: 'system',
+        title: `Snapshot ${pending.snapshotId} ${progress.status}`,
+        detail: msg,
+        snapshotId: pending.snapshotId,
+      });
+      return {
+        action: 'failed',
+        snapshotId: pending.snapshotId,
+        status: progress.status,
+        records: progress.records ?? null,
+        message: msg,
+      };
+    }
+
+    await this.updatePendingSnapshotMeta(pending.snapshotId, {
+      lastStatus: progress.status,
+      lastRecords: progress.records ?? null,
+      lastCheckedAt: checkedAt,
+    });
+    const recNote =
+      typeof progress.records === 'number' && progress.records > 0
+        ? ` • ${progress.records} post(s) déjà collectés`
+        : '';
+    return {
+      action: 'still_running',
+      snapshotId: pending.snapshotId,
+      status: progress.status,
+      records: progress.records ?? null,
+      message: `Bright Data prépare encore ${pending.snapshotId} (${progress.status}${recNote}). Réessayez dans 1–2 min.`,
+    };
+  }
+
+  async recoverPendingSnapshot(snapshotId?: string) {
+    const cfg = await this.getConfig();
+    if (
+      this.isRunInProgress ||
+      cfg.lastPollStatus === 'running' ||
+      cfg.lastPollStatus === 'importing_snapshot'
+    ) {
+      throw new BadRequestException('An ingestion run is already in progress');
+    }
+
+    const activePending = this.filterActivePendingSnapshots(cfg.pendingSnapshots);
+    const targetEntry = snapshotId
+      ? activePending.find((p) => p.snapshotId === snapshotId.trim()) || {
+          snapshotId: snapshotId.trim(),
+          triggeredAt: new Date().toISOString(),
+          groupsCount: 0,
+        }
+      : activePending[0];
+
+    if (!targetEntry) {
+      throw new NotFoundException('Aucun snapshot en attente à récupérer');
+    }
+
+    return this.checkAndRecoverOnePendingSnapshot(targetEntry, 'manual');
+  }
+
+  async dismissPendingSnapshot(snapshotId: string) {
+    const cleanId = snapshotId?.trim();
+    if (cleanId) {
+      await this.removePendingSnapshot(cleanId);
+    }
+    return this.getConfigWithDiagnostics();
   }
 
   private async schedulerTick(): Promise<void> {
@@ -894,6 +1175,22 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
         return;
       }
 
+      const activePending = this.filterActivePendingSnapshots(config.pendingSnapshots, nowMs);
+      if (activePending.length > 0) {
+        if (nowMs - this.lastPendingCheckMs >= PENDING_SNAPSHOT_CHECK_INTERVAL_MS) {
+          this.lastPendingCheckMs = nowMs;
+          await this.checkAndRecoverOnePendingSnapshot(activePending[0], 'scheduled').catch(
+            (err) => {
+              this.logger.warn(
+                `Pending snapshot check failed (${activePending[0].snapshotId}): ${(err as Error).message}`,
+              );
+            },
+          );
+        }
+        // Do not trigger a redundant paid Bright Data job while a timed-out snapshot is still completing.
+        return;
+      }
+
       const lastRunMs = config.lastPollStartedAt
         ? new Date(config.lastPollStartedAt).getTime()
         : 0;
@@ -968,11 +1265,13 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
 
     const activityLog = Array.isArray(raw.activityLog) ? [...raw.activityLog].reverse() : [];
     const runHistory = Array.isArray(raw.runHistory) ? [...raw.runHistory].reverse() : [];
+    const pendingSnapshots = this.filterActivePendingSnapshots(raw.pendingSnapshots);
 
     return {
       ...raw,
       activityLog,
       runHistory,
+      pendingSnapshots,
       placesApiConfigured,
       placesCacheEntries,
       schedulerDiagnostics,
@@ -1666,75 +1965,149 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
     try {
       // Scale requested posts proportionally if admin changes pollIntervalMinutes (base = 30 min)
       const scaleFactor = Math.max(0.25, config.pollIntervalMinutes / 30);
-      const triggerPayload = targets.map((t: any) => ({
-        url: t.url,
-        num_of_posts: Math.max(
-          2,
-          Math.min(200, Math.round((t.scrapeLimitPer30Min || 10) * scaleFactor)),
-        ),
-        posts_to_not_include: Array.isArray(t.recentPostIds) ? t.recentPostIds.slice(-30) : [],
-      }));
+      const batches = this.chunkArray(targets, MAX_GROUPS_PER_SNAPSHOT);
+      const perBatchWaitMs =
+        batches.length === 1 ? SINGLE_BATCH_WAIT_TIMEOUT_MS : MULTI_BATCH_WAIT_TIMEOUT_MS;
+      const perBatchWaitMin = Math.round(perBatchWaitMs / 60_000);
+      const perBatchWaitSec = Math.round(perBatchWaitMs / 1000);
 
-      const snapshotId = await this.brightDataService.triggerCollection(triggerPayload, signal);
-      await this.updatePollState({
-        lastSnapshotId: snapshotId,
-        lastPollPhase: 'waiting_brightdata',
-        lastPollMessage: `Bright Data collecte ${targets.length} groupe(s) (0s)...`,
-        lastRunProgress: {
-          current: 0,
-          total: 600,
-          percent: 10,
-          etaSeconds: null,
-          unit: 'percent',
-          detail: `Snapshot ${snapshotId} — démarrage sur ${targets.length} groupe(s)`,
-        },
-      });
+      const batchSummaries: RunSummary[] = [];
+      const timeoutNotices: string[] = [];
+      let lastSnapshotId = '';
 
-      await this.brightDataService.waitForSnapshot(
-        snapshotId,
-        600000,
-        async ({ elapsedSec, status, records }) => {
-          // Asymptotic progress curve during external Bright Data collection (10% -> 55%)
-          const percent =
-            status === 'ready'
-              ? 58
-              : Math.min(55, 10 + Math.round(45 * (1 - Math.exp(-elapsedSec / 65))));
-          const recordsNote =
-            typeof records === 'number' && records > 0 ? ` • ${records} post(s) détectés` : '';
-          await this.updatePollState({
-            lastPollPhase: 'waiting_brightdata',
-            lastPollMessage: `Collecte Bright Data (${status}) : ${elapsedSec}s écoulées (${targets.length} groupe(s))${recordsNote}...`,
-            lastRunProgress: {
-              current: elapsedSec,
-              total: 600,
-              percent,
-              etaSeconds: null,
-              unit: 'percent',
-              detail: `Bright Data: ${status}${recordsNote} (max 10 min)`,
+      for (let bIdx = 0; bIdx < batches.length; bIdx++) {
+        if (this.isRunCancelRequested || signal?.aborted) break;
+
+        const batchTargets = batches[bIdx];
+        const batchLabel =
+          batches.length > 1 ? `[Lot ${bIdx + 1}/${batches.length}] ` : '';
+
+        const triggerPayload = batchTargets.map((t: any) => ({
+          url: t.url,
+          num_of_posts: Math.max(
+            2,
+            Math.min(200, Math.round((t.scrapeLimitPer30Min || 10) * scaleFactor)),
+          ),
+          posts_to_not_include: Array.isArray(t.recentPostIds) ? t.recentPostIds.slice(-30) : [],
+        }));
+
+        const snapshotId = await this.brightDataService.triggerCollection(triggerPayload, signal);
+        lastSnapshotId = snapshotId;
+        await this.updatePollState({
+          lastSnapshotId: snapshotId,
+          lastPollPhase: 'waiting_brightdata',
+          lastPollMessage: `${batchLabel}Bright Data collecte ${batchTargets.length} groupe(s) (0s)...`,
+          lastRunProgress: {
+            current: 0,
+            total: perBatchWaitSec,
+            percent: 10,
+            etaSeconds: null,
+            unit: 'percent',
+            detail: `${batchLabel}Snapshot ${snapshotId} — ${batchTargets.length} groupe(s)`,
+          },
+        });
+
+        try {
+          await this.brightDataService.waitForSnapshot(
+            snapshotId,
+            perBatchWaitMs,
+            async ({ elapsedSec, status, records }) => {
+              // Asymptotic progress curve during external Bright Data collection (10% -> 55%)
+              const percent =
+                status === 'ready'
+                  ? 58
+                  : Math.min(55, 10 + Math.round(45 * (1 - Math.exp(-elapsedSec / 65))));
+              const recordsNote =
+                typeof records === 'number' && records > 0 ? ` • ${records} post(s) détectés` : '';
+              await this.updatePollState({
+                lastPollPhase: 'waiting_brightdata',
+                lastPollMessage: `${batchLabel}Collecte Bright Data (${status}) : ${elapsedSec}s écoulées (${batchTargets.length} groupe(s))${recordsNote}...`,
+                lastRunProgress: {
+                  current: elapsedSec,
+                  total: perBatchWaitSec,
+                  percent,
+                  etaSeconds: null,
+                  unit: 'percent',
+                  detail: `${batchLabel}Bright Data: ${status}${recordsNote} (max ${perBatchWaitMin} min)`,
+                },
+              });
             },
-          });
-        },
-        signal,
-      );
+            signal,
+          );
+        } catch (waitErr) {
+          const isTimeout =
+            waitErr instanceof BrightDataSnapshotTimeoutError ||
+            (waitErr as Error)?.name === 'BrightDataSnapshotTimeoutError' ||
+            String((waitErr as Error)?.message || '').includes('Timed out waiting for Bright Data snapshot');
 
-      await this.updatePollState({
-        lastPollPhase: 'downloading_snapshot',
-        lastPollMessage: `Téléchargement du snapshot ${snapshotId}...`,
-        lastRunProgress: {
-          current: 58,
-          total: 100,
-          percent: 58,
-          etaSeconds: 20,
-          unit: 'percent',
-          detail: `Téléchargement JSON (${snapshotId})`,
-        },
-      });
-      const records = await this.brightDataService.downloadSnapshot(snapshotId, signal);
-      const summary = await this.processSnapshotRecords(snapshotId, records, false);
-      if (this.isRunCancelRequested) {
-        await this.finalizeRunCancelled();
-        return summary;
+          if (!isTimeout || this.isRunCancelRequested || signal?.aborted) {
+            throw waitErr;
+          }
+
+          const lastStatus =
+            waitErr instanceof BrightDataSnapshotTimeoutError ? waitErr.lastStatus : 'running';
+          const lastRecords =
+            waitErr instanceof BrightDataSnapshotTimeoutError ? waitErr.lastRecords ?? null : null;
+
+          await this.addPendingSnapshot({
+            snapshotId,
+            triggeredAt: new Date().toISOString(),
+            groupsCount: batchTargets.length,
+            groupNames: batchTargets.map((g: any) => String(g.name || g.groupId)).slice(0, 5),
+            lastStatus,
+            lastRecords,
+            lastCheckedAt: new Date().toISOString(),
+          });
+
+          const notice = `${batchLabel}Bright Data prend plus de temps que prévu pour ${snapshotId} (>${perBatchWaitMin} min) — sauvegardé pour récupération automatique gratuite.`;
+          timeoutNotices.push(notice);
+          this.logger.warn(notice);
+
+          await this.appendActivityLog({
+            kind: 'run_error',
+            trigger: this.activeRunMeta?.trigger || 'manual',
+            title: `${batchLabel}Snapshot mis en attente de récupération`,
+            detail: notice,
+            snapshotId,
+          });
+          continue;
+        }
+
+        await this.updatePollState({
+          lastPollPhase: 'downloading_snapshot',
+          lastPollMessage: `${batchLabel}Téléchargement du snapshot ${snapshotId}...`,
+          lastRunProgress: {
+            current: 58,
+            total: 100,
+            percent: 58,
+            etaSeconds: 20,
+            unit: 'percent',
+            detail: `${batchLabel}Téléchargement JSON (${snapshotId})`,
+          },
+        });
+        const records = await this.brightDataService.downloadSnapshot(snapshotId, signal);
+        const batchSummary = await this.processSnapshotRecords(snapshotId, records, false);
+        await this.removePendingSnapshot(snapshotId);
+        batchSummaries.push(batchSummary);
       }
+
+      if (this.isRunCancelRequested) {
+        const cancelledSummary = this.mergeRunSummaries(batchSummaries, lastSnapshotId);
+        await this.finalizeRunCancelled();
+        return cancelledSummary;
+      }
+
+      if (batchSummaries.length === 0 && timeoutNotices.length > 0) {
+        throw new Error(
+          `Bright Data prend plus de ${perBatchWaitMin} min pour le snapshot ${lastSnapshotId}. Le snapshot a été sauvegardé pour récupération automatique gratuite dès qu'il sera prêt (aucun crédit perdu).`,
+        );
+      }
+
+      const summary = this.mergeRunSummaries(batchSummaries, lastSnapshotId);
+      if (timeoutNotices.length > 0) {
+        summary.errors.push(...timeoutNotices);
+      }
+
       await this.finalizeRunSuccess(summary);
       return summary;
     } catch (err) {
@@ -1765,6 +2138,7 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       });
       const records = await this.brightDataService.downloadSnapshot(snapshotId, signal);
       const summary = await this.processSnapshotRecords(snapshotId, records, true);
+      await this.removePendingSnapshot(snapshotId);
       if (this.isRunCancelRequested) {
         await this.finalizeRunCancelled();
         return summary;

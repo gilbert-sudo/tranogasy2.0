@@ -124,6 +124,7 @@ export default function AdminScraperPage() {
 
   const [launchingMode, setLaunchingMode] = useState<'scrape' | 'snapshot'>('scrape');
   const [isCancellingRun, setIsCancellingRun] = useState(false);
+  const [recoveringSnapshotId, setRecoveringSnapshotId] = useState<string | null>(null);
   const [runPollWarning, setRunPollWarning] = useState<string | null>(null);
   const [runOutcomeCard, setRunOutcomeCard] = useState<{
     status: 'completed' | 'cancelled' | 'error';
@@ -1067,6 +1068,83 @@ export default function AdminScraperPage() {
     }
   }, [userId, isCancellingRun, pushToast]);
 
+  const handleRecoverPendingSnapshot = useCallback(
+    async (snapshotId: string) => {
+      if (!userId || recoveringSnapshotId || runActive) return;
+      setRecoveringSnapshotId(snapshotId);
+      try {
+        const res = await fbIngestionService.recoverPendingSnapshot(userId, snapshotId);
+        if (res.action === 'importing') {
+          setLaunchingMode('snapshot');
+          wasRunActiveRef.current = true;
+          setRunOutcomeCard(null);
+          pushToast(
+            {
+              kind: 'ok',
+              title: 'Récupération gratuite démarrée',
+              text: res.message,
+            },
+            4500,
+          );
+        } else if (res.action === 'still_running') {
+          pushToast(
+            {
+              kind: 'warn',
+              title: 'Bright Data encore en cours',
+              text: res.message,
+            },
+            4500,
+          );
+        } else {
+          pushToast(
+            {
+              kind: 'err',
+              title: 'Snapshot échoué chez Bright Data',
+              text: res.message,
+            },
+            5000,
+          );
+        }
+        await pollRunStatusNow();
+      } catch (err) {
+        pushToast({
+          kind: 'err',
+          title: 'Erreur vérification snapshot',
+          text: (err as Error).message,
+        });
+      } finally {
+        setRecoveringSnapshotId(null);
+      }
+    },
+    [userId, recoveringSnapshotId, runActive, pushToast, pollRunStatusNow],
+  );
+
+  const handleDismissPendingSnapshot = useCallback(
+    async (snapshotId: string) => {
+      if (!userId) return;
+      try {
+        const cfg = await fbIngestionService.dismissPendingSnapshot(userId, snapshotId);
+        serverConfigRef.current = cfg;
+        setConfig(cfg);
+        pushToast(
+          {
+            kind: 'ok',
+            title: 'Snapshot retiré',
+            text: `${snapshotId} retiré de la file d'attente.`,
+          },
+          3000,
+        );
+      } catch (err) {
+        pushToast({
+          kind: 'err',
+          title: 'Impossible de retirer',
+          text: (err as Error).message,
+        });
+      }
+    },
+    [userId, pushToast],
+  );
+
   const handleStartBackfill = useCallback(async () => {
     if (!userId || backfillActive) return;
     const prevJob = backfillJob;
@@ -1577,6 +1655,7 @@ export default function AdminScraperPage() {
                 runActive={runActive}
                 launchingMode={launchingMode}
                 isRefreshing={isRefreshing}
+                recoveringSnapshotId={recoveringSnapshotId}
                 autoSyncIntervalSec={autoSyncIntervalSec}
                 onToggleLive={() => void updateConfigPatch({ isLive: !config.isLive })}
                 onRunNow={() => void handleRunActiveGroups()}
@@ -1589,6 +1668,8 @@ export default function AdminScraperPage() {
                     text: `${id} sélectionné dans le champ d'import gratuit.`,
                   }, 3000);
                 }}
+                onRecoverPendingSnapshot={(id) => void handleRecoverPendingSnapshot(id)}
+                onDismissPendingSnapshot={(id) => void handleDismissPendingSnapshot(id)}
                 onRefreshNow={() => void pollRunStatusNow()}
               />
 

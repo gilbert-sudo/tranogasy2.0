@@ -41,12 +41,23 @@ export type FbSchedulerStatus =
   | 'paused'
   | 'waiting_next_cycle'
   | 'due_now'
+  | 'waiting_pending_snapshot'
   | 'running'
   | 'importing_snapshot'
   | 'sleeping_night'
   | 'no_active_groups';
 
 export type FbRunTrigger = 'scheduled' | 'manual' | 'snapshot';
+
+export interface FbPendingSnapshotEntry {
+  snapshotId: string;
+  triggeredAt: string;
+  groupsCount: number;
+  groupNames?: string[];
+  lastStatus?: string | null;
+  lastRecords?: number | null;
+  lastCheckedAt?: string | null;
+}
 
 export interface FbActivityLogEntry {
   id: string;
@@ -151,6 +162,7 @@ export interface FbIngestionConfig {
   lastSchedulerNote?: string | null;
   activityLog?: FbActivityLogEntry[];
   runHistory?: FbRunHistoryEntry[];
+  pendingSnapshots?: FbPendingSnapshotEntry[];
   schedulerDiagnostics?: FbSchedulerDiagnostics;
 }
 
@@ -564,6 +576,27 @@ export const fbIngestionService = {
         method: 'POST',
         body: JSON.stringify({ snapshotId, async: true }),
       }),
+    ),
+
+  recoverPendingSnapshot: (userId: string, snapshotId?: string) =>
+    apiFetch<{
+      action: 'importing' | 'still_running' | 'failed';
+      snapshotId: string;
+      status?: string;
+      records?: number | null;
+      message: string;
+    }>(
+      '/fb-ingestion/pending-snapshots/recover',
+      withAdminHeaders(userId, {
+        method: 'POST',
+        body: JSON.stringify(snapshotId ? { snapshotId } : {}),
+      }),
+    ),
+
+  dismissPendingSnapshot: (userId: string, snapshotId: string) =>
+    apiFetch<FbIngestionConfig>(
+      `/fb-ingestion/pending-snapshots/${encodeURIComponent(snapshotId)}`,
+      withAdminHeaders(userId, { method: 'DELETE' }),
     ),
 
   listCandidates: (

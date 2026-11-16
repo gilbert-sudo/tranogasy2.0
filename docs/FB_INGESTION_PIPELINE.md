@@ -75,9 +75,11 @@ flowchart TD
   - `scaleFactor = Math.max(0.25, config.pollIntervalMinutes / 30)`
   - `num_of_posts = clamp(round((group.scrapeLimitPer30Min || 10) * scaleFactor), 2, 200)`
 
-#### Stage 2: Bright Data Collection & Snapshot Download (`fb-brightdata.service.ts`)
+#### Stage 2: Bright Data Collection, Batching & Pending Snapshot Recovery (`fb-brightdata.service.ts`)
+- **Chunked Triggering (`MAX_GROUPS_PER_SNAPSHOT = 7`):** When `> 7` active groups are enabled, `executeRunActiveGroups` automatically splits them into sequential batches of up to `7` groups (`[Lot X/Y]`) so one slow Facebook group never stalls or invalidates all other groups.
 - `triggerCollection` posts target URLs + `num_of_posts` + `posts_to_not_include` (`<= 50` IDs) with a `30s` abortable timeout.
-- `waitForSnapshot` polls `/progress/{snapshotId}` every `4s` up to `600s` (tolerating up to `3` consecutive transient network errors) while driving an asymptotic progress curve (`10% -> 55%`).
+- `waitForSnapshot` (`getSnapshotProgress`) polls `/progress/{snapshotId}` every `4s` up to `900s` (`15 min` for single batch) or `600s` (`10 min` per batch when chunked), tolerating up to `3` consecutive transient network errors while driving an asymptotic progress curve (`10% -> 55%`).
+- **Zero-Credit Timeout Recovery (`pendingSnapshots`):** If Bright Data times out (`BrightDataSnapshotTimeoutError`) or a server restart interrupts `waiting_brightdata`, the `snapshotId` is saved in `pendingSnapshots` (`35m` TTL). While pending, `schedulerTick()` polls `/progress/{snapshotId}` every `45s` without launching duplicate paid triggers and auto-imports the snapshot at zero extra Bright Data cost as soon as it transitions to `ready` (admins can also check/import or dismiss manually via `POST /api/fb-ingestion/pending-snapshots/recover` and `DELETE /api/fb-ingestion/pending-snapshots/:snapshotId`).
 - `downloadSnapshot` enforces a `90s` (`90_000`ms) abort signal covering both HTTP headers and reading the full `res.text()` body, parsing both JSON arrays and NDJSON streams.
 - Active runs can be cancelled mid-flight via `POST /api/fb-ingestion/run/cancel`, which triggers `AbortController.abort()` and stops group/worker loops cleanly.
 

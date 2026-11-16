@@ -25,6 +25,7 @@ import {
   Settings2,
   Sparkles,
   Timer,
+  X,
   Zap,
 } from 'lucide-react';
 import type {
@@ -43,11 +44,14 @@ interface ScraperCycleCockpitProps {
   runActive: boolean;
   launchingMode: 'scrape' | 'snapshot';
   isRefreshing: boolean;
+  recoveringSnapshotId?: string | null;
   autoSyncIntervalSec: number;
   onToggleLive: () => void;
   onRunNow: () => void;
   onOpenGroupsTab?: () => void;
   onSelectSnapshotId?: (snapshotId: string) => void;
+  onRecoverPendingSnapshot?: (snapshotId: string) => void;
+  onDismissPendingSnapshot?: (snapshotId: string) => void;
   onRefreshNow: () => void;
 }
 
@@ -204,6 +208,16 @@ const STATE_PALETTE: Record<
     ringTrack: 'stroke-emerald-200 dark:stroke-emerald-900',
     accentText: 'text-brand-green',
   },
+  waiting_pending_snapshot: {
+    container:
+      'border-amber-300/90 dark:border-amber-800 bg-gradient-to-br from-amber-50/80 via-white to-emerald-50/30 dark:from-amber-950/25 dark:via-zinc-900 dark:to-emerald-950/15',
+    badge: 'bg-amber-100 text-amber-900 dark:bg-amber-950/70 dark:text-amber-200',
+    badgeLabel: 'RÉCUPÉRATION SNAPSHOT EN ATTENTE',
+    dot: 'bg-amber-500 animate-pulse',
+    ringStroke: 'stroke-amber-500',
+    ringTrack: 'stroke-amber-200 dark:stroke-amber-900/60',
+    accentText: 'text-amber-700 dark:text-amber-300',
+  },
   running: {
     container:
       'border-brand-green/70 bg-gradient-to-br from-emerald-50/90 via-white to-emerald-50/40 dark:from-emerald-950/35 dark:via-zinc-900 dark:to-emerald-950/20',
@@ -262,11 +276,14 @@ export default function ScraperCycleCockpit({
   runActive,
   launchingMode,
   isRefreshing,
+  recoveringSnapshotId = null,
   autoSyncIntervalSec,
   onToggleLive,
   onRunNow,
   onOpenGroupsTab,
   onSelectSnapshotId,
+  onRecoverPendingSnapshot,
+  onDismissPendingSnapshot,
   onRefreshNow,
 }: ScraperCycleCockpitProps) {
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
@@ -351,6 +368,8 @@ export default function ScraperCycleCockpit({
     let targetRunMs: number | null = null;
     let remainingSec: number | null = null;
 
+    const pendingSnapshots = config.pendingSnapshots || [];
+
     if (runActive) {
       state =
         config.lastPollStatus === 'importing_snapshot' || launchingMode === 'snapshot'
@@ -367,6 +386,8 @@ export default function ScraperCycleCockpit({
         validLastRunMs > 0 ? validLastRunMs + intervalMs : 0,
       );
       remainingSec = Math.max(0, Math.ceil((targetRunMs - nowMs) / 1000));
+    } else if (pendingSnapshots.length > 0) {
+      state = 'waiting_pending_snapshot';
     } else {
       targetRunMs = validLastRunMs > 0 ? validLastRunMs + intervalMs : nowMs;
       const remMs = targetRunMs - nowMs;
@@ -384,7 +405,7 @@ export default function ScraperCycleCockpit({
         ? Math.max(0, Math.min(100, Math.round(config.lastRunProgress?.percent ?? 8)))
         : state === 'waiting_next_cycle'
         ? Math.max(2, Math.min(99, Math.round((elapsedSec / Math.max(1, cycleDurationSec)) * 100)))
-        : state === 'due_now'
+        : state === 'due_now' || state === 'waiting_pending_snapshot'
         ? 100
         : state === 'sleeping_night'
         ? 100
@@ -502,6 +523,27 @@ export default function ScraperCycleCockpit({
                 (Le dernier run a échoué — nouvelle tentative automatique à la fin du cycle.)
               </span>
             )}
+          </p>
+        </>
+      );
+    }
+
+    if (s === 'waiting_pending_snapshot') {
+      const pending = (config.pendingSnapshots && config.pendingSnapshots[0]) || null;
+      return (
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin text-amber-600" />
+            <h2 className="text-base sm:text-lg font-extrabold text-amber-950 dark:text-amber-100">
+              Snapshot Bright Data en cours de finalisation ({pending?.snapshotId || 'en attente'})
+            </h2>
+          </div>
+          <p className="text-xs text-amber-900/90 dark:text-amber-200 leading-relaxed">
+            <strong>En ce moment :</strong> Bright Data finalise encore le snapshot déjà payé (
+            {pending?.groupsCount || '?'} groupe(s)
+            {typeof pending?.lastRecords === 'number' ? `, ${pending.lastRecords} posts détectés` : ''}
+            ). Le backend vérifie gratuitement toutes les 45s et l&apos;importera automatiquement dès
+            qu&apos;il sera prêt — <strong>aucun double crédit dépensé</strong>.
           </p>
         </>
       );
@@ -666,6 +708,13 @@ export default function ScraperCycleCockpit({
                     </span>
                     <span className="text-[9px] font-semibold uppercase tracking-wider text-zinc-500 mt-1">
                       restant
+                    </span>
+                  </>
+                ) : liveSnapshot.state === 'waiting_pending_snapshot' ? (
+                  <>
+                    <Download className="w-4 h-4 text-amber-600 animate-pulse" />
+                    <span className="text-[9px] font-bold uppercase text-amber-700 dark:text-amber-300 mt-0.5">
+                      Récup.
                     </span>
                   </>
                 ) : liveSnapshot.state === 'due_now' ? (
@@ -869,6 +918,85 @@ export default function ScraperCycleCockpit({
           </div>
         </div>
       </div>
+
+      {/* Pending Bright Data Snapshot Recovery Banner (Zero extra credits) */}
+      {config.pendingSnapshots && config.pendingSnapshots.length > 0 && !runActive && (
+        <div className="rounded-2xl border border-amber-300/90 dark:border-amber-800 bg-amber-50/80 dark:bg-amber-950/30 p-3.5 space-y-2 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="inline-flex items-center gap-1.5 font-bold text-amber-950 dark:text-amber-100">
+              <Download className="w-4 h-4 text-amber-600" />
+              Snapshot(s) Bright Data en attente de récupération gratuite ({config.pendingSnapshots.length})
+            </span>
+            <span className="text-[11px] text-amber-800 dark:text-amber-300">
+              {config.isLive
+                ? 'Vérification auto toutes les 45s • Aucune nouvelle collecte payante lancée entre-temps'
+                : 'Mode PAUSE actif — cliquez pour vérifier et récupérer gratuitement'}
+            </span>
+          </div>
+          <div className="space-y-1.5">
+            {config.pendingSnapshots.map((pending) => {
+              const busy = recoveringSnapshotId === pending.snapshotId;
+              return (
+                <div
+                  key={pending.snapshotId}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white/90 dark:bg-zinc-900/90 border border-amber-200/80 dark:border-amber-900/60 px-3 py-2"
+                >
+                  <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                    <span className="font-mono font-bold text-zinc-900 dark:text-white">
+                      {pending.snapshotId}
+                    </span>
+                    {pending.groupsCount > 0 && (
+                      <span className="px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">
+                        {pending.groupsCount} groupe(s)
+                      </span>
+                    )}
+                    {pending.lastStatus && (
+                      <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-200 font-semibold">
+                        Bright Data : {pending.lastStatus}
+                        {typeof pending.lastRecords === 'number'
+                          ? ` • ${pending.lastRecords} posts`
+                          : ''}
+                      </span>
+                    )}
+                    <span className="text-zinc-400">
+                      lancé {formatRelativeAgeFr(pending.triggeredAt, nowMs)}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    {onRecoverPendingSnapshot && (
+                      <button
+                        type="button"
+                        disabled={Boolean(recoveringSnapshotId)}
+                        onClick={() => onRecoverPendingSnapshot(pending.snapshotId)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-green text-white text-[11px] font-bold hover:opacity-95 transition disabled:opacity-50 cursor-pointer"
+                      >
+                        {busy ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <Download className="w-3 h-3" />
+                        )}
+                        Vérifier &amp; récupérer gratuitement
+                      </button>
+                    )}
+                    {onDismissPendingSnapshot && (
+                      <button
+                        type="button"
+                        disabled={Boolean(recoveringSnapshotId)}
+                        onClick={() => onDismissPendingSnapshot(pending.snapshotId)}
+                        title="Ignorer ce snapshot en attente"
+                        className="p-1 rounded-full hover:bg-amber-100 dark:hover:bg-amber-900/40 text-amber-700 dark:text-amber-300 cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Telemetry KPI Pills */}
       <div className="flex flex-wrap items-center gap-2 text-[11px] text-zinc-600 dark:text-zinc-300">

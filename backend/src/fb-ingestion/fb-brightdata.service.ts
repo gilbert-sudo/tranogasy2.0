@@ -16,6 +16,26 @@ export interface BrightDataSnapshotMeta {
   created?: string;
 }
 
+export interface BrightDataSnapshotProgress {
+  status: string;
+  records?: number;
+  errors?: number;
+}
+
+export class BrightDataSnapshotTimeoutError extends Error {
+  constructor(
+    public readonly snapshotId: string,
+    public readonly timeoutSeconds: number,
+    public readonly lastStatus: string,
+    public readonly lastRecords?: number,
+  ) {
+    super(
+      `Timed out waiting for Bright Data snapshot ${snapshotId} after ${timeoutSeconds}s`,
+    );
+    this.name = 'BrightDataSnapshotTimeoutError';
+  }
+}
+
 @Injectable()
 export class FbBrightDataService {
   private readonly logger = new Logger(FbBrightDataService.name);
@@ -167,11 +187,54 @@ export class FbBrightDataService {
   }
 
   /**
+   * Checks the current Bright Data progress status for a snapshot without downloading records.
+   */
+  async getSnapshotProgress(
+    snapshotId: string,
+    externalSignal?: AbortSignal,
+  ): Promise<BrightDataSnapshotProgress> {
+    const { signal, cleanup } = this.createRequestSignal(15000, externalSignal);
+    let res: Response;
+    try {
+      res = await fetch(`${this.baseUrl}/progress/${encodeURIComponent(snapshotId)}`, {
+        headers: this.getHeaders(),
+        signal,
+      });
+    } finally {
+      cleanup();
+    }
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new Error(`Bright Data progress check failed (${res.status}): ${txt}`);
+    }
+
+    const statusData = (await res.json()) as {
+      status?: string;
+      errors?: number;
+      records?: number;
+      dataset_size?: number;
+    };
+    const status = (statusData.status || '').toLowerCase() || 'running';
+    const records =
+      typeof statusData.records === 'number'
+        ? statusData.records
+        : typeof statusData.dataset_size === 'number'
+        ? statusData.dataset_size
+        : undefined;
+
+    return {
+      status,
+      records,
+      errors: statusData.errors,
+    };
+  }
+
+  /**
    * Polls Bright Data until the snapshot reaches `ready` (or throws on failure/timeout).
    */
   async waitForSnapshot(
     snapshotId: string,
-    maxWaitMs = 600000,
+    maxWaitMs = 900000,
     onProgress?: (info: {
       elapsedSec: number;
       status: string;
@@ -182,6 +245,8 @@ export class FbBrightDataService {
     const startedAt = Date.now();
     const deadline = startedAt + maxWaitMs;
     let consecutiveCheckErrors = 0;
+    let lastStatus = 'running';
+    let lastRecords: number | undefined;
 
     while (Date.now() < deadline) {
       if (externalSignal?.aborted) {
@@ -191,55 +256,32 @@ export class FbBrightDataService {
       }
 
       try {
-        const { signal, cleanup } = this.createRequestSignal(15000, externalSignal);
-        let res: Response;
-        try {
-          res = await fetch(`${this.baseUrl}/progress/${encodeURIComponent(snapshotId)}`, {
-            headers: this.getHeaders(),
-            signal,
-          });
-        } finally {
-          cleanup();
-        }
-        if (!res.ok) {
-          const txt = await res.text();
-          throw new Error(`Bright Data progress check failed (${res.status}): ${txt}`);
-        }
+        const progress = await this.getSnapshotProgress(snapshotId, externalSignal);
         consecutiveCheckErrors = 0;
+        lastStatus = progress.status;
+        lastRecords = progress.records;
 
-        const statusData = (await res.json()) as {
-          status?: string;
-          errors?: number;
-          records?: number;
-          dataset_size?: number;
-        };
-        const status = (statusData.status || '').toLowerCase();
-        const recordsCount =
-          typeof statusData.records === 'number'
-            ? statusData.records
-            : typeof statusData.dataset_size === 'number'
-            ? statusData.dataset_size
-            : undefined;
-
-        if (status === 'ready') {
+        if (progress.status === 'ready') {
           if (onProgress) {
             await onProgress({
               elapsedSec: Math.round((Date.now() - startedAt) / 1000),
               status: 'ready',
-              records: recordsCount,
+              records: progress.records,
             });
           }
           return;
         }
-        if (status === 'failed' || status === 'canceled') {
-          throw new Error(`Bright Data snapshot ${snapshotId} ended with status: ${status}`);
+        if (progress.status === 'failed' || progress.status === 'canceled') {
+          throw new Error(
+            `Bright Data snapshot ${snapshotId} ended with status: ${progress.status}`,
+          );
         }
 
         if (onProgress) {
           await onProgress({
             elapsedSec: Math.round((Date.now() - startedAt) / 1000),
-            status: status || 'running',
-            records: recordsCount,
+            status: progress.status || 'running',
+            records: progress.records,
           });
         }
       } catch (err) {
@@ -263,7 +305,12 @@ export class FbBrightDataService {
       await this.sleepWithSignal(4000, externalSignal);
     }
 
-    throw new Error(`Timed out waiting for Bright Data snapshot ${snapshotId} after ${Math.round(maxWaitMs / 1000)}s`);
+    throw new BrightDataSnapshotTimeoutError(
+      snapshotId,
+      Math.round(maxWaitMs / 1000),
+      lastStatus,
+      lastRecords,
+    );
   }
 
   /**
