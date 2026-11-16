@@ -1741,7 +1741,8 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
     const startedAtMs = meta?.startedAtMs || finishedAt.getTime();
     const durationSec = Math.max(1, Math.round((finishedAt.getTime() - startedAtMs) / 1000));
 
-    const errNote = summary.errors.length > 0 ? ` (${summary.errors.length} erreur)` : '';
+    const errNote =
+      summary.errors.length > 0 ? ` (${summary.errors.length} avertissement(s))` : '';
     const autoNote =
       (summary.autoApprovedCount || 0) > 0
         ? ` (dont ${summary.autoApprovedCount} auto-publiée(s))`
@@ -1768,7 +1769,7 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
           lastRunSummary: summary,
           lastRunTrigger: trigger,
           lastSchedulerTickAt: finishedAt,
-          lastError: summary.errors.length > 0 ? summary.errors[0] : null,
+          lastError: null,
         },
         $inc: {
           totalBrightDataRecords: summary.totalRawRecords,
@@ -2582,9 +2583,24 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
     };
 
     const grouped = new Map<string, UnwrappedFbPost[]>();
+    const emptyGroupIds = new Set<string>();
+    let benignEmptyCount = 0;
     for (const raw of records) {
       if (raw.error) {
-        summary.errors.push(`BrightData error: ${raw.error}`);
+        const errText = String(raw.error).trim();
+        const errGid = extractGroupIdFromUrl(
+          raw.input?.url || raw.group_url || raw.url || '',
+        );
+        if (/posts?\s*not\s*found|no\s+(?:new\s+)?posts?/i.test(errText)) {
+          benignEmptyCount++;
+          if (errGid) {
+            emptyGroupIds.add(errGid);
+          }
+          continue;
+        }
+        summary.errors.push(
+          errGid ? `BrightData (${errGid}): ${errText}` : `BrightData error: ${errText}`,
+        );
         continue;
       }
       const post = unwrapBrightDataPost(raw);
@@ -2594,6 +2610,37 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
       const arr = grouped.get(post.groupId) || [];
       arr.push(post);
       grouped.set(post.groupId, arr);
+    }
+
+    if (benignEmptyCount > 0) {
+      summary.totalRawRecords = Math.max(0, records.length - benignEmptyCount);
+      this.logger.debug(
+        `Bright Data returned ${benignEmptyCount} empty-group notice(s) ("Posts not found"); continuing cleanly.`,
+      );
+      if (
+        emptyGroupIds.size > 0 &&
+        typeof (this.groupModel as any)?.updateOne === 'function'
+      ) {
+        await Promise.all(
+          Array.from(emptyGroupIds)
+            .filter((gid) => !grouped.has(gid))
+            .map((gid) =>
+              this.groupModel
+                .updateOne(
+                  { groupId: gid },
+                  {
+                    $set: {
+                      lastRunAt: new Date(),
+                      lastRunFetchedCount: 0,
+                      lastRunNewCount: 0,
+                      lastRunCapturedAll: true,
+                    },
+                  },
+                )
+                .catch(() => undefined),
+            ),
+        );
+      }
     }
 
     const totalPostsToScan = summary.unwrappedCount;

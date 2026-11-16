@@ -1580,4 +1580,44 @@ describe('FbIngestionService background job tracking & recovery', () => {
     expect(storedConfig.pendingSnapshots).toHaveLength(0);
     expect(brightDataService.triggerCollection).toHaveBeenCalledTimes(2);
   });
+
+  it('ignores benign Bright Data "Posts not found" records instead of flagging the run as an error', async () => {
+    const { service, getStoredConfig } = createHarness({ lastError: 'Old error' });
+    const groupUpdateOne = jest.fn().mockResolvedValue({ modifiedCount: 1 });
+    (service as any).groupModel.updateOne = groupUpdateOne;
+
+    const summary = await service.processSnapshotRecords(
+      'sd_empty_notice',
+      [
+        {
+          error: 'Posts not found',
+          input: { url: 'https://www.facebook.com/groups/1728248407406286/' },
+        },
+        {
+          post_id: 'p_vid',
+          group_id: 'g_active',
+          group_name: 'Groupe Actif',
+          url: 'https://www.facebook.com/groups/g_active/posts/p_vid/',
+          content: 'Video only post',
+          attachments: [{ type: 'Video', url: 'https://fb.example/v.mp4' }],
+        },
+      ],
+      false,
+    );
+
+    expect(summary.errors).toEqual([]);
+    expect(summary.totalRawRecords).toBe(1);
+    expect(summary.videoOnlySkipped).toBe(1);
+    expect(groupUpdateOne).toHaveBeenCalledWith(
+      { groupId: '1728248407406286' },
+      expect.objectContaining({
+        $set: expect.objectContaining({ lastRunFetchedCount: 0, lastRunCapturedAll: true }),
+      }),
+    );
+
+    await (service as any).finalizeRunSuccess(summary);
+    expect(getStoredConfig().lastPollStatus).toBe('idle');
+    expect(getStoredConfig().lastPollPhase).toBe('completed');
+    expect(getStoredConfig().lastError).toBeNull();
+  });
 });

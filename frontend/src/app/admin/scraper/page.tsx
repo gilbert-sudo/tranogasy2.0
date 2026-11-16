@@ -484,19 +484,20 @@ export default function AdminScraperPage() {
           setRunOutcomeCard({ status: 'error', message: msg, elapsedSec: runDurationSec });
           pushToast({ kind: 'err', title: 'Échec de la collecte', text: msg });
         } else if (cfg.lastRunSummary) {
-          const errSuffix =
-            cfg.lastRunSummary.errors?.length > 0
-              ? ` (${cfg.lastRunSummary.errors.length} erreur(s) partielle(s) — voir détail ci-dessous)`
+          const warnCount = cfg.lastRunSummary.errors?.length || 0;
+          const warnSuffix =
+            warnCount > 0
+              ? ` (${warnCount} avertissement(s) partiel(s) : ${cfg.lastRunSummary.errors[0]})`
               : '';
-          const msg = `Collecte terminée (${cfg.lastRunSummary.snapshotId}) : +${cfg.lastRunSummary.candidatesCreated} annonce(s) ajoutée(s) à la file de validation.${errSuffix}`;
+          const msg = `Collecte terminée (${cfg.lastRunSummary.snapshotId}) : +${cfg.lastRunSummary.candidatesCreated} annonce(s) ajoutée(s) à la file de validation.${warnSuffix}`;
           setRunOutcomeCard({
-            status: cfg.lastRunSummary.errors?.length > 0 ? 'error' : 'completed',
+            status: 'completed',
             message: msg,
             elapsedSec: runDurationSec,
           });
           pushToast({
-            kind: cfg.lastRunSummary.errors?.length > 0 ? 'warn' : 'ok',
-            title: 'Collecte terminée',
+            kind: warnCount > 0 ? 'warn' : 'ok',
+            title: warnCount > 0 ? 'Collecte terminée (avec avertissements)' : 'Collecte terminée',
             text: msg,
           });
         } else {
@@ -1814,6 +1815,15 @@ export default function AdminScraperPage() {
               )}
               )
             </span>
+            {displayedSummary.errors && displayedSummary.errors.length > 0 && (
+              <span
+                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-200 font-semibold"
+                title={displayedSummary.errors.join('\n')}
+              >
+                <AlertTriangle className="w-3 h-3" />
+                {displayedSummary.errors.length} avertissement(s)
+              </span>
+            )}
           </div>
         )}
 
