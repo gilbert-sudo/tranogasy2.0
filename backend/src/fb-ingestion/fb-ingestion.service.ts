@@ -4293,7 +4293,6 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
               publishedAt: fbCreatedAt,
             }),
       contactAccessLocked: true,
-      contactUnlockCostJp: 50,
       rooms: Math.max(0, Number(ex.rooms ?? 0)),
       livingRoom: Math.max(0, Number(ex.livingRoom ?? 0)),
       kitchen: Math.max(0, Number(ex.kitchen ?? 0)),

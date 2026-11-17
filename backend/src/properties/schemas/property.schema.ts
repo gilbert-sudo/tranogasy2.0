@@ -100,12 +100,6 @@ export class Property {
   @Prop({ type: Boolean, required: false, default: false })
   contactAccessLocked: boolean;
 
-  @Prop({ type: Number, required: false, default: 50 })
-  contactUnlockCostJp: number;
-
-  @Prop({ type: [String], required: false, default: [] })
-  unlockedByUsers: string[];
-
   /**
    * Optional agency / entry terms (populated ONLY when explicitly mentioned in the listing).
    */

@@ -1,84 +1,7 @@
 import { apiFetch } from './api';
-
-export const MIN_JP_TOKENS = 100;
-export const MAX_JP_TOKENS = 1_000_000;
-export const ARIARY_PER_JP = 10; // 100 JP = 1,000 Ar
+import type { SubscriptionPlanId } from '@/lib/platform';
 
 export type MobileMoneyOperatorId = 'mvola' | 'airtel' | 'orange' | 'card' | 'papi';
-
-export interface MobileMoneyOperatorConfig {
-  id: MobileMoneyOperatorId;
-  name: string;
-  carrier: string;
-  tagline: string;
-  logo: string;
-  merchantName: string;
-  merchantNumber: string;
-  merchantNumberFormatted: string;
-  prefixes: string[];
-  accentColor: string;
-  badgeBgClass: string;
-  ussdHint: string;
-}
-
-export const MOBILE_MONEY_OPERATORS: MobileMoneyOperatorConfig[] = [
-  {
-    id: 'mvola',
-    name: 'MVola',
-    carrier: 'Telma',
-    tagline: 'Paiement instantané via Telma MVola',
-    logo: '/images/payments/mvola.png',
-    merchantName: 'tranogasy_telma',
-    merchantNumber: '0345189896',
-    merchantNumberFormatted: '034 51 898 96',
-    prefixes: ['034', '038'],
-    accentColor: '#00703c',
-    badgeBgClass: 'bg-[#ffd100]',
-    ussdHint: '#111*1*2#',
-  },
-  {
-    id: 'orange',
-    name: 'Orange Money',
-    carrier: 'Orange',
-    tagline: 'Envoi rapide via Orange Money',
-    logo: '/images/payments/orange.png',
-    merchantName: 'tranogasy_orange',
-    merchantNumber: '0321902559',
-    merchantNumberFormatted: '032 19 025 59',
-    prefixes: ['032'],
-    accentColor: '#ff6600',
-    badgeBgClass: 'bg-[#222222]',
-    ussdHint: '#144*1*1#',
-  },
-  {
-    id: 'airtel',
-    name: 'Airtel Money',
-    carrier: 'Airtel',
-    tagline: 'Transfert sécurisé via Airtel Money',
-    logo: '/images/payments/airtel.png',
-    merchantName: 'tranogasy_airtel',
-    merchantNumber: '0335562455',
-    merchantNumberFormatted: '033 55 624 55',
-    prefixes: ['033', '037'],
-    accentColor: '#ed1c24',
-    badgeBgClass: 'bg-white',
-    ussdHint: '*436*2*1#',
-  },
-  {
-    id: 'card',
-    name: 'Carte Bancaire',
-    carrier: 'BRED / Visa / Mastercard',
-    tagline: 'Paiement en ligne par carte bancaire sécurisée',
-    logo: '/images/payments/visa.png',
-    merchantName: 'tranogasy_card',
-    merchantNumber: '',
-    merchantNumberFormatted: 'Paiement en ligne',
-    prefixes: [],
-    accentColor: '#1a1f71',
-    badgeBgClass: 'bg-[#1a1f71]',
-    ussdHint: '3D Secure',
-  },
-];
 
 export interface PaymentTransaction {
   _id: string;
@@ -88,18 +11,24 @@ export interface PaymentTransaction {
   reason: string;
   payload: string;
   amount: number;
-  tokens: number;
   phoneNumber: string;
   status: 'pending' | 'confirmed' | 'refused' | 'redone' | 'failed';
   ref: string;
+  category?: string;
+  subscriptionPlanId?: SubscriptionPlanId | string;
+  subscriptionDurationHours?: number;
+  subscriptionExpiresAt?: string | null;
+  assistancePlanId?: string;
+  assistanceDurationHours?: number;
+  assistanceExpiresAt?: string | null;
   papiPaymentLink?: string;
   created_at: string;
 }
 
-export interface CreatePaymentLinkPayload {
+export interface CreateSubscriptionLinkPayload {
   userId?: string;
   userPhone?: string;
-  tokens: number;
+  planId: SubscriptionPlanId;
   clientName?: string;
   payerEmail?: string;
   payerPhone?: string;
@@ -107,74 +36,58 @@ export interface CreatePaymentLinkPayload {
   failureUrl?: string;
 }
 
-export interface CreatePaymentLinkResponse {
+export interface CreateSubscriptionLinkResponse {
   success: boolean;
   paymentLink: string;
   ref: string;
   amount: number;
-  tokens: number;
+  subscriptionPlanId: SubscriptionPlanId;
+  subscriptionDurationHours: number;
   notificationToken?: string;
 }
 
 export interface PaymentStatusResponse {
   status: 'pending' | 'confirmed' | 'failed' | 'refused';
   ref: string;
-  tokens: number;
-  amount: number;
-  balance?: number;
+  amount?: number;
   operator?: string;
+  category?: string;
+  subscriptionPlanId?: string;
+  subscriptionDurationHours?: number;
+  subscriptionExpiresAt?: string | null;
+  subscriptionPlanLabel?: string | null;
   paymentLink?: string;
   failureReason?: string;
 }
 
-export interface SpendTokensPayload {
-  userId: string;
-  tokens: number;
-  reason: string;
-}
-
-export interface SpendTokensResponse {
-  message: string;
-  user?: any;
-  balance: number;
-}
-
 export interface WalletResponse {
-  balance: number;
+  subscriptionExpiresAt?: string | null;
+  subscriptionPlanLabel?: string | null;
   payments: PaymentTransaction[];
 }
 
-export function tokensToAriary(tokens: number): number {
-  const safeTokens = Number.isFinite(tokens) && tokens > 0 ? Math.floor(tokens) : 0;
-  return safeTokens * ARIARY_PER_JP;
-}
-
 export const paymentService = {
-  createPaymentLink: (
-    payload: CreatePaymentLinkPayload,
-  ): Promise<CreatePaymentLinkResponse> => {
-    return apiFetch<CreatePaymentLinkResponse>('/payments/create-payment-link', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
+  createSubscriptionLink: (
+    payload: CreateSubscriptionLinkPayload
+  ): Promise<CreateSubscriptionLinkResponse> => {
+    return apiFetch<CreateSubscriptionLinkResponse>(
+      '/payments/create-subscription-link',
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    );
   },
 
   getPaymentStatus: (ref: string): Promise<PaymentStatusResponse> => {
     return apiFetch<PaymentStatusResponse>(
-      `/payments/status/${encodeURIComponent(ref)}`,
+      `/payments/status/${encodeURIComponent(ref)}`
     );
-  },
-
-  spendTokens: (payload: SpendTokensPayload): Promise<SpendTokensResponse> => {
-    return apiFetch<SpendTokensResponse>('/payments/spend-tokens', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
   },
 
   getUserWallet: (identifier: string): Promise<WalletResponse> => {
     return apiFetch<WalletResponse>(
-      `/payments/wallet/${encodeURIComponent(identifier)}`,
+      `/payments/wallet/${encodeURIComponent(identifier)}`
     );
   },
 };

@@ -58,6 +58,7 @@ export function sanitizePropertyForViewer(
   property: any,
   isAdmin = false,
   viewerUserId?: string | null,
+  viewerHasFullAccess = false,
 ): any {
   if (!property || typeof property !== 'object') return property;
 
@@ -78,16 +79,10 @@ export function sanitizePropertyForViewer(
         ? clean.owner
         : '';
 
-  const unlockedList: string[] = Array.isArray(property.unlockedByUsers)
-    ? property.unlockedByUsers.map((id: any) => String(id))
-    : [];
-
   const isUnlockedForViewer =
+    viewerHasFullAccess ||
     !property.contactAccessLocked ||
-    Boolean(
-      normalizedViewerId &&
-        (normalizedViewerId === ownerId || unlockedList.includes(normalizedViewerId)),
-    );
+    Boolean(normalizedViewerId && normalizedViewerId === ownerId);
 
   // Never expose scraper audit markers, server-only estimatedArea/qualityScore, or external Facebook URLs to public callers.
   delete clean.origin;
@@ -98,6 +93,7 @@ export function sanitizePropertyForViewer(
   delete clean.qualityScore;
   delete clean.visualCondition;
   delete clean.unlockedByUsers;
+  delete clean.contactUnlockCostJp;
   delete clean.contactAccessLocked;
 
   if (!isUnlockedForViewer) {
@@ -107,7 +103,6 @@ export function sanitizePropertyForViewer(
       clean.phone3 ||
       (clean.owner && typeof clean.owner === 'object' ? clean.owner.phone : null);
     clean.contactLocked = true;
-    clean.contactUnlockCostJp = Number(property.contactUnlockCostJp) > 0 ? Number(property.contactUnlockCostJp) : 50;
     clean.maskedPhonePreview = maskPhonePreview(primaryPhone) || '034 •• ••• ••';
     clean.phone1 = null;
     clean.phone2 = null;

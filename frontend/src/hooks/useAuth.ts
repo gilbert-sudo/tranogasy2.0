@@ -94,24 +94,35 @@ export function useAuth() {
    * Useful when a previous session had a synthetic ID or outdated profile info.
    */
   const refreshUserSession = useCallback(async () => {
-    const activeUser = currentUserSession?.user || currentUserSession;
+    const { user: startSession, sessionEpoch: startEpoch } = useUserStore.getState();
+    const activeUser = startSession?.user || startSession;
     const phone = activeUser?.phone;
     if (!phone) return;
 
     try {
       const checkRes = await authService.checkUserExists(phone);
+      const { user: latestSession, sessionEpoch: latestEpoch } = useUserStore.getState();
+      if (latestEpoch !== startEpoch || !latestSession) {
+        return;
+      }
+      if (typeof window !== 'undefined' && !localStorage.getItem('user')) {
+        return;
+      }
+
       if (checkRes.exists && checkRes.user) {
-        const isDummy = activeUser?._id && String(activeUser._id).startsWith('tg_');
+        const latestUser = latestSession?.user || latestSession;
+        const isDummy = latestUser?._id && String(latestUser._id).startsWith('tg_');
         const isOutdated =
-          checkRes.user.username !== activeUser.username ||
-          checkRes.user.balance !== activeUser.balance ||
+          checkRes.user.username !== latestUser.username ||
+          checkRes.user.subscriptionExpiresAt !== latestUser.subscriptionExpiresAt ||
+          checkRes.user.hasAllContactsUnlocked !== latestUser.hasAllContactsUnlocked ||
           isDummy;
 
         if (isOutdated) {
           const syncedSession = {
             message: 'Session synchronisée',
             user: checkRes.user,
-            ...(currentUserSession?.authToken ? { authToken: currentUserSession.authToken } : {}),
+            ...(latestSession?.authToken ? { authToken: latestSession.authToken } : {}),
           };
           setUser(syncedSession);
           if (typeof window !== 'undefined') {
@@ -127,7 +138,7 @@ export function useAuth() {
     } catch {
       // Ignore if offline
     }
-  }, [currentUserSession, setUser]);
+  }, [setUser]);
 
   // Auto-sync real database account on load if session has a synthetic ID
   useEffect(() => {
@@ -429,7 +440,7 @@ export function useAuth() {
 
   const logout = useCallback(() => {
     logoutAction();
-    router.push('/login');
+    router.replace('/');
   }, [logoutAction, router]);
 
   return {

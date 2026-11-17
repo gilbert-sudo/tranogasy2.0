@@ -30,8 +30,29 @@ export class Payment {
   @Prop({ required: true, min: 300 })
   amount: number;
 
-  @Prop({ required: true, min: 1 })
-  tokens: number;
+  @Prop({
+    enum: ['time_subscription', 'agency_assistance'],
+    default: 'time_subscription',
+  })
+  category?: string;
+
+  @Prop({ default: null })
+  subscriptionPlanId?: string;
+
+  @Prop({ default: null })
+  subscriptionDurationHours?: number;
+
+  @Prop({ default: null })
+  subscriptionExpiresAt?: Date;
+
+  @Prop({ default: null })
+  assistancePlanId?: string;
+
+  @Prop({ default: null })
+  assistanceDurationHours?: number;
+
+  @Prop({ default: null })
+  assistanceExpiresAt?: Date;
 
   @Prop({ default: '' })
   phoneNumber: string;
@@ -45,7 +66,7 @@ export class Payment {
   @Prop({
     required: true,
     index: true,
-    default: () => `JP-${Date.now().toString(36).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`,
+    default: () => `TG-PAY-${Date.now().toString(36).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`,
   })
   ref: string;
 

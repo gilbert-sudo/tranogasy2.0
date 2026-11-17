@@ -11,21 +11,25 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { PaymentsService } from './payments.service';
+import type {
+  AssistancePlanId,
+  SubscriptionPlanId,
+} from './payments.service';
 
 @Controller('api/payments')
 export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
 
   /**
-   * Generates a Papi hosted payment link (all 4 payment methods: MVola, Orange, Airtel, Carte CB)
+   * Generates a Papi hosted payment link for Web/Android time-based subscriptions
    */
-  @Post('create-payment-link')
-  async createPaymentLink(
+  @Post('create-subscription-link')
+  async createSubscriptionLink(
     @Body()
     body: {
       userId?: string;
       userPhone?: string;
-      tokens: number;
+      planId: SubscriptionPlanId;
       clientName?: string;
       payerEmail?: string;
       payerPhone?: string;
@@ -33,7 +37,27 @@ export class PaymentsController {
       failureUrl?: string;
     },
   ) {
-    return this.paymentsService.createPapiPaymentLink(body);
+    return this.paymentsService.createSubscriptionPaymentLink(body);
+  }
+
+  /**
+   * Generates a Papi hosted payment link for iOS real-world Agency Assistance services
+   */
+  @Post('create-assistance-link')
+  async createAssistanceLink(
+    @Body()
+    body: {
+      userId?: string;
+      userPhone?: string;
+      planId: AssistancePlanId;
+      clientName?: string;
+      payerEmail?: string;
+      payerPhone?: string;
+      successUrl?: string;
+      failureUrl?: string;
+    },
+  ) {
+    return this.paymentsService.createAssistancePaymentLink(body);
   }
 
   /**
@@ -56,18 +80,6 @@ export class PaymentsController {
   @Get('status/:ref')
   async getPaymentStatus(@Param('ref') ref: string) {
     return this.paymentsService.verifyAndSyncPaymentStatus(ref);
-  }
-
-  @Post('spend-tokens')
-  async spendTokens(
-    @Body()
-    body: {
-      userId: string;
-      tokens: number;
-      reason: string;
-    },
-  ) {
-    return this.paymentsService.spendTokens(body);
   }
 
   @Get('wallet/:identifier')

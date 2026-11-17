@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { useFavoriteStore } from '../store/favoriteStore';
+import { useUserStore } from '../store/userStore';
 import { favoriteService } from '../services/favorite.service';
 
 // Module-level deduplication so 200 mounted cards trigger at most 1 network request
@@ -50,9 +51,16 @@ export function useFavorite() {
       setError(null);
 
       inFlightUserId = userId;
+      const startEpoch = useUserStore.getState().sessionEpoch;
       inFlightUserFavsPromise = (async () => {
         try {
           const data = await favoriteService.getUserFavorites(userId);
+          if (
+            useUserStore.getState().sessionEpoch !== startEpoch ||
+            !useUserStore.getState().user
+          ) {
+            return [];
+          }
           const props = data?.properties || [];
           const newFavs: Record<string, boolean> = {};
           props.forEach((p: any) => {

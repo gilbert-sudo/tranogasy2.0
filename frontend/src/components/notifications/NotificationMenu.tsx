@@ -197,7 +197,8 @@ export default function NotificationMenu() {
     if (
       type.includes('payment') ||
       title.includes('paiement') ||
-      title.includes('jp') ||
+      title.includes('assistance') ||
+      title.includes('reçu') ||
       title.includes('recharge')
     ) {
       return (

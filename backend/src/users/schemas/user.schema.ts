@@ -39,8 +39,14 @@ export class User {
   @Prop({ type: [{ type: Types.ObjectId, ref: 'Property' }] })
   favorites: Property[] | Types.ObjectId[];
 
-  @Prop({ default: 0 })
-  balance: number;
+  @Prop({ default: false })
+  hasAllContactsUnlocked?: boolean;
+
+  @Prop({ default: null })
+  subscriptionExpiresAt?: Date;
+
+  @Prop({ default: null })
+  subscriptionPlanLabel?: string;
 
   @Prop({ type: [String], default: [] })
   fcmTokens: string[];

@@ -291,13 +291,6 @@ export class PropertiesService {
       data.contactAccessLocked !== undefined
         ? Boolean(data.contactAccessLocked)
         : true;
-    data.contactUnlockCostJp =
-      Number(data.contactUnlockCostJp) > 0
-        ? Math.round(Number(data.contactUnlockCostJp))
-        : 50;
-    if (!Array.isArray(data.unlockedByUsers)) {
-      data.unlockedByUsers = [];
-    }
 
     // 7. Preserve explicit creation timestamp when provided by trusted internal pipelines (e.g., FB post date)
     if (data.created_at != null) {
@@ -319,6 +312,23 @@ export class PropertiesService {
     return this.findOne(saved._id.toString());
   }
 
+  private async hasFullContactAccess(viewerUserId?: string): Promise<boolean> {
+    if (!viewerUserId || !Types.ObjectId.isValid(viewerUserId)) {
+      return false;
+    }
+    const viewer = await this.userModel
+      .findById(viewerUserId)
+      .select('hasAllContactsUnlocked subscriptionExpiresAt')
+      .lean()
+      .catch(() => null);
+    if (!viewer) return false;
+    if (viewer.hasAllContactsUnlocked) return true;
+    if (viewer.subscriptionExpiresAt) {
+      return new Date(viewer.subscriptionExpiresAt).getTime() > Date.now();
+    }
+    return false;
+  }
+
   async getPaginatedProperties(
     page: number = 1,
     limit: number = 20,
@@ -326,22 +336,25 @@ export class PropertiesService {
   ) {
     const skip = (page - 1) * limit;
 
-    const [properties, total] = await Promise.all([
-      this.propertyModel
-        .find()
-        .populate('city')
-        .populate('features')
-        .populate('owner', '_id username avatar coverImage location role phone bio lastConnectedAt created_at')
-        .sort({ created_at: -1 })
-        .skip(skip)
-        .limit(limit)
-        .lean(),
-      this.propertyModel.countDocuments(),
+    const [[properties, total], viewerHasFullAccess] = await Promise.all([
+      Promise.all([
+        this.propertyModel
+          .find()
+          .populate('city')
+          .populate('features')
+          .populate('owner', '_id username avatar coverImage location role phone bio lastConnectedAt created_at')
+          .sort({ created_at: -1 })
+          .skip(skip)
+          .limit(limit)
+          .lean(),
+        this.propertyModel.countDocuments(),
+      ]),
+      this.hasFullContactAccess(viewerUserId),
     ]);
 
     return {
       properties: properties.map((p) =>
-        sanitizePropertyForViewer(p, false, viewerUserId),
+        sanitizePropertyForViewer(p, false, viewerUserId, viewerHasFullAccess),
       ),
       total,
       page,
@@ -350,16 +363,21 @@ export class PropertiesService {
   }
 
   async getLatestProperties(limit: number = 10, viewerUserId?: string) {
-    const props = await this.propertyModel
-      .find()
-      .populate('city')
-      .populate('features')
-      .populate('owner', '_id username avatar coverImage location role phone bio lastConnectedAt created_at')
-      .sort({ created_at: -1 })
-      .limit(limit)
-      .lean();
+    const [props, viewerHasFullAccess] = await Promise.all([
+      this.propertyModel
+        .find()
+        .populate('city')
+        .populate('features')
+        .populate('owner', '_id username avatar coverImage location role phone bio lastConnectedAt created_at')
+        .sort({ created_at: -1 })
+        .limit(limit)
+        .lean(),
+      this.hasFullContactAccess(viewerUserId),
+    ]);
 
-    return props.map((p) => sanitizePropertyForViewer(p, false, viewerUserId));
+    return props.map((p) =>
+      sanitizePropertyForViewer(p, false, viewerUserId, viewerHasFullAccess),
+    );
   }
 
   private calculateDistanceMeters(
@@ -485,22 +503,25 @@ export class PropertiesService {
       const mongoSort: Record<string, 1 | -1> = { created_at: -1, qualityScore: -1 };
 
       const skip = (page - 1) * limit;
-      const [docs, total] = await Promise.all([
-        this.propertyModel
-          .find(mongoFilter)
-          .populate('city')
-          .populate('features')
-          .populate('owner', '_id username avatar coverImage location role phone bio lastConnectedAt created_at')
-          .sort(mongoSort)
-          .skip(skip)
-          .limit(limit)
-          .lean(),
-        this.propertyModel.countDocuments(mongoFilter),
+      const [[docs, total], viewerHasFullAccess] = await Promise.all([
+        Promise.all([
+          this.propertyModel
+            .find(mongoFilter)
+            .populate('city')
+            .populate('features')
+            .populate('owner', '_id username avatar coverImage location role phone bio lastConnectedAt created_at')
+            .sort(mongoSort)
+            .skip(skip)
+            .limit(limit)
+            .lean(),
+          this.propertyModel.countDocuments(mongoFilter),
+        ]),
+        this.hasFullContactAccess(effectiveViewerId),
       ]);
 
       return {
         properties: docs.map((p) =>
-          sanitizePropertyForViewer(p, false, effectiveViewerId),
+          sanitizePropertyForViewer(p, false, effectiveViewerId, viewerHasFullAccess),
         ),
         total,
         page,
@@ -650,11 +671,14 @@ export class PropertiesService {
       filtered.sort((a, b) => (a._distance ?? Infinity) - (b._distance ?? Infinity));
     }
 
+    const viewerHasFullAccess = await this.hasFullContactAccess(effectiveViewerId);
     const total = filtered.length;
     const start = (page - 1) * limit;
     const paginated = filtered
       .slice(start, start + limit)
-      .map((p) => sanitizePropertyForViewer(p, false, effectiveViewerId));
+      .map((p) =>
+        sanitizePropertyForViewer(p, false, effectiveViewerId, viewerHasFullAccess),
+      );
 
     return {
       properties: paginated,
@@ -665,110 +689,20 @@ export class PropertiesService {
   }
 
   async findOne(id: string, viewerUserId?: string) {
-    const property = await this.propertyModel
-      .findById(id)
-      .populate('city')
-      .populate('features')
-      .populate('owner', '_id username avatar coverImage location role phone bio lastConnectedAt created_at')
-      .lean();
+    const [property, viewerHasFullAccess] = await Promise.all([
+      this.propertyModel
+        .findById(id)
+        .populate('city')
+        .populate('features')
+        .populate('owner', '_id username avatar coverImage location role phone bio lastConnectedAt created_at')
+        .lean(),
+      this.hasFullContactAccess(viewerUserId),
+    ]);
 
     if (!property) {
       throw new NotFoundException('Property not found');
     }
-    return sanitizePropertyForViewer(property, false, viewerUserId);
-  }
-
-  async unlockPropertyContact(propertyId: string, userId: string) {
-    if (!propertyId || !Types.ObjectId.isValid(propertyId)) {
-      throw new BadRequestException('Identifiant de propriété invalide');
-    }
-    if (!userId || !Types.ObjectId.isValid(userId)) {
-      throw new BadRequestException('Veuillez vous connecter pour débloquer ce contact.');
-    }
-
-    const property: any = await this.propertyModel
-      .findById(propertyId)
-      .populate('owner', '_id username phone email')
-      .lean();
-
-    if (!property) {
-      throw new NotFoundException('Propriété introuvable');
-    }
-
-    const normalizedUserId = String(userId).trim();
-    const ownerId =
-      property.owner && typeof property.owner === 'object'
-        ? String(property.owner._id || '')
-        : String(property.owner || '');
-    const unlockedList: string[] = Array.isArray(property.unlockedByUsers)
-      ? property.unlockedByUsers.map((u: any) => String(u))
-      : [];
-
-    const alreadyUnlocked =
-      !property.contactAccessLocked ||
-      normalizedUserId === ownerId ||
-      unlockedList.includes(normalizedUserId);
-
-    if (alreadyUnlocked) {
-      const currentUser: any = await this.userModel
-        .findById(normalizedUserId, { balance: 1 })
-        .lean()
-        .catch(() => null);
-      return {
-        unlocked: true,
-        alreadyUnlocked: true,
-        costJp: 0,
-        balance: currentUser?.balance ?? 0,
-        phone1: property.phone1 || property.owner?.phone || null,
-        phone2: property.phone2 || null,
-        phone3: property.phone3 || null,
-        description: property.description || '',
-      };
-    }
-
-    const costJp =
-      Number(property.contactUnlockCostJp) > 0
-        ? Math.round(Number(property.contactUnlockCostJp))
-        : 50;
-
-    const updatedUser: any = await this.userModel
-      .findOneAndUpdate(
-        {
-          _id: new Types.ObjectId(normalizedUserId),
-          balance: { $gte: costJp },
-        },
-        { $inc: { balance: -costJp } },
-        { new: true },
-      )
-      .lean();
-
-    if (!updatedUser) {
-      const existingUser: any = await this.userModel
-        .findById(normalizedUserId, { balance: 1 })
-        .lean();
-      if (!existingUser) {
-        throw new NotFoundException('Compte utilisateur introuvable');
-      }
-      throw new BadRequestException(
-        `Solde JP insuffisant (${costJp} JP requis, vous avez ${existingUser.balance || 0} JP). Rechargez vos JP pour voir le contact.`,
-      );
-    }
-
-    await this.propertyModel.updateOne(
-      { _id: new Types.ObjectId(propertyId) },
-      { $addToSet: { unlockedByUsers: normalizedUserId } },
-    );
-
-    return {
-      unlocked: true,
-      alreadyUnlocked: false,
-      costJp,
-      balance: updatedUser.balance ?? 0,
-      phone1: property.phone1 || property.owner?.phone || null,
-      phone2: property.phone2 || null,
-      phone3: property.phone3 || null,
-      description: property.description || '',
-    };
+    return sanitizePropertyForViewer(property, false, viewerUserId, viewerHasFullAccess);
   }
 
   /**

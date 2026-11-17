@@ -1,37 +1,57 @@
 import { create } from 'zustand';
 import { usePropertyStore } from './propertyStore';
+import { usePaymentStore } from './paymentStore';
+import { useFavoriteStore } from './favoriteStore';
 
 interface UserStore {
   user: any | null;
+  sessionEpoch: number;
   setUser: (user: any) => void;
-  updateBalance: (newBalance: number) => void;
+  updateSubscription: (expiresAt: string | null, planLabel?: string | null) => void;
   logout: () => void;
   initialize: () => void;
 }
 
 export const useUserStore = create<UserStore>((set, get) => ({
   user: null,
-  setUser: (user) => set({ user }),
-  updateBalance: (newBalance: number) => {
+  sessionEpoch: 0,
+  setUser: (user) =>
+    set((state) => ({
+      user,
+      sessionEpoch: user ? state.sessionEpoch : state.sessionEpoch + 1,
+    })),
+  updateSubscription: (expiresAt: string | null, planLabel?: string | null) => {
     const current = get().user;
     if (!current) return;
+    const patch = {
+      subscriptionExpiresAt: expiresAt,
+      ...(planLabel !== undefined ? { subscriptionPlanLabel: planLabel } : {}),
+    };
     const updated = current.user
-      ? { ...current, user: { ...current.user, balance: newBalance } }
-      : { ...current, balance: newBalance };
+      ? { ...current, user: { ...current.user, ...patch } }
+      : { ...current, ...patch };
     set({ user: updated });
     if (typeof window !== 'undefined') {
       try {
         localStorage.setItem('user', JSON.stringify(updated));
       } catch (e) {
-        console.error('Failed to persist updated user balance', e);
+        console.error('Failed to persist updated user subscription', e);
       }
     }
   },
   logout: () => {
-    set({ user: null });
+    set((state) => ({ user: null, sessionEpoch: state.sessionEpoch + 1 }));
     usePropertyStore.getState().clearUserProperties();
+    usePaymentStore.getState().clearWallet();
+    useFavoriteStore.getState().clearFavorites();
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('user');
+      try {
+        localStorage.removeItem('user');
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('tranogasy_user_properties');
+      } catch (e) {
+        console.error('Failed to clear session storage on logout', e);
+      }
     }
   },
   initialize: () => {
@@ -41,9 +61,9 @@ export const useUserStore = create<UserStore>((set, get) => ({
         try {
           set({ user: JSON.parse(savedUser) });
         } catch (e) {
-          console.error("Failed to parse user from local storage", e);
+          console.error('Failed to parse user from local storage', e);
         }
       }
     }
-  }
+  },
 }));

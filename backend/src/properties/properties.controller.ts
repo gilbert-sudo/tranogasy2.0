@@ -140,26 +140,6 @@ export class PropertiesController {
     return this.propertiesService.findOne(id, resolvedViewer);
   }
 
-  @Post(':id/unlock-contact')
-  async unlockContact(
-    @Param('id') id: string,
-    @Body() body?: { userId?: string },
-    @Headers('x-auth-token') authToken?: string,
-    @Headers('authorization') authHeader?: string,
-  ) {
-    const resolvedUserId = this.extractOptionalViewerId(
-      authToken,
-      authHeader,
-      body?.userId,
-    );
-    if (!resolvedUserId) {
-      throw new UnauthorizedException(
-        'Veuillez vous connecter pour débloquer ce contact.',
-      );
-    }
-    return this.propertiesService.unlockPropertyContact(id, resolvedUserId);
-  }
-
   @Post()
   async create(@Body() createPropertyDto: any) {
     const safeDto =

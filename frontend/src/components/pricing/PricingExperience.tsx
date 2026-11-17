@@ -1,95 +1,41 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowLeft,
   Check,
   CheckCircle2,
-  Phone,
-  Plus,
-  Minus,
+  Crown,
+  Clock,
   Loader2,
-  ArrowRight,
   ShieldCheck,
-  Sparkles,
   X,
   ExternalLink,
   RefreshCw,
   CreditCard,
   AlertCircle,
 } from 'lucide-react';
-import JpTokenIcon from '@/components/ui/JpTokenIcon';
 import { useUserStore } from '@/store/userStore';
 import { useModalStore } from '@/store/modalStore';
+import { usePropertyStore } from '@/store/propertyStore';
 import { useAuth } from '@/hooks/useAuth';
 import { usePayment } from '@/hooks/usePayment';
-import {
-  MIN_JP_TOKENS,
-  MAX_JP_TOKENS,
-  ARIARY_PER_JP,
-  tokensToAriary,
-  PaymentTransaction,
-} from '@/services/payment.service';
+import { TIME_SUBSCRIPTION_PLANS, TimeSubscriptionPlan } from '@/lib/platform';
 
-interface PricingPlan {
-  id: string;
-  tokens: number;
-  name: string;
-  badge?: string;
-  isFeatured?: boolean;
-  tagline: string;
-  features: string[];
+function formatExpirationDate(value?: string | null): string {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString('fr-FR', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
-
-const PRICING_PLANS: PricingPlan[] = [
-  {
-    id: 'decouverte',
-    tokens: 100,
-    name: 'Découverte',
-    badge: 'Minimum',
-    isFeatured: false,
-    tagline: 'Idéal pour débloquer vos premiers contacts et tester le service.',
-    features: [
-      '100 Jetons JP crédités immédiatement',
-      'Déblocage direct des numéros propriétaires',
-      'Sans abonnement ni expiration',
-      'Paiement sécurisé MVola, Airtel, Orange',
-    ],
-  },
-  {
-    id: 'populaire',
-    tokens: 500,
-    name: 'Populaire',
-    badge: 'Le plus choisi',
-    isFeatured: true,
-    tagline: 'Le pack recommandé pour trouver rapidement un logement.',
-    features: [
-      '500 Jetons JP crédités immédiatement',
-      'Déblocage multiple de contacts vérifiés',
-      'Accès prioritaire aux nouvelles annonces',
-      'Validité illimitée de tous vos jetons',
-      'Idéal particuliers & familles en recherche',
-    ],
-  },
-  {
-    id: 'pro',
-    tokens: 1000,
-    name: 'Confort & Pro',
-    badge: 'Recommandé Pro',
-    isFeatured: false,
-    tagline: 'Pour les propriétaires actifs et les recherches intensives.',
-    features: [
-      '1 000 Jetons JP crédités immédiatement',
-      'Publication & mise en avant d’annonces',
-      'Déblocages de contacts en illimité',
-      'Validité illimitée sans frais cachés',
-      'Parfait pour bailleurs et professionnels',
-    ],
-  },
-];
 
 export default function PricingExperience() {
   const router = useRouter();
@@ -98,58 +44,51 @@ export default function PricingExperience() {
   const openModal = useModalStore((state) => state.openModal);
   const { refreshUserSession } = useAuth();
   const {
-    balance,
+    hasActiveSubscription,
+    subscriptionPlanLabel,
+    subscriptionExpiresAt,
     isLoading,
     error,
     clearError,
     fetchWallet,
-    createPapiPaymentLink,
+    createSubscriptionPaymentLink,
     checkPaymentStatus,
   } = usePayment();
 
   const currentUser = user?.user || user;
   const isLoggedIn = !!currentUser;
 
-  // Active view: 'packs' (Image 1 style) or 'custom' (montant libre)
-  const [pricingMode, setPricingMode] = useState<'packs' | 'custom'>('packs');
-
-  // Selected pack index for mobile carousel/tabs (default to index 1: Populaire)
   const [activePlanIndex, setActivePlanIndex] = useState<number>(1);
-
-  // Custom token input (for 'custom' mode)
-  const initialTokensParam = Number(searchParams.get('tokens'));
-  const [customTokenInput, setCustomTokenInput] = useState<string>(
-    initialTokensParam >= MIN_JP_TOKENS ? String(initialTokensParam) : '250'
+  const [selectedPlan, setSelectedPlan] = useState<TimeSubscriptionPlan>(
+    TIME_SUBSCRIPTION_PLANS[1]
   );
 
-  // Active Checkout Sheet state
+  // Checkout Modal State
   const [checkoutModalOpen, setCheckoutModalOpen] = useState<boolean>(false);
   const [checkoutStep, setCheckoutStep] =
     useState<'options' | 'waiting_papi'>('options');
   const [papiPaymentLink, setPapiPaymentLink] = useState<string | null>(null);
   const [papiRef, setPapiRef] = useState<string | null>(null);
   const [isPollingStatus, setIsPollingStatus] = useState<boolean>(false);
-  const [urlBannerMessage, setUrlBannerMessage] = useState<{
-    type: 'success' | 'error';
-    text: string;
-  } | null>(null);
-
-  const [selectedTokens, setSelectedTokens] = useState<number>(500);
-  const [senderPhone, setSenderPhone] = useState<string>('');
-
-  // Success receipt view
-  const [completedTx, setCompletedTx] = useState<{
-    transaction?: PaymentTransaction;
-    tokensAdded: number;
-    amountPaid: number;
-    newBalance: number;
-    operatorName: string;
-  } | null>(null);
-
-  const checkoutAmountAriary = useMemo(
-    () => tokensToAriary(selectedTokens),
-    [selectedTokens]
+  const [dismissedFailedBanner, setDismissedFailedBanner] =
+    useState<boolean>(false);
+  const [checkoutNotice, setCheckoutNotice] = useState<string | null>(null);
+  const [senderPhoneOverride, setSenderPhoneOverride] = useState<string | null>(
+    null
   );
+
+  const senderPhone = senderPhoneOverride ?? String(currentUser?.phone || '');
+  const showFailedBanner =
+    searchParams.get('payment') === 'failed' && !dismissedFailedBanner;
+
+  // Confirmed Subscription Pass Receipt
+  const [completedTx, setCompletedTx] = useState<{
+    ref: string;
+    planLabel: string;
+    amountPaid: number;
+    operatorName: string;
+    expiresAt: string | null;
+  } | null>(null);
 
   useEffect(() => {
     initialize();
@@ -157,13 +96,7 @@ export default function PricingExperience() {
     fetchWallet();
   }, [initialize, refreshUserSession, fetchWallet]);
 
-  useEffect(() => {
-    if (currentUser?.phone && !senderPhone) {
-      setSenderPhone(String(currentUser.phone));
-    }
-  }, [currentUser?.phone, senderPhone]);
-
-  // Polling Papi status during waiting_papi step
+  // Poll Papi payment status while waiting
   useEffect(() => {
     if (!checkoutModalOpen || checkoutStep !== 'waiting_papi' || !papiRef) {
       return;
@@ -180,12 +113,22 @@ export default function PricingExperience() {
           clearInterval(interval);
           setCheckoutModalOpen(false);
           setCheckoutStep('options');
+          setCheckoutNotice(null);
+          usePropertyStore.getState().clearUserProperties();
+          refreshUserSession();
           setCompletedTx({
-            tokensAdded: res.tokens || selectedTokens,
-            amountPaid: res.amount || checkoutAmountAriary,
-            newBalance: res.balance ?? balance + (res.tokens || selectedTokens),
-            operatorName: res.operator ? res.operator.toUpperCase() : 'Paiement en ligne',
+            ref: res.ref || papiRef,
+            planLabel: res.subscriptionPlanLabel || selectedPlan.durationLabel,
+            amountPaid: res.amount || selectedPlan.amount,
+            operatorName: res.operator ? res.operator.toUpperCase() : 'Mobile Money',
+            expiresAt: res.subscriptionExpiresAt || null,
           });
+        } else if (res.status === 'failed' || res.status === 'refused') {
+          clearInterval(interval);
+          setCheckoutStep('options');
+          setCheckoutNotice(
+            res.failureReason || 'Le paiement a été annulé ou n’a pas abouti.'
+          );
         }
       } finally {
         if (isMounted) setIsPollingStatus(false);
@@ -201,12 +144,11 @@ export default function PricingExperience() {
     checkoutStep,
     papiRef,
     checkPaymentStatus,
-    selectedTokens,
-    checkoutAmountAriary,
-    balance,
+    selectedPlan,
+    refreshUserSession,
   ]);
 
-  // Handle returning from Papi hosted checkout (redirect with query params)
+  // Handle redirect return from Papi hosted checkout
   useEffect(() => {
     const paymentParam = searchParams.get('payment');
     const refParam = searchParams.get('ref');
@@ -217,12 +159,14 @@ export default function PricingExperience() {
         try {
           const res = await checkPaymentStatus(refParam);
           if (active && res.status === 'confirmed') {
+            usePropertyStore.getState().clearUserProperties();
+            refreshUserSession();
             setCompletedTx({
-              tokensAdded: res.tokens || selectedTokens,
-              amountPaid: res.amount || checkoutAmountAriary,
-              newBalance:
-                res.balance ?? balance + (res.tokens || selectedTokens),
-              operatorName: res.operator ? res.operator.toUpperCase() : 'Paiement en ligne',
+              ref: res.ref || refParam,
+              planLabel: res.subscriptionPlanLabel || selectedPlan.durationLabel,
+              amountPaid: res.amount || selectedPlan.amount,
+              operatorName: res.operator ? res.operator.toUpperCase() : 'Mobile Money',
+              expiresAt: res.subscriptionExpiresAt || null,
             });
             router.replace('/pricing');
           }
@@ -234,40 +178,24 @@ export default function PricingExperience() {
       return () => {
         active = false;
       };
-    } else if (paymentParam === 'failed') {
-      setUrlBannerMessage({
-        type: 'error',
-        text: 'La transaction de paiement a été annulée ou n’a pas abouti. Vous pouvez réessayer.',
-      });
-      router.replace('/pricing');
     }
   }, [
     searchParams,
     checkPaymentStatus,
-    selectedTokens,
-    checkoutAmountAriary,
-    balance,
+    selectedPlan,
     router,
+    refreshUserSession,
   ]);
 
-  const activePlan = PRICING_PLANS[activePlanIndex];
-
-  // Authoritative calculations
-  const parsedCustomTokens = useMemo(() => {
-    const cleaned = customTokenInput.replace(/\D/g, '');
-    if (!cleaned) return 0;
-    return Math.min(MAX_JP_TOKENS, parseInt(cleaned, 10));
-  }, [customTokenInput]);
-
-  const openCheckoutForTokens = (tokens: number) => {
+  const openCheckoutForPlan = (plan: TimeSubscriptionPlan) => {
     if (error) clearError();
     if (!isLoggedIn) {
       openModal('login');
       return;
     }
-    const safeTokens = Math.max(MIN_JP_TOKENS, tokens);
-    setSelectedTokens(safeTokens);
+    setSelectedPlan(plan);
     setCheckoutStep('options');
+    setCheckoutNotice(null);
     setPapiPaymentLink(null);
     setPapiRef(null);
     setCheckoutModalOpen(true);
@@ -275,7 +203,8 @@ export default function PricingExperience() {
 
   const handlePapiCheckout = async () => {
     if (error) clearError();
-    const res = await createPapiPaymentLink(selectedTokens, {
+    setCheckoutNotice(null);
+    const res = await createSubscriptionPaymentLink(selectedPlan.id, {
       payerPhone: senderPhone || undefined,
     });
 
@@ -285,14 +214,7 @@ export default function PricingExperience() {
       setCheckoutStep('waiting_papi');
 
       try {
-        const opened = window.open(
-          res.paymentLink,
-          '_blank',
-          'noopener,noreferrer'
-        );
-        if (!opened || opened.closed || typeof opened.closed === 'undefined') {
-          // If popup blocker intervened, user can use the button inside modal
-        }
+        window.open(res.paymentLink, '_blank', 'noopener,noreferrer');
       } catch {
         // Fallback to modal button
       }
@@ -307,12 +229,23 @@ export default function PricingExperience() {
       if (res.status === 'confirmed') {
         setCheckoutModalOpen(false);
         setCheckoutStep('options');
+        setCheckoutNotice(null);
+        usePropertyStore.getState().clearUserProperties();
+        refreshUserSession();
         setCompletedTx({
-          tokensAdded: res.tokens || selectedTokens,
-          amountPaid: res.amount || checkoutAmountAriary,
-          newBalance: res.balance ?? balance + (res.tokens || selectedTokens),
-          operatorName: res.operator ? res.operator.toUpperCase() : 'Paiement en ligne',
+          ref: res.ref || papiRef,
+          planLabel: res.subscriptionPlanLabel || selectedPlan.durationLabel,
+          amountPaid: res.amount || selectedPlan.amount,
+          operatorName: res.operator ? res.operator.toUpperCase() : 'Mobile Money',
+          expiresAt: res.subscriptionExpiresAt || null,
         });
+      } else if (res.status === 'failed' || res.status === 'refused') {
+        setCheckoutStep('options');
+        setCheckoutNotice(
+          res.failureReason || 'Le paiement a été annulé ou n’a pas abouti.'
+        );
+      } else {
+        setCheckoutNotice('Paiement toujours en attente de validation.');
       }
     } finally {
       setIsPollingStatus(false);
@@ -320,12 +253,11 @@ export default function PricingExperience() {
   };
 
   // ============================================================================
-  // VIEW: PAYMENT COMPLETED RECEIPT (Compact single-screen)
+  // VIEW: SUBSCRIPTION ACTIVATED RECEIPT
   // ============================================================================
   if (completedTx) {
     return (
       <div className="h-[100dvh] max-h-[100dvh] bg-[#F5F5F7] dark:bg-zinc-950 flex flex-col justify-between p-4 sm:p-6 font-sans select-none overflow-hidden">
-        {/* Top bar */}
         <div className="max-w-md w-full mx-auto flex items-center justify-between shrink-0">
           <button
             type="button"
@@ -335,16 +267,15 @@ export default function PricingExperience() {
             <ArrowLeft className="w-3.5 h-3.5" />
             <span>Mon compte</span>
           </button>
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white dark:bg-zinc-900 text-xs font-bold text-zinc-900 dark:text-white shadow-xs">
-            <JpTokenIcon size={18} />
-            <span>{completedTx.newBalance.toLocaleString('fr-FR')} JP</span>
+          <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white dark:bg-zinc-900 text-xs font-bold text-brand-green shadow-xs">
+            <CheckCircle2 className="w-4 h-4" />
+            <span>Pass actif</span>
           </div>
         </div>
 
-        {/* Center Receipt Card */}
         <div className="max-w-md w-full mx-auto bg-white dark:bg-zinc-900 rounded-[2.5rem] p-6 sm:p-8 text-center space-y-5 shadow-xl animate-in zoom-in-95 duration-200">
-          <div className="relative mx-auto w-20 h-20 flex items-center justify-center">
-            <JpTokenIcon size={76} glow priority />
+          <div className="relative mx-auto w-20 h-20 rounded-full bg-brand-green/12 text-brand-green flex items-center justify-center">
+            <Crown className="w-9 h-9" />
             <span className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-brand-green text-white flex items-center justify-center shadow-md">
               <Check className="w-4 h-4" strokeWidth={3} />
             </span>
@@ -353,17 +284,23 @@ export default function PricingExperience() {
           <div className="space-y-1">
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-green/12 text-brand-green text-[11px] font-extrabold uppercase tracking-wider">
               <CheckCircle2 className="w-3 h-3" />
-              Recharge réussie
+              Abonnement activé
             </span>
             <div className="text-3xl font-extrabold text-zinc-950 dark:text-white tracking-tight">
-              +{completedTx.tokensAdded.toLocaleString('fr-FR')} JP
+              {completedTx.planLabel}
             </div>
             <p className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">
-              Crédits ajoutés sur votre compte TranoGasy.
+              Tous les numéros propriétaires sont désormais accessibles.
             </p>
           </div>
 
           <div className="bg-[#F5F5F7] dark:bg-zinc-800/80 rounded-[1.75rem] p-4 space-y-2.5 text-xs text-left">
+            <div className="flex justify-between">
+              <span className="text-zinc-500 dark:text-zinc-400">Référence</span>
+              <span className="font-mono font-bold text-zinc-900 dark:text-white">
+                {completedTx.ref}
+              </span>
+            </div>
             <div className="flex justify-between">
               <span className="text-zinc-500 dark:text-zinc-400">Mode de paiement</span>
               <span className="font-bold text-zinc-900 dark:text-white">
@@ -376,46 +313,47 @@ export default function PricingExperience() {
                 {completedTx.amountPaid.toLocaleString('fr-FR')} Ar
               </span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-zinc-500 dark:text-zinc-400">Nouveau solde</span>
-              <span className="font-extrabold text-brand-green inline-flex items-center gap-1">
-                <JpTokenIcon size={14} />
-                {completedTx.newBalance.toLocaleString('fr-FR')} JP
-              </span>
-            </div>
+            {completedTx.expiresAt && (
+              <div className="flex justify-between pt-1 border-t border-zinc-200 dark:border-zinc-700">
+                <span className="text-zinc-500 dark:text-zinc-400">Valable jusqu’au</span>
+                <span className="font-extrabold text-brand-green">
+                  {formatExpirationDate(completedTx.expiresAt)}
+                </span>
+              </div>
+            )}
           </div>
 
           <div className="flex gap-2.5 pt-1">
             <button
               type="button"
-              onClick={() => setCompletedTx(null)}
-              className="flex-1 h-12 rounded-full bg-[#F5F5F7] dark:bg-zinc-800 text-zinc-900 dark:text-white font-bold text-xs hover:bg-zinc-200 dark:hover:bg-zinc-700 active:scale-95 transition-all cursor-pointer"
+              onClick={() => router.push('/explore')}
+              className="flex-1 h-12 rounded-full bg-brand-green hover:bg-[#6da819] text-white font-bold text-xs shadow-md active:scale-95 transition-all cursor-pointer"
             >
-              Autre pack
+              Explorer les biens
             </button>
             <button
               type="button"
               onClick={() => router.push('/account')}
               className="flex-1 h-12 rounded-full bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 font-bold text-xs shadow-md active:scale-95 transition-all cursor-pointer"
             >
-              Voir mon compte
+              Mon compte
             </button>
           </div>
         </div>
 
         <div className="text-center text-[11px] text-zinc-400">
-          TranoGasy • Système de jetons JP (100 JP = 1 000 Ar)
+          TranoGasy • Accès illimité aux annonces
         </div>
       </div>
     );
   }
 
   // ============================================================================
-  // MAIN VIEW: NO-SCROLL MINIMALIST PRICING (Image 1 Style)
+  // MAIN VIEW: RICH WEB & ANDROID TIME-BASED SUBSCRIPTIONS
   // ============================================================================
   return (
     <div className="h-[100dvh] max-h-[100dvh] bg-[#F5F5F7] dark:bg-zinc-950 text-zinc-900 dark:text-white font-sans selection:bg-brand-green/20 relative flex flex-col justify-between p-3.5 sm:p-5 lg:p-6 overflow-hidden select-none">
-      {/* ── TOP BAR: Navigation, Title & Segmented Toggle (Matching Image 1) ── */}
+      {/* Top Bar */}
       <header className="max-w-5xl w-full mx-auto flex items-center justify-between gap-3 shrink-0">
         <div className="flex items-center gap-3">
           <button
@@ -435,69 +373,58 @@ export default function PricingExperience() {
 
           <div>
             <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-zinc-950 dark:text-white leading-none">
-              Tarifs JP
+              Abonnements &amp; Tarifs
             </h1>
             <p className="text-[11px] text-zinc-500 dark:text-zinc-400 font-medium mt-0.5 hidden xs:block">
-              100 JP = 1 000 Ar • Min. 100 JP
+              Accès illimité aux contacts • Dès 3 000 Ar / 24h
             </p>
           </div>
         </div>
 
-        {/* Right side: Apple Segmented Pill Toggle (Packs / Libre) + User Balance */}
-        <div className="flex items-center gap-2">
-          {/* Segmented Pill matching Image 1 top right */}
-          <div className="bg-[#E5E5EA] dark:bg-zinc-800/90 p-1 rounded-full flex items-center gap-1 shadow-2xs">
-            <button
-              type="button"
-              onClick={() => setPricingMode('packs')}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer ${
-                pricingMode === 'packs'
-                  ? 'bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 shadow-xs'
-                  : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
-              }`}
-            >
-              Packs
-            </button>
-            <button
-              type="button"
-              onClick={() => setPricingMode('custom')}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer ${
-                pricingMode === 'custom'
-                  ? 'bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 shadow-xs'
-                  : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
-              }`}
-            >
-              Libre
-            </button>
-          </div>
-
-          {/* Quick Balance indicator */}
-          <Link
-            href="/account"
-            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white dark:bg-zinc-900 text-xs font-extrabold shadow-xs hover:scale-105 active:scale-95 transition-all shrink-0"
-          >
-            <JpTokenIcon size={16} />
-            <span>{balance.toLocaleString('fr-FR')} JP</span>
-          </Link>
-        </div>
+        <Link
+          href="/account"
+          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white dark:bg-zinc-900 text-xs font-extrabold shadow-xs hover:scale-105 active:scale-95 transition-all shrink-0"
+        >
+          {hasActiveSubscription ? (
+            <>
+              <CheckCircle2 className="w-4 h-4 text-brand-green" />
+              <span className="text-brand-green">
+                {subscriptionPlanLabel || 'Pass actif'}
+              </span>
+            </>
+          ) : (
+            <>
+              <Crown className="w-4 h-4 text-amber-500" />
+              <span>Sans abonnement</span>
+            </>
+          )}
+        </Link>
       </header>
 
-      {/* Banner for redirect status notices */}
-      {urlBannerMessage && (
-        <div
-          className={`max-w-md w-full mx-auto px-4 py-2.5 rounded-full text-xs font-bold flex items-center justify-between shadow-xs animate-in fade-in duration-200 shrink-0 my-1 ${
-            urlBannerMessage.type === 'error'
-              ? 'bg-red-500/12 text-red-600 dark:text-red-400'
-              : 'bg-brand-green/15 text-brand-green'
-          }`}
-        >
+      {/* Active Subscription Banner */}
+      {hasActiveSubscription && subscriptionExpiresAt && (
+        <div className="max-w-md w-full mx-auto px-4 py-2 rounded-full text-xs font-bold flex items-center justify-center gap-2 bg-brand-green/12 text-brand-green shrink-0 my-1">
+          <Clock className="w-3.5 h-3.5 shrink-0" />
+          <span className="truncate">
+            Actif jusqu’au {formatExpirationDate(subscriptionExpiresAt)} (prolongeable)
+          </span>
+        </div>
+      )}
+
+      {showFailedBanner && (
+        <div className="max-w-md w-full mx-auto px-4 py-2.5 rounded-full text-xs font-bold flex items-center justify-between shadow-xs animate-in fade-in duration-200 shrink-0 my-1 bg-red-500/12 text-red-600 dark:text-red-400">
           <div className="flex items-center gap-2 truncate pr-2">
             <AlertCircle className="w-4 h-4 shrink-0" />
-            <span className="truncate">{urlBannerMessage.text}</span>
+            <span className="truncate">
+              La transaction a été annulée ou n’a pas abouti.
+            </span>
           </div>
           <button
             type="button"
-            onClick={() => setUrlBannerMessage(null)}
+            onClick={() => {
+              setDismissedFailedBanner(true);
+              router.replace('/pricing');
+            }}
             className="w-5 h-5 rounded-full hover:bg-black/10 flex items-center justify-center shrink-0 cursor-pointer"
           >
             <X className="w-3 h-3" />
@@ -505,307 +432,175 @@ export default function PricingExperience() {
         </div>
       )}
 
-      {/* ── CORE CONTENT AREA: Fills remaining height cleanly with ZERO SCROLL ── */}
+      {/* Main Content Area: 3 Rich Subscription Cards */}
       <main className="max-w-5xl w-full mx-auto flex-1 flex flex-col justify-center items-center my-auto min-h-0 py-2 sm:py-3">
-        {pricingMode === 'packs' ? (
-          <>
-            {/* Mobile-only Pack Indicators (Dash / dots matching Image 1 top right of card: — • •) */}
-            <div className="flex md:hidden items-center justify-center gap-2 mb-2 shrink-0">
-              {PRICING_PLANS.map((plan, idx) => (
-                <button
-                  key={plan.id}
-                  type="button"
-                  onClick={() => setActivePlanIndex(idx)}
-                  aria-label={`Afficher ${plan.name}`}
-                  className={`h-1.5 rounded-full transition-all cursor-pointer ${
-                    activePlanIndex === idx
-                      ? 'w-7 bg-zinc-950 dark:bg-white'
-                      : 'w-2 bg-zinc-300 dark:bg-zinc-700 hover:bg-zinc-400'
-                  }`}
-                />
-              ))}
-            </div>
+        {/* Mobile Pack Indicators */}
+        <div className="flex md:hidden items-center justify-center gap-2 mb-2 shrink-0">
+          {TIME_SUBSCRIPTION_PLANS.map((plan, idx) => (
+            <button
+              key={plan.id}
+              type="button"
+              onClick={() => setActivePlanIndex(idx)}
+              aria-label={`Afficher ${plan.name}`}
+              className={`h-1.5 rounded-full transition-all cursor-pointer ${
+                activePlanIndex === idx
+                  ? 'w-7 bg-zinc-950 dark:bg-white'
+                  : 'w-2 bg-zinc-300 dark:bg-zinc-700 hover:bg-zinc-400'
+              }`}
+            />
+          ))}
+        </div>
 
-            {/* Mobile Tab Buttons */}
-            <div className="flex md:hidden items-center justify-center gap-1.5 mb-2.5 w-full shrink-0">
-              {PRICING_PLANS.map((plan, idx) => (
-                <button
-                  key={plan.id}
-                  type="button"
-                  onClick={() => setActivePlanIndex(idx)}
-                  className={`flex-1 py-1.5 px-2 rounded-full text-[11px] font-bold truncate transition-all cursor-pointer ${
-                    activePlanIndex === idx
-                      ? 'bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 shadow-xs'
-                      : 'bg-white/80 dark:bg-zinc-900/80 text-zinc-600 dark:text-zinc-400'
-                  }`}
-                >
-                  {plan.tokens} JP
-                </button>
-              ))}
-            </div>
+        {/* Mobile Tab Buttons */}
+        <div className="flex md:hidden items-center justify-center gap-1.5 mb-2.5 w-full shrink-0">
+          {TIME_SUBSCRIPTION_PLANS.map((plan, idx) => (
+            <button
+              key={plan.id}
+              type="button"
+              onClick={() => setActivePlanIndex(idx)}
+              className={`flex-1 py-1.5 px-2 rounded-full text-[11px] font-bold truncate transition-all cursor-pointer ${
+                activePlanIndex === idx
+                  ? 'bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 shadow-xs'
+                  : 'bg-white/80 dark:bg-zinc-900/80 text-zinc-600 dark:text-zinc-400'
+              }`}
+            >
+              {plan.durationLabel}
+            </button>
+          ))}
+        </div>
 
-            {/* Desktop: 3 Cards side-by-side | Mobile: Active single card (matching Image 1) */}
-            <div className="w-full grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-5 lg:gap-6 items-stretch max-h-[calc(100dvh-150px)]">
-              {PRICING_PLANS.map((plan, idx) => {
-                const isFeatured = plan.isFeatured;
-                const isMobileActive = activePlanIndex === idx;
-                const priceAr = tokensToAriary(plan.tokens);
+        <div className="w-full grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-5 lg:gap-6 items-stretch max-h-[calc(100dvh-150px)]">
+          {TIME_SUBSCRIPTION_PLANS.map((plan, idx) => {
+            const isFeatured = Boolean(plan.isFeatured);
+            const isMobileActive = activePlanIndex === idx;
 
-                return (
-                  <div
-                    key={plan.id}
-                    className={`rounded-[2.25rem] p-5 sm:p-6 lg:p-7 flex flex-col justify-between transition-all duration-300 select-none ${
-                      /* Mobile display: only the active tab is shown */
-                      isMobileActive ? 'flex' : 'hidden md:flex'
-                    } ${
+            return (
+              <div
+                key={plan.id}
+                className={`rounded-[2.25rem] p-5 sm:p-6 lg:p-7 flex flex-col justify-between transition-all duration-300 select-none ${
+                  isMobileActive ? 'flex' : 'hidden md:flex'
+                } ${
+                  isFeatured
+                    ? 'bg-zinc-950 text-white dark:bg-zinc-900 shadow-xl md:scale-[1.03] z-10'
+                    : 'bg-white text-zinc-900 dark:bg-zinc-900/90 dark:text-white shadow-sm'
+                }`}
+              >
+                <div className="space-y-3.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span
+                      className={`text-sm sm:text-base font-extrabold tracking-tight ${
+                        isFeatured ? 'text-white' : 'text-zinc-900 dark:text-white'
+                      }`}
+                    >
+                      {plan.name}
+                    </span>
+
+                    <span
+                      className={`px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
+                        isFeatured
+                          ? 'bg-amber-400 text-zinc-950'
+                          : 'bg-[#F5F5F7] dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300'
+                      }`}
+                    >
+                      {plan.badge}
+                    </span>
+                  </div>
+
+                  <div>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-3xl sm:text-4xl lg:text-[42px] font-extrabold tracking-tight leading-none">
+                        {plan.amount.toLocaleString('fr-FR')}
+                      </span>
+                      <span
+                        className={`text-xs sm:text-sm font-bold uppercase tracking-wider ${
+                          isFeatured ? 'text-zinc-300' : 'text-zinc-500 dark:text-zinc-400'
+                        }`}
+                      >
+                        Ar
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-1.5">
+                      <Clock
+                        className={`w-4 h-4 ${
+                          isFeatured ? 'text-amber-400' : 'text-brand-green'
+                        }`}
+                      />
+                      <span
+                        className={`text-xs font-bold ${
+                          isFeatured ? 'text-amber-400' : 'text-brand-green'
+                        }`}
+                      >
+                        Accès illimité • {plan.durationLabel}
+                      </span>
+                    </div>
+                  </div>
+
+                  <p
+                    className={`text-[12px] leading-relaxed line-clamp-2 ${
                       isFeatured
-                        ? 'bg-zinc-950 text-white dark:bg-zinc-900 shadow-xl md:scale-[1.03] z-10'
-                        : 'bg-white text-zinc-900 dark:bg-zinc-900/90 dark:text-white shadow-sm'
+                        ? 'text-zinc-300 dark:text-zinc-400'
+                        : 'text-zinc-500 dark:text-zinc-400'
                     }`}
                   >
-                    {/* Card Top: Plan Name & Badge */}
-                    <div className="space-y-3.5">
-                      <div className="flex items-center justify-between gap-2">
+                    {plan.tagline}
+                  </p>
+
+                  <div className="space-y-2 pt-2 border-t border-zinc-200/40 dark:border-zinc-800/60">
+                    {plan.features.map((feat, fIdx) => (
+                      <div
+                        key={fIdx}
+                        className="flex items-center gap-2.5 text-xs font-medium"
+                      >
+                        <span className="w-4 h-4 rounded-full bg-brand-green/20 text-brand-green flex items-center justify-center shrink-0">
+                          <Check className="w-2.5 h-2.5" strokeWidth={3} />
+                        </span>
                         <span
-                          className={`text-sm sm:text-base font-extrabold tracking-tight ${
+                          className={`truncate ${
                             isFeatured
-                              ? 'text-white'
-                              : 'text-zinc-900 dark:text-white'
+                              ? 'text-zinc-200'
+                              : 'text-zinc-700 dark:text-zinc-300'
                           }`}
                         >
-                          {plan.name}
+                          {feat}
                         </span>
-
-                        {plan.badge && (
-                          <span
-                            className={`px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
-                              isFeatured
-                                ? 'bg-amber-400 text-zinc-950'
-                                : 'bg-[#F5F5F7] dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300'
-                            }`}
-                          >
-                            {plan.badge}
-                          </span>
-                        )}
                       </div>
-
-                      {/* Big Price Headline (Image 1 style) */}
-                      <div>
-                        <div className="flex items-baseline gap-2">
-                          <span className="text-3xl sm:text-4xl lg:text-[42px] font-extrabold tracking-tight leading-none">
-                            {priceAr.toLocaleString('fr-FR')}
-                          </span>
-                          <span
-                            className={`text-xs sm:text-sm font-bold uppercase tracking-wider ${
-                              isFeatured
-                                ? 'text-zinc-300'
-                                : 'text-zinc-500 dark:text-zinc-400'
-                            }`}
-                          >
-                            Ar
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1.5 mt-1">
-                          <JpTokenIcon size={18} />
-                          <span
-                            className={`text-xs font-bold ${
-                              isFeatured
-                                ? 'text-amber-400'
-                                : 'text-brand-green'
-                            }`}
-                          >
-                            {plan.tokens.toLocaleString('fr-FR')} Jetons JP
-                          </span>
-                        </div>
-                      </div>
-
-                      <p
-                        className={`text-[12px] leading-relaxed line-clamp-2 ${
-                          isFeatured
-                            ? 'text-zinc-300 dark:text-zinc-400'
-                            : 'text-zinc-500 dark:text-zinc-400'
-                        }`}
-                      >
-                        {plan.tagline}
-                      </p>
-
-                      {/* Feature Checklist (Image 1 style with green checkmarks) */}
-                      <div className="space-y-2 pt-2 border-t border-zinc-200/40 dark:border-zinc-800/60">
-                        {plan.features.map((feat, fIdx) => (
-                          <div
-                            key={fIdx}
-                            className="flex items-center gap-2.5 text-xs font-medium"
-                          >
-                            <span className="w-4 h-4 rounded-full bg-brand-green/20 text-brand-green flex items-center justify-center shrink-0">
-                              <Check className="w-2.5 h-2.5" strokeWidth={3} />
-                            </span>
-                            <span
-                              className={`truncate ${
-                                isFeatured
-                                  ? 'text-zinc-200'
-                                  : 'text-zinc-700 dark:text-zinc-300'
-                              }`}
-                            >
-                              {feat}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Big Padded Action Button at Card Bottom (Matching Image 1) */}
-                    <div className="pt-4 sm:pt-5">
-                      <button
-                        type="button"
-                        onClick={() => openCheckoutForTokens(plan.tokens)}
-                        className={`w-full h-13 sm:h-14 px-6 rounded-full font-bold text-xs sm:text-sm shadow-md active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                          isFeatured
-                            ? 'bg-white text-zinc-950 hover:bg-zinc-100'
-                            : 'bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 hover:bg-zinc-800 dark:hover:bg-zinc-100'
-                        }`}
-                      >
-                        <JpTokenIcon size={20} />
-                        <span>Acheter {plan.tokens} JP</span>
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </>
-        ) : (
-          /* ================================================================
-              VIEW: MONTANT LIBRE (Custom Tokens Studio - Fits in single viewport)
-          ================================================================ */
-          <div className="max-w-md w-full bg-white dark:bg-zinc-900 rounded-[2.5rem] p-6 sm:p-8 shadow-lg flex flex-col justify-between space-y-6">
-            <div className="text-center space-y-1">
-              <span className="text-xs font-extrabold uppercase tracking-wider text-brand-green">
-                Montant libre
-              </span>
-              <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight text-zinc-950 dark:text-white">
-                Choisissez vos jetons JP
-              </h2>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                Achetez exactement la quantité souhaitée (minimum 100 JP).
-              </p>
-            </div>
-
-            {/* Stepper Input */}
-            <div className="bg-[#F5F5F7] dark:bg-zinc-800/80 rounded-[2rem] p-5 space-y-4">
-              <div className="flex items-center justify-between gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const next = Math.max(
-                      MIN_JP_TOKENS,
-                      (parsedCustomTokens || MIN_JP_TOKENS) - 50
-                    );
-                    setCustomTokenInput(String(next));
-                  }}
-                  className="w-12 h-12 rounded-full bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white flex items-center justify-center shadow-xs active:scale-90 transition-all cursor-pointer"
-                >
-                  <Minus className="w-5 h-5" strokeWidth={2.5} />
-                </button>
-
-                <div className="text-center min-w-0">
-                  <div className="flex items-center justify-center gap-2">
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      value={customTokenInput}
-                      onChange={(e) => {
-                        const digits = e.target.value.replace(/\D/g, '').slice(0, 6);
-                        setCustomTokenInput(digits);
-                      }}
-                      onBlur={() => {
-                        if (!parsedCustomTokens || parsedCustomTokens < MIN_JP_TOKENS) {
-                          setCustomTokenInput(String(MIN_JP_TOKENS));
-                        }
-                      }}
-                      className="w-28 text-center text-4xl font-extrabold bg-transparent text-zinc-950 dark:text-white outline-none"
-                    />
-                    <span className="text-lg font-extrabold text-amber-500">JP</span>
-                  </div>
-                  <div className="text-xs font-bold text-brand-green mt-0.5">
-                    ={(
-                      (parsedCustomTokens < MIN_JP_TOKENS
-                        ? MIN_JP_TOKENS
-                        : parsedCustomTokens) * ARIARY_PER_JP
-                    ).toLocaleString('fr-FR')}{' '}
-                    Ariary
+                    ))}
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    const next = Math.min(
-                      MAX_JP_TOKENS,
-                      (parsedCustomTokens || MIN_JP_TOKENS) + 50
-                    );
-                    setCustomTokenInput(String(next));
-                  }}
-                  className="w-12 h-12 rounded-full bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 flex items-center justify-center shadow-xs active:scale-90 transition-all cursor-pointer"
-                >
-                  <Plus className="w-5 h-5" strokeWidth={2.5} />
-                </button>
-              </div>
-
-              {/* Quick Preset Buttons */}
-              <div className="flex items-center justify-center gap-2 pt-1">
-                {[100, 250, 500, 1000].map((val) => (
+                <div className="pt-4 sm:pt-5">
                   <button
-                    key={val}
                     type="button"
-                    onClick={() => setCustomTokenInput(String(val))}
-                    className="px-3 py-1.5 rounded-full bg-white dark:bg-zinc-900 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-950 hover:text-white active:scale-95 transition-all cursor-pointer shadow-2xs"
+                    onClick={() => openCheckoutForPlan(plan)}
+                    className={`w-full h-13 sm:h-14 px-6 rounded-full font-bold text-xs sm:text-sm shadow-md active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                      isFeatured
+                        ? 'bg-white text-zinc-950 hover:bg-zinc-100'
+                        : 'bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 hover:bg-zinc-800 dark:hover:bg-zinc-100'
+                    }`}
                   >
-                    {val} JP
+                    <Crown
+                      className={`w-4 h-4 ${
+                        isFeatured ? 'text-amber-500' : 'text-amber-400'
+                      }`}
+                    />
+                    <span>Choisir {plan.durationLabel}</span>
                   </button>
-                ))}
+                </div>
               </div>
-            </div>
-
-            {/* Big Action Button */}
-            <button
-              type="button"
-              onClick={() => {
-                const finalTokens =
-                  parsedCustomTokens < MIN_JP_TOKENS
-                    ? MIN_JP_TOKENS
-                    : parsedCustomTokens;
-                openCheckoutForTokens(finalTokens);
-              }}
-              className="w-full h-14 rounded-full bg-brand-green hover:bg-[#6da819] text-white font-bold text-sm shadow-md active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <JpTokenIcon size={20} />
-              <span>
-                Recharger{' '}
-                {(parsedCustomTokens < MIN_JP_TOKENS
-                  ? MIN_JP_TOKENS
-                  : parsedCustomTokens
-                ).toLocaleString('fr-FR')}{' '}
-                JP
-              </span>
-            </button>
-          </div>
-        )}
+            );
+          })}
+        </div>
       </main>
 
-      {/* ── FOOTER: Single-line Apple reference & Trust info ── */}
       <footer className="max-w-5xl w-full mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-center sm:text-left text-[11px] text-zinc-500 dark:text-zinc-400 shrink-0 pt-1">
         <div className="flex items-center gap-2">
           <ShieldCheck className="w-4 h-4 text-brand-green shrink-0" />
           <span>Paiement sécurisé : MVola • Orange Money • Airtel Money • Carte Bancaire</span>
         </div>
-        <div>Échelle officielle : 100 JP = 1 000 Ariary (1 JP = 10 Ar)</div>
+        <div>Accès direct aux numéros propriétaires dès 3 000 Ar</div>
       </footer>
 
-      {/* ====================================================================
-          VIEW: CHECKOUT SHEET
-          - Step 1 ('options'): Overview, payment badges, phone input, primary CTA
-          - Step 2 ('waiting_papi'): Real-time polling & external payment link
-      ==================================================================== */}
+      {/* Checkout Sheet */}
       {checkoutModalOpen && (
         <div
           className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200"
@@ -816,7 +611,6 @@ export default function PricingExperience() {
           }}
         >
           <div className="w-full sm:max-w-md bg-white dark:bg-zinc-900 rounded-t-[2.5rem] sm:rounded-[2.5rem] p-6 sm:p-8 shadow-2xl space-y-4 animate-in slide-in-from-bottom-6 sm:zoom-in-95 duration-200">
-            {/* Top Close icon */}
             <div className="flex items-center justify-end -mt-1 -mr-1">
               <button
                 type="button"
@@ -829,9 +623,6 @@ export default function PricingExperience() {
             </div>
 
             {checkoutStep === 'waiting_papi' ? (
-              /* ==========================================================
-                 WAITING FOR PAYMENT CONFIRMATION
-              ========================================================== */
               <div className="text-center space-y-4 py-1">
                 <div className="relative mx-auto w-18 h-18 flex items-center justify-center">
                   <div className="absolute inset-0 rounded-full bg-brand-green/20 animate-ping" />
@@ -855,15 +646,15 @@ export default function PricingExperience() {
 
                 <div className="bg-[#F5F5F7] dark:bg-zinc-800/80 rounded-2xl p-4 text-xs space-y-2 text-left">
                   <div className="flex justify-between items-center">
-                    <span className="text-zinc-500 dark:text-zinc-400">Montant à régler :</span>
-                    <span className="font-extrabold text-sm text-zinc-900 dark:text-white">
-                      {checkoutAmountAriary.toLocaleString('fr-FR')} Ar
+                    <span className="text-zinc-500 dark:text-zinc-400">Abonnement :</span>
+                    <span className="font-bold text-zinc-900 dark:text-white">
+                      {selectedPlan.name} ({selectedPlan.durationLabel})
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-zinc-500 dark:text-zinc-400">Jetons à créditer :</span>
-                    <span className="font-extrabold text-amber-500">
-                      +{selectedTokens.toLocaleString('fr-FR')} JP
+                    <span className="text-zinc-500 dark:text-zinc-400">Montant :</span>
+                    <span className="font-extrabold text-sm text-zinc-900 dark:text-white">
+                      {selectedPlan.amount.toLocaleString('fr-FR')} Ar
                     </span>
                   </div>
                   {papiRef && (
@@ -896,9 +687,7 @@ export default function PricingExperience() {
                     className="w-full h-11 rounded-full bg-[#F5F5F7] dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 font-bold text-xs flex items-center justify-center gap-2 active:scale-95 transition-all cursor-pointer"
                   >
                     <RefreshCw
-                      className={`w-3.5 h-3.5 ${
-                        isPollingStatus ? 'animate-spin' : ''
-                      }`}
+                      className={`w-3.5 h-3.5 ${isPollingStatus ? 'animate-spin' : ''}`}
                     />
                     <span>
                       {isPollingStatus
@@ -920,32 +709,27 @@ export default function PricingExperience() {
                 </div>
               </div>
             ) : (
-              /* ==========================================================
-                 STEP 1: OPTIONS & CHECKOUT
-              ========================================================== */
               <>
-                {/* Icon + Big Price Display */}
                 <div className="text-center space-y-1.5 -mt-3">
-                  <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-amber-400/10 mb-1">
-                    <JpTokenIcon size={48} glow priority />
+                  <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-amber-400/12 text-amber-500 mb-1">
+                    <Crown className="w-7 h-7" />
                   </div>
                   <div className="text-4xl sm:text-[44px] font-extrabold tracking-tight text-zinc-950 dark:text-white leading-none">
-                    {checkoutAmountAriary.toLocaleString('fr-FR')}{' '}
+                    {selectedPlan.amount.toLocaleString('fr-FR')}{' '}
                     <span className="text-xl sm:text-2xl font-bold">Ar</span>
                   </div>
                   <p className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
-                    {selectedTokens.toLocaleString('fr-FR')} JP • Monnaie TranoGasy
+                    {selectedPlan.name} • Accès illimité {selectedPlan.durationLabel}
                   </p>
                 </div>
 
-                {/* Gateway Trust Box with 4 Methods */}
                 <div className="bg-[#F5F5F7] dark:bg-zinc-800/80 rounded-2xl p-3.5 space-y-2.5">
                   <div className="flex items-center justify-between text-[11px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
                     <span className="flex items-center gap-1.5 text-zinc-700 dark:text-zinc-300">
                       <ShieldCheck className="w-3.5 h-3.5 text-brand-green" />
                       Paiement sécurisé
                     </span>
-                    <span className="text-brand-green font-extrabold">Instant</span>
+                    <span className="text-brand-green font-extrabold">Instantané</span>
                   </div>
 
                   <div className="grid grid-cols-4 gap-1.5">
@@ -976,9 +760,7 @@ export default function PricingExperience() {
                   </div>
                 </div>
 
-                {/* Structured Line Items */}
                 <div className="space-y-2.5 pt-1 text-xs sm:text-sm">
-                  {/* Sender Phone */}
                   <div className="flex items-center justify-between gap-3">
                     <label
                       htmlFor="sender-phone-checkout"
@@ -993,44 +775,29 @@ export default function PricingExperience() {
                       value={senderPhone}
                       onChange={(e) => {
                         if (error) clearError();
-                        setSenderPhone(e.target.value);
+                        setSenderPhoneOverride(e.target.value);
                       }}
                       placeholder="034 00 000 00"
                       className="w-36 text-right px-3 py-1.5 rounded-full bg-[#F5F5F7] dark:bg-zinc-800 text-xs font-extrabold text-zinc-950 dark:text-white outline-none focus:ring-2 focus:ring-brand-green/40 transition-all"
                     />
                   </div>
 
-                  {/* Total Pay row */}
                   <div className="flex items-center justify-between pt-1 border-t border-zinc-100 dark:border-zinc-800">
                     <span className="font-semibold text-zinc-800 dark:text-zinc-200">
                       Total à payer
                     </span>
                     <span className="text-base font-extrabold text-zinc-950 dark:text-white">
-                      {checkoutAmountAriary.toLocaleString('fr-FR')} Ar
+                      {selectedPlan.amount.toLocaleString('fr-FR')} Ar
                     </span>
                   </div>
                 </div>
 
-                {/* Tonal User Wallet box */}
-                <div className="bg-[#F5F5F7] dark:bg-zinc-800/80 rounded-2xl p-3 flex items-center justify-between">
-                  <div>
-                    <div className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-400">
-                      Portefeuille TranoGasy
-                    </div>
-                    <div className="text-xs font-extrabold text-zinc-900 dark:text-white mt-0.5">
-                      Solde actuel : {balance.toLocaleString('fr-FR')} JP
-                    </div>
-                  </div>
-                  <JpTokenIcon size={24} />
-                </div>
-
-                {error && (
+                {(error || checkoutNotice) && (
                   <div className="px-4 py-2.5 rounded-full bg-red-500/12 text-red-600 dark:text-red-400 text-xs font-bold text-center">
-                    {error}
+                    {error || checkoutNotice}
                   </div>
                 )}
 
-                {/* Primary CTA: Online Checkout */}
                 <button
                   type="button"
                   disabled={isLoading}
@@ -1045,7 +812,7 @@ export default function PricingExperience() {
                   ) : (
                     <>
                       <ShieldCheck className="w-5 h-5 text-brand-green" />
-                      <span>Payer</span>
+                      <span>Payer {selectedPlan.amount.toLocaleString('fr-FR')} Ar</span>
                     </>
                   )}
                 </button>

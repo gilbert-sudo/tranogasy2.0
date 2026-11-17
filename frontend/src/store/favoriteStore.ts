@@ -7,6 +7,7 @@ interface FavoriteStore {
   setFavorite: (propertyId: string, isFavorite: boolean) => void;
   setFavorites: (favorites: Record<string, boolean>, userId?: string) => void;
   setFavoritePropertiesData: (data: any[] | null) => void;
+  clearFavorites: () => void;
 }
 
 export const useFavoriteStore = create<FavoriteStore>((set) => ({
@@ -29,6 +30,13 @@ export const useFavoriteStore = create<FavoriteStore>((set) => ({
   },
   setFavoritePropertiesData: (data) => {
     set({ favoritePropertiesData: data });
+  },
+  clearFavorites: () => {
+    set({
+      favorites: {},
+      favoritePropertiesData: null,
+      loadedForUserId: null,
+    });
   },
 }));
 

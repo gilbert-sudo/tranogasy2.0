@@ -141,30 +141,4 @@ export const propertyService = {
       body: JSON.stringify(payload),
     });
   },
-
-  unlockPropertyContact: (
-    propertyId: string,
-    userId: string,
-    authToken?: string | null,
-  ) => {
-    return apiFetch<{
-      unlocked: boolean;
-      alreadyUnlocked?: boolean;
-      costJp?: number;
-      balance?: number;
-      phone1?: string | null;
-      phone2?: string | null;
-      phone3?: string | null;
-      description?: string;
-    }>(`/properties/${encodeURIComponent(propertyId)}/unlock-contact`, {
-      method: 'POST',
-      headers: authToken
-        ? {
-            'x-auth-token': authToken,
-            Authorization: `Bearer ${authToken}`,
-          }
-        : undefined,
-      body: JSON.stringify({ userId }),
-    });
-  },
 };

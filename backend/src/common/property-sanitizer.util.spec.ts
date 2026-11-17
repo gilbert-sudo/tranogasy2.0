@@ -124,12 +124,10 @@ describe('property-sanitizer.util', () => {
     expect(publicView.description).toContain('034 12 345 67');
   });
 
-  it('masks contacts and scrubs phone numbers from text for new properties with contactAccessLocked: true unless unlocked by viewer', () => {
+  it('masks contacts and scrubs phone numbers from text for new properties with contactAccessLocked: true unless unlocked by active subscription', () => {
     const lockedProp = {
       ...scrapedProperty,
       contactAccessLocked: true,
-      contactUnlockCostJp: 50,
-      unlockedByUsers: ['user-unlocked-1'],
       phone1: '0341234567',
       phone2: '0329988776',
       description: 'Belle villa. Contact direct 034 12 345 67 ou +261 32 99 887 76.',
@@ -137,7 +135,7 @@ describe('property-sanitizer.util', () => {
 
     const guestView = sanitizePropertyForViewer(lockedProp, false);
     expect(guestView.contactLocked).toBe(true);
-    expect(guestView.contactUnlockCostJp).toBe(50);
+    expect(guestView.contactUnlockCostJp).toBeUndefined();
     expect(guestView.maskedPhonePreview).toBe('034 •• ••• ••');
     expect(guestView.phone1).toBeNull();
     expect(guestView.phone2).toBeNull();
@@ -145,9 +143,9 @@ describe('property-sanitizer.util', () => {
     expect(guestView.description).not.toContain('32 99 887 76');
     expect(guestView.description).toContain('[Contact protégé]');
 
-    const unlockedViewerView = sanitizePropertyForViewer(lockedProp, false, 'user-unlocked-1');
-    expect(unlockedViewerView.contactLocked).toBe(false);
-    expect(unlockedViewerView.phone1).toBe('0341234567');
-    expect(unlockedViewerView.description).toContain('034 12 345 67');
+    const subscribedViewerView = sanitizePropertyForViewer(lockedProp, false, 'user-sub-1', true);
+    expect(subscribedViewerView.contactLocked).toBe(false);
+    expect(subscribedViewerView.phone1).toBe('0341234567');
+    expect(subscribedViewerView.description).toContain('034 12 345 67');
   });
 });

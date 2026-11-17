@@ -83,7 +83,6 @@ export interface FeedProperty {
   estimatedPriceMax?: number | null;
   estimatedPriceConfidence?: 'high' | 'medium' | 'low' | null;
   contactLocked?: boolean;
-  contactUnlockCostJp?: number;
   maskedPhonePreview?: string | null;
   rooms?: number;
   toilet?: number;

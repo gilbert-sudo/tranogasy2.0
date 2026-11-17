@@ -4,8 +4,14 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:ios": "cross-env NEXT_PUBLIC_PLATFORM=ios next dev",
+    "dev:android": "cross-env NEXT_PUBLIC_PLATFORM=android next dev",
     "build": "next build",
+    "build:ios": "cross-env NEXT_PUBLIC_PLATFORM=ios next build",
+    "build:android": "cross-env NEXT_PUBLIC_PLATFORM=android next build",
     "start": "next start",
+    "start:ios": "cross-env NEXT_PUBLIC_PLATFORM=ios next start",
+    "start:android": "cross-env NEXT_PUBLIC_PLATFORM=android next start",
     "lint": "eslint"
   },
   "dependencies": {
@@ -31,6 +37,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "cross-env": "^10.1.0",
     "eslint": "^9",
     "eslint-config-next": "16.3.5",
     "tailwindcss": "^4",

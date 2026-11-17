@@ -12,9 +12,57 @@ import { Payment, PaymentDocument } from './schemas/payment.schema';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { NotificationsService } from '../notifications/notifications.service';
 
-export const MIN_JP_TOKENS = 100;
-export const MAX_JP_TOKENS = 1_000_000;
-export const ARIARY_PER_JP = 10; // 100 JP = 1,000 Ar
+export type SubscriptionPlanId = 'plan_24h' | 'plan_3d' | 'plan_7d';
+export type AssistancePlanId = 'assistance_24h' | 'assistance_3d' | 'assistance_7d';
+
+export interface DurationPlanConfig {
+  id: string;
+  label: string;
+  durationHours: number;
+  amount: number;
+}
+
+export const TIME_SUBSCRIPTION_PLANS: Record<SubscriptionPlanId, DurationPlanConfig> = {
+  plan_24h: {
+    id: 'plan_24h',
+    label: '24 heures',
+    durationHours: 24,
+    amount: 3000,
+  },
+  plan_3d: {
+    id: 'plan_3d',
+    label: '3 jours',
+    durationHours: 72,
+    amount: 5000,
+  },
+  plan_7d: {
+    id: 'plan_7d',
+    label: '1 semaine',
+    durationHours: 168,
+    amount: 10000,
+  },
+};
+
+export const AGENCY_ASSISTANCE_PLANS: Record<AssistancePlanId, DurationPlanConfig> = {
+  assistance_24h: {
+    id: 'assistance_24h',
+    label: '24 heures',
+    durationHours: 24,
+    amount: 3000,
+  },
+  assistance_3d: {
+    id: 'assistance_3d',
+    label: '3 jours',
+    durationHours: 72,
+    amount: 5000,
+  },
+  assistance_7d: {
+    id: 'assistance_7d',
+    label: '1 semaine',
+    durationHours: 168,
+    amount: 10000,
+  },
+};
 
 @Injectable()
 export class PaymentsService {
@@ -73,48 +121,22 @@ export class PaymentsService {
     return cleaned;
   }
 
-  // =========================================================================
-  // PAPI INTEGRATION METHODS
-  // =========================================================================
+  private isPapiFailureStatus(status: string): boolean {
+    return ['FAILED', 'CANCELED', 'CANCELLED', 'REFUSED', 'EXPIRED'].includes(
+      status,
+    );
+  }
 
-  /**
-   * Creates a secure Papi payment link supporting all 4 methods:
-   * MVola, Orange Money, Airtel Money, and Visa/Mastercard (BRED).
-   */
-  async createPapiPaymentLink(dto: {
-    userId?: string;
-    userPhone?: string;
-    tokens: number;
-    clientName?: string;
-    payerEmail?: string;
-    payerPhone?: string;
-    successUrl?: string;
-    failureUrl?: string;
-  }) {
-    const tokens = Number(dto.tokens);
-    if (
-      !Number.isFinite(tokens) ||
-      !Number.isInteger(tokens) ||
-      tokens < MIN_JP_TOKENS
-    ) {
-      throw new BadRequestException(
-        `L'achat minimum est de ${MIN_JP_TOKENS} JP (${(MIN_JP_TOKENS * ARIARY_PER_JP).toLocaleString('fr-FR')} Ar).`,
-      );
-    }
-    if (tokens > MAX_JP_TOKENS) {
-      throw new BadRequestException(
-        `Le montant maximum par transaction est de ${MAX_JP_TOKENS.toLocaleString('fr-FR')} JP.`,
-      );
-    }
-
-    const amount = tokens * ARIARY_PER_JP;
-
+  private async resolveUserForPayment(
+    userId?: string,
+    userPhone?: string,
+  ): Promise<UserDocument> {
     let user: UserDocument | null = null;
-    if (dto.userId && Types.ObjectId.isValid(dto.userId)) {
-      user = await this.userModel.findById(dto.userId).exec();
+    if (userId && Types.ObjectId.isValid(userId)) {
+      user = await this.userModel.findById(userId).exec();
     }
-    if (!user && dto.userPhone) {
-      const cleanUserPhone = this.normalizeMadagascarPhone(dto.userPhone);
+    if (!user && userPhone) {
+      const cleanUserPhone = this.normalizeMadagascarPhone(userPhone);
       const altPhone = cleanUserPhone.startsWith('0')
         ? cleanUserPhone.slice(1)
         : `0${cleanUserPhone}`;
@@ -123,7 +145,7 @@ export class PaymentsService {
           $or: [
             { phone: cleanUserPhone },
             { phone: altPhone },
-            { phone: dto.userPhone },
+            { phone: userPhone },
           ],
         })
         .exec();
@@ -134,50 +156,46 @@ export class PaymentsService {
         'Utilisateur introuvable. Veuillez vous connecter.',
       );
     }
+    return user;
+  }
 
-    const ref = `JP-PAPI-${Date.now().toString(36).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
-    const clientName = dto.clientName || user.username || 'Client TranoGasy';
-    const payerEmail = dto.payerEmail || user.email || undefined;
-    const payerPhone = dto.payerPhone
-      ? this.normalizeMadagascarPhone(dto.payerPhone)
+  private async dispatchPapiPaymentLink(params: {
+    payment: PaymentDocument;
+    user: UserDocument;
+    description: string;
+    clientName?: string;
+    payerEmail?: string;
+    payerPhone?: string;
+    successUrl?: string;
+    failureUrl?: string;
+  }) {
+    const { payment, user } = params;
+    const ref = payment.ref;
+    const clientName = params.clientName || user.username || 'Client TranoGasy';
+    const payerEmail = params.payerEmail || user.email || undefined;
+    const payerPhone = params.payerPhone
+      ? this.normalizeMadagascarPhone(params.payerPhone)
       : user.phone
         ? this.normalizeMadagascarPhone(user.phone)
         : undefined;
 
     const successUrl =
-      dto.successUrl ||
+      params.successUrl ||
       `${this.frontendUrl}/pricing?payment=success&ref=${encodeURIComponent(ref)}`;
     const failureUrl =
-      dto.failureUrl ||
+      params.failureUrl ||
       `${this.frontendUrl}/pricing?payment=failed&ref=${encodeURIComponent(ref)}`;
     const notificationUrl = `${this.apiPublicUrl}/api/payments/papi/webhook`;
 
-    // 1. Create a pending payment record
-    const payment = new this.paymentModel({
-      user: user._id,
-      type: 'Papi Checkout',
-      operator: 'papi',
-      reason: `Recharge de ${tokens} JP via Papi`,
-      payload: ref,
-      amount,
-      tokens,
-      phoneNumber: payerPhone || '',
-      status: 'pending',
-      ref,
-      created_at: new Date(),
-    });
-    await payment.save();
-
-    // 2. Call Papi Engine to create payment link
     try {
       this.logger.log(
-        `Creating Papi payment link for ${ref} (${amount} MGA, ${tokens} JP)`,
+        `Creating Papi payment link for ${ref} (${payment.amount} MGA, category=${payment.category})`,
       );
       const requestBody: Record<string, any> = {
-        amount,
+        amount: payment.amount,
         clientName,
         reference: ref,
-        description: `Recharge de ${tokens} JP — TranoGasy`,
+        description: params.description,
         successUrl,
         failureUrl,
         notificationUrl,
@@ -214,8 +232,12 @@ export class PaymentsService {
         success: true,
         paymentLink: linkInfo.paymentLink,
         ref,
-        amount,
-        tokens,
+        amount: payment.amount,
+        category: payment.category,
+        subscriptionPlanId: payment.subscriptionPlanId,
+        subscriptionDurationHours: payment.subscriptionDurationHours,
+        assistancePlanId: payment.assistancePlanId,
+        assistanceDurationHours: payment.assistanceDurationHours,
         notificationToken: linkInfo.notificationToken,
       };
     } catch (err: any) {
@@ -233,6 +255,238 @@ export class PaymentsService {
   }
 
   /**
+   * Creates a Papi payment link for Web/Android time-based subscriptions (24h, 3d, 1w).
+   */
+  async createSubscriptionPaymentLink(dto: {
+    userId?: string;
+    userPhone?: string;
+    planId: SubscriptionPlanId;
+    clientName?: string;
+    payerEmail?: string;
+    payerPhone?: string;
+    successUrl?: string;
+    failureUrl?: string;
+  }) {
+    const plan = TIME_SUBSCRIPTION_PLANS[dto.planId];
+    if (!plan) {
+      throw new BadRequestException("Forfait d'abonnement invalide.");
+    }
+
+    const user = await this.resolveUserForPayment(dto.userId, dto.userPhone);
+    const ref = `TG-SUB-${Date.now().toString(36).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const payerPhone = dto.payerPhone
+      ? this.normalizeMadagascarPhone(dto.payerPhone)
+      : user.phone
+        ? this.normalizeMadagascarPhone(user.phone)
+        : '';
+
+    const payment = new this.paymentModel({
+      user: user._id,
+      type: 'Abonnement TranoGasy',
+      operator: 'papi',
+      category: 'time_subscription',
+      subscriptionPlanId: plan.id,
+      subscriptionDurationHours: plan.durationHours,
+      reason: `Abonnement ${plan.label} — Accès illimité`,
+      payload: ref,
+      amount: plan.amount,
+      phoneNumber: payerPhone,
+      status: 'pending',
+      ref,
+      created_at: new Date(),
+    });
+    await payment.save();
+
+    return this.dispatchPapiPaymentLink({
+      payment,
+      user,
+      description: `Abonnement ${plan.label} — TranoGasy`,
+      clientName: dto.clientName,
+      payerEmail: dto.payerEmail,
+      payerPhone: dto.payerPhone,
+      successUrl: dto.successUrl,
+      failureUrl: dto.failureUrl,
+    });
+  }
+
+  /**
+   * Creates a Papi payment link for iOS real-world Agency Assistance services.
+   */
+  async createAssistancePaymentLink(dto: {
+    userId?: string;
+    userPhone?: string;
+    planId: AssistancePlanId;
+    clientName?: string;
+    payerEmail?: string;
+    payerPhone?: string;
+    successUrl?: string;
+    failureUrl?: string;
+  }) {
+    const plan = AGENCY_ASSISTANCE_PLANS[dto.planId];
+    if (!plan) {
+      throw new BadRequestException("Forfait d'assistance invalide.");
+    }
+
+    const user = await this.resolveUserForPayment(dto.userId, dto.userPhone);
+    const ref = `TG-AST-${Date.now().toString(36).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const payerPhone = dto.payerPhone
+      ? this.normalizeMadagascarPhone(dto.payerPhone)
+      : user.phone
+        ? this.normalizeMadagascarPhone(user.phone)
+        : '';
+
+    const payment = new this.paymentModel({
+      user: user._id,
+      type: 'Assistance Tranogasy',
+      operator: 'papi',
+      category: 'agency_assistance',
+      assistancePlanId: plan.id,
+      assistanceDurationHours: plan.durationHours,
+      reason: `Assistance Tranogasy (${plan.label}) — Plus d’informations par agent et mise en relation`,
+      payload: ref,
+      amount: plan.amount,
+      phoneNumber: payerPhone,
+      status: 'pending',
+      ref,
+      created_at: new Date(),
+    });
+    await payment.save();
+
+    return this.dispatchPapiPaymentLink({
+      payment,
+      user,
+      description: `Assistance Tranogasy ${plan.label} — TranoGasy`,
+      clientName: dto.clientName,
+      payerEmail: dto.payerEmail,
+      payerPhone: dto.payerPhone,
+      successUrl: dto.successUrl,
+      failureUrl: dto.failureUrl,
+    });
+  }
+
+  private applyPaymentMethodToRecord(payment: PaymentDocument, paymentMethod?: string) {
+    if (!paymentMethod) return;
+    payment.papiPaymentMethod = paymentMethod;
+    const pm = String(paymentMethod).toLowerCase();
+    if (pm.includes('mvola')) payment.operator = 'mvola';
+    else if (pm.includes('airtel')) payment.operator = 'airtel';
+    else if (pm.includes('orange')) payment.operator = 'orange';
+    else if (pm.includes('card') || pm.includes('bred') || pm.includes('visa')) {
+      payment.operator = 'card';
+    }
+  }
+
+  private async applyConfirmedPayment(payment: PaymentDocument) {
+    payment.status = 'confirmed';
+    const existingUser = await this.userModel
+      .findById(payment.user)
+      .select('subscriptionExpiresAt')
+      .lean()
+      .exec();
+
+    const nowMs = Date.now();
+    const baseTimeMs =
+      existingUser?.subscriptionExpiresAt &&
+      new Date(existingUser.subscriptionExpiresAt).getTime() > nowMs
+        ? new Date(existingUser.subscriptionExpiresAt).getTime()
+        : nowMs;
+
+    const isAssistance = payment.category === 'agency_assistance';
+    const durationHours =
+      Number(payment.subscriptionDurationHours || payment.assistanceDurationHours) ||
+      24;
+    const expiresAt = new Date(baseTimeMs + durationHours * 3600 * 1000);
+
+    const planLabel = isAssistance
+      ? AGENCY_ASSISTANCE_PLANS[payment.assistancePlanId as AssistancePlanId]?.label ||
+        `${durationHours}h`
+      : TIME_SUBSCRIPTION_PLANS[payment.subscriptionPlanId as SubscriptionPlanId]?.label ||
+        `${durationHours}h`;
+
+    payment.subscriptionExpiresAt = expiresAt;
+    if (isAssistance) {
+      payment.assistanceExpiresAt = expiresAt;
+    }
+    await payment.save();
+
+    const updatedUser = await this.userModel.findByIdAndUpdate(
+      payment.user,
+      {
+        $set: {
+          subscriptionExpiresAt: expiresAt,
+          subscriptionPlanLabel: planLabel,
+        },
+      },
+      { new: true },
+    );
+
+    this.logger.log(
+      `Payment ${payment.ref} confirmed (${payment.category}). Unified subscription (${planLabel}) expires: ${expiresAt.toISOString()}`,
+    );
+
+    try {
+      await this.notificationsService.createAndSend({
+        userId: payment.user.toString(),
+        title: isAssistance
+          ? '🎉 Reçu d’Assistance Tranogasy confirmé !'
+          : '🎉 Abonnement activé !',
+        body: isAssistance
+          ? `Votre forfait ${planLabel} (${payment.amount.toLocaleString('fr-FR')} Ar) est validé. Réf: ${payment.ref}.`
+          : `Votre accès ${planLabel} (${payment.amount.toLocaleString('fr-FR')} Ar) est actif sur TranoGasy.`,
+        data: {
+          url: '/pricing',
+          type: 'payment_success',
+          ref: payment.ref,
+        },
+      });
+    } catch (notifErr: any) {
+      this.logger.warn(
+        `Could not dispatch payment push notification: ${notifErr.message}`,
+      );
+    }
+
+    return updatedUser;
+  }
+
+  private buildPaymentStatusPayload(payment: PaymentDocument, user?: any) {
+    const isAssistance = payment.category === 'agency_assistance';
+    const planLabel =
+      (isAssistance
+        ? payment.assistancePlanId
+          ? AGENCY_ASSISTANCE_PLANS[payment.assistancePlanId as AssistancePlanId]?.label
+          : null
+        : payment.subscriptionPlanId
+          ? TIME_SUBSCRIPTION_PLANS[payment.subscriptionPlanId as SubscriptionPlanId]?.label
+          : null) ||
+      user?.subscriptionPlanLabel ||
+      null;
+
+    const unifiedExpiresAt =
+      payment.subscriptionExpiresAt ||
+      payment.assistanceExpiresAt ||
+      user?.subscriptionExpiresAt ||
+      null;
+
+    return {
+      status: payment.status,
+      ref: payment.ref,
+      amount: payment.amount,
+      operator: payment.operator,
+      category: payment.category || 'time_subscription',
+      subscriptionPlanId: payment.subscriptionPlanId || payment.assistancePlanId,
+      subscriptionDurationHours:
+        payment.subscriptionDurationHours || payment.assistanceDurationHours,
+      subscriptionExpiresAt: unifiedExpiresAt,
+      subscriptionPlanLabel: planLabel,
+      assistancePlanId: payment.assistancePlanId || payment.subscriptionPlanId,
+      assistanceDurationHours:
+        payment.assistanceDurationHours || payment.subscriptionDurationHours,
+      assistanceExpiresAt: unifiedExpiresAt,
+      assistancePlanLabel: planLabel,
+    };
+  }
+
+  /**
    * Webhook handler for asynchronous Papi notifications
    */
   async handlePapiWebhook(
@@ -242,7 +496,6 @@ export class PaymentsService {
   ) {
     this.logger.log(`Received Papi webhook: ${JSON.stringify(payload)}`);
 
-    // Verify HMAC-SHA256 signature if provided
     if (this.webhookSecret && signatureHeader && rawBody) {
       try {
         const computedHmac = crypto
@@ -280,62 +533,22 @@ export class PaymentsService {
       return { received: true, warning: 'Payment reference not found' };
     }
 
-    // Idempotency: if already confirmed, do not double-credit
     if (payment.status === 'confirmed') {
       this.logger.log(`Webhook: Payment ${ref} was already confirmed.`);
       return { received: true, alreadyConfirmed: true };
     }
 
     payment.papiRawStatus = status;
-    if (payload.paymentMethod) {
-      payment.papiPaymentMethod = payload.paymentMethod;
-      const pm = String(payload.paymentMethod).toLowerCase();
-      if (pm.includes('mvola')) payment.operator = 'mvola';
-      else if (pm.includes('airtel')) payment.operator = 'airtel';
-      else if (pm.includes('orange')) payment.operator = 'orange';
-      else if (
-        pm.includes('card') ||
-        pm.includes('bred') ||
-        pm.includes('visa')
-      ) {
-        payment.operator = 'card';
-      }
-    }
+    this.applyPaymentMethodToRecord(payment, payload.paymentMethod);
 
     if (status === 'SUCCESS' || status === 'PAID') {
-      payment.status = 'confirmed';
-      await payment.save();
-
-      const updatedUser = await this.userModel.findByIdAndUpdate(
-        payment.user,
-        { $inc: { balance: payment.tokens } },
-        { new: true },
-      );
-      this.logger.log(
-        `Webhook: Successfully credited ${payment.tokens} JP to user ${payment.user}. New balance: ${updatedUser?.balance}`,
-      );
-
-      // Trigger FCM Push & in-app notification
-      try {
-        await this.notificationsService.createAndSend({
-          userId: payment.user.toString(),
-          title: '🎉 Paiement confirmé !',
-          body: `Votre recharge de ${payment.tokens} JP a été validée avec succès (${payment.amount.toLocaleString('fr-FR')} Ar).`,
-          data: {
-            url: '/pricing',
-            type: 'payment_success',
-            ref: payment.ref,
-          },
-        });
-      } catch (notifErr: any) {
-        this.logger.warn(`Could not dispatch payment push notification: ${notifErr.message}`);
-      }
-    } else if (status === 'FAILED') {
+      await this.applyConfirmedPayment(payment);
+    } else if (this.isPapiFailureStatus(status)) {
       payment.status = 'failed';
       payment.failureReason =
-        payload.failureReason || 'Transaction échouée chez Papi';
+        payload.failureReason || 'Transaction annulée ou échouée chez Papi';
       await payment.save();
-      this.logger.log(`Webhook: Payment ${ref} marked as failed.`);
+      this.logger.log(`Webhook: Payment ${ref} marked as failed (${status}).`);
     } else {
       await payment.save();
     }
@@ -345,7 +558,6 @@ export class PaymentsService {
 
   /**
    * Real-time payment verification and sync endpoint
-   * Queries local DB, and if pending, queries Papi API directly!
    */
   async verifyAndSyncPaymentStatus(ref: string) {
     if (!ref) {
@@ -359,23 +571,14 @@ export class PaymentsService {
 
     const user = await this.userModel
       .findById(payment.user)
-      .select('balance username phone')
+      .select('username phone subscriptionExpiresAt subscriptionPlanLabel')
       .lean()
       .exec();
 
-    // If already confirmed, return current status
     if (payment.status === 'confirmed') {
-      return {
-        status: 'confirmed',
-        ref: payment.ref,
-        tokens: payment.tokens,
-        amount: payment.amount,
-        balance: user?.balance ?? 0,
-        operator: payment.operator,
-      };
+      return this.buildPaymentStatusPayload(payment, user);
     }
 
-    // If still pending, query Papi directly to check if completed
     try {
       this.logger.log(`Syncing status with Papi for ref: ${ref}`);
 
@@ -403,61 +606,14 @@ export class PaymentsService {
         ).toUpperCase();
 
         payment.papiRawStatus = pStatus;
-        if (pObj.paymentMethod) {
-          const pm = String(pObj.paymentMethod).toLowerCase();
-          if (pm.includes('mvola')) payment.operator = 'mvola';
-          else if (pm.includes('airtel')) payment.operator = 'airtel';
-          else if (pm.includes('orange')) payment.operator = 'orange';
-          else if (
-            pm.includes('card') ||
-            pm.includes('bred') ||
-            pm.includes('visa')
-          ) {
-            payment.operator = 'card';
-          }
-        }
+        this.applyPaymentMethodToRecord(payment, pObj.paymentMethod);
 
         if (pStatus === 'SUCCESS' || pStatus === 'PAID') {
-          payment.status = 'confirmed';
-          await payment.save();
-
-          const updatedUser = await this.userModel.findByIdAndUpdate(
-            payment.user,
-            { $inc: { balance: payment.tokens } },
-            { new: true },
-          );
-
-          this.logger.log(
-            `Sync: Payment ${ref} confirmed via Papi query! Credited ${payment.tokens} JP.`,
-          );
-
-          // Trigger FCM Push & in-app notification
-          try {
-            await this.notificationsService.createAndSend({
-              userId: payment.user.toString(),
-              title: '🎉 Paiement confirmé !',
-              body: `Votre recharge de ${payment.tokens} JP a été validée avec succès (${payment.amount.toLocaleString('fr-FR')} Ar).`,
-              data: {
-                url: '/pricing',
-                type: 'payment_success',
-                ref: payment.ref,
-              },
-            });
-          } catch (notifErr: any) {
-            this.logger.warn(`Could not dispatch payment push notification: ${notifErr.message}`);
-          }
-
-          return {
-            status: 'confirmed',
-            ref: payment.ref,
-            tokens: payment.tokens,
-            amount: payment.amount,
-            balance: updatedUser?.balance ?? 0,
-            operator: payment.operator,
-          };
-        } else if (pStatus === 'FAILED') {
+          const updatedUser = await this.applyConfirmedPayment(payment);
+          return this.buildPaymentStatusPayload(payment, updatedUser);
+        } else if (this.isPapiFailureStatus(pStatus)) {
           payment.status = 'failed';
-          payment.failureReason = pObj.failureReason || 'Échec de transaction';
+          payment.failureReason = pObj.failureReason || 'Transaction annulée ou échouée';
           await payment.save();
 
           return {
@@ -472,61 +628,8 @@ export class PaymentsService {
     }
 
     return {
-      status: payment.status,
-      ref: payment.ref,
-      tokens: payment.tokens,
-      amount: payment.amount,
-      balance: user?.balance ?? 0,
+      ...this.buildPaymentStatusPayload(payment, user),
       paymentLink: payment.papiPaymentLink,
-    };
-  }
-
-  // =========================================================================
-  // WALLET & SPEND TOKENS METHODS
-  // =========================================================================
-
-  async spendTokens(dto: {
-    userId: string;
-    tokens: number;
-    reason: string;
-  }) {
-    if (!dto.userId || !Types.ObjectId.isValid(dto.userId)) {
-      throw new BadRequestException('Identifiant utilisateur invalide.');
-    }
-
-    const tokens = Number(dto.tokens);
-    if (!Number.isFinite(tokens) || !Number.isInteger(tokens) || tokens <= 0) {
-      throw new BadRequestException('Nombre de jetons JP invalide.');
-    }
-
-    const updatedUser = await this.userModel
-      .findOneAndUpdate(
-        { _id: new Types.ObjectId(dto.userId), balance: { $gte: tokens } },
-        { $inc: { balance: -tokens } },
-        { new: true },
-      )
-      .select('-password -backUpCode')
-      .lean()
-      .exec();
-
-    if (!updatedUser) {
-      const existing = await this.userModel
-        .findById(dto.userId)
-        .select('balance')
-        .lean()
-        .exec();
-      if (!existing) {
-        throw new NotFoundException('Utilisateur introuvable.');
-      }
-      throw new BadRequestException(
-        `Solde JP insuffisant (${existing.balance || 0} JP disponible, ${tokens} JP requis).`,
-      );
-    }
-
-    return {
-      message: `${tokens} JP utilisés pour : ${dto.reason || 'Action TranoGasy'}`,
-      user: updatedUser,
-      balance: updatedUser.balance,
     };
   }
 
@@ -535,7 +638,7 @@ export class PaymentsService {
     if (Types.ObjectId.isValid(userIdOrPhone)) {
       user = await this.userModel
         .findById(userIdOrPhone)
-        .select('_id username phone balance')
+        .select('_id username phone subscriptionExpiresAt subscriptionPlanLabel')
         .lean()
         .exec();
     }
@@ -552,27 +655,36 @@ export class PaymentsService {
             { phone: userIdOrPhone },
           ],
         })
-        .select('_id username phone balance')
+        .select('_id username phone subscriptionExpiresAt subscriptionPlanLabel')
         .lean()
         .exec();
     }
 
     if (!user) {
       return {
-        balance: 0,
+        subscriptionExpiresAt: null,
+        subscriptionPlanLabel: null,
+        assistanceExpiresAt: null,
+        assistancePlanLabel: null,
         payments: [],
       };
     }
 
     const payments = await this.paymentModel
-      .find({ user: user._id })
+      .find({ user: user._id, status: 'confirmed' })
       .sort({ created_at: -1 })
       .limit(25)
       .lean()
       .exec();
 
+    const unifiedExpiresAt = user.subscriptionExpiresAt || null;
+    const unifiedPlanLabel = user.subscriptionPlanLabel || null;
+
     return {
-      balance: user.balance || 0,
+      subscriptionExpiresAt: unifiedExpiresAt,
+      subscriptionPlanLabel: unifiedPlanLabel,
+      assistanceExpiresAt: unifiedExpiresAt,
+      assistancePlanLabel: unifiedPlanLabel,
       payments,
     };
   }

@@ -17,21 +17,21 @@ import {
   Power,
   Moon,
   Sun,
-  Plus,
   Sparkles,
-  Clock,
-  ArrowUpRight,
-  X,
 } from 'lucide-react';
 import { useUserStore } from '@/store/userStore';
 import { useModalStore } from '@/store/modalStore';
 import { useAuth } from '@/hooks/useAuth';
-import { usePayment } from '@/hooks/usePayment';
-import { tokensToAriary } from '@/services/payment.service';
 import Header from '@/components/Header';
 import DarkModeToggle from '@/components/DarkModeToggle';
-import JpTokenIcon from '@/components/ui/JpTokenIcon';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
+import {
+  useAccountCommerce,
+  AccountHeaderBadge,
+  AccountWalletSection,
+  AccountPricingMenuItem,
+  AccountHistoryModal,
+} from '@/components/account/AccountCommerce';
 
 const MenuCard = ({ children }: { children: React.ReactNode }) => (
   <div className="bg-white dark:bg-zinc-900 rounded-[2.25rem] p-2.5 shadow-[0_12px_40px_rgba(0,0,0,0.04)] dark:shadow-[0_12px_40px_rgba(0,0,0,0.35)] overflow-hidden">
@@ -92,9 +92,14 @@ export default function AccountPage() {
   const { user, logout, initialize } = useUserStore();
   const openModal = useModalStore((state) => state.openModal);
   const { refreshUserSession } = useAuth();
-  const { balance, transactions, fetchWallet } = usePayment();
+  const {
+    balance,
+    transactions,
+    refreshCommerce,
+    showHistory,
+    setShowHistory,
+  } = useAccountCommerce();
   const router = useRouter();
-  const [showHistory, setShowHistory] = useState(false);
   const [testSent, setTestSent] = useState(false);
 
   const {
@@ -107,17 +112,16 @@ export default function AccountPage() {
   useEffect(() => {
     initialize();
     refreshUserSession();
-    fetchWallet();
-  }, [initialize, refreshUserSession, fetchWallet]);
+    refreshCommerce();
+  }, [initialize, refreshUserSession, refreshCommerce]);
 
   const handleLogout = () => {
     logout();
-    router.push('/');
+    router.replace('/');
   };
 
   const currentUser = user?.user || user;
   const isLoggedIn = !!currentUser;
-  const ariaryEquivalent = tokensToAriary(balance);
   const profileUrl = currentUser?._id
     ? `/profile/${currentUser._id}`
     : '/profile';
@@ -146,19 +150,8 @@ export default function AccountPage() {
             </h1>
           </div>
 
-          {/* Quick Header Balance Pill */}
-          <Link
-            href="/pricing"
-            className="inline-flex items-center gap-2 pl-2.5 pr-4 py-1.5 rounded-full bg-white dark:bg-zinc-900 shadow-[0_4px_16px_rgba(0,0,0,0.05)] hover:scale-105 active:scale-95 transition-all"
-          >
-            <JpTokenIcon size={22} />
-            <span className="text-xs sm:text-sm font-extrabold text-zinc-900 dark:text-white">
-              {balance.toLocaleString('fr-FR')} JP
-            </span>
-            <span className="w-5 h-5 rounded-full bg-brand-green text-white flex items-center justify-center">
-              <Plus className="w-3.5 h-3.5" strokeWidth={2.8} />
-            </span>
-          </Link>
+          {/* Quick Header Balance / Assistance Pill */}
+          <AccountHeaderBadge balance={balance} />
         </div>
       </div>
 
@@ -258,60 +251,11 @@ export default function AccountPage() {
 
           {/* Right Column (Content) */}
           <div className="lg:col-span-8 space-y-8 pb-8">
-            {/* ================================================================
-                MINIMALIST JP WALLET SECTION (Pure surface, no borders, core info & actions only)
-            ================================================================ */}
-            <section>
-              <div className="flex items-center justify-between mb-2.5 px-2">
-                <h3 className="text-base sm:text-lg font-bold text-zinc-800 dark:text-zinc-200">
-                  Portefeuille JP
-                </h3>
-                {transactions.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setShowHistory(true)}
-                    className="text-xs font-semibold text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white transition-colors inline-flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Clock className="w-3.5 h-3.5" />
-                    <span>Historique ({transactions.length})</span>
-                  </button>
-                )}
-              </div>
-
-              {/* Minimalist Card — Borderless, single-line alignment (vertical & horizontal) */}
-              <div className="bg-white dark:bg-zinc-900 rounded-[2rem] sm:rounded-[2.25rem] px-4 py-3.5 sm:px-6 sm:py-4 shadow-[0_12px_40px_rgba(0,0,0,0.04)] dark:shadow-[0_12px_40px_rgba(0,0,0,0.35)] flex flex-row items-center justify-between gap-3 sm:gap-4">
-                {/* Core Information: JP Token + Balance + Equivalent in Ariary */}
-                <div className="flex items-center gap-3 sm:gap-3.5 min-w-0">
-                  <div className="shrink-0">
-                    <JpTokenIcon size={42} priority />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-baseline gap-1.5 leading-none">
-                      <span className="text-xl sm:text-2xl font-black text-zinc-900 dark:text-white tracking-tight">
-                        {balance.toLocaleString('fr-FR')}
-                      </span>
-                      <span className="text-xs sm:text-sm font-extrabold text-amber-500">
-                        JP
-                      </span>
-                    </div>
-                    <p className="text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400 font-medium mt-1 truncate">
-                      ≈ {ariaryEquivalent.toLocaleString('fr-FR')} Ariary
-                    </p>
-                  </div>
-                </div>
-
-                {/* Core Action Button: Acheter des JP */}
-                <div className="flex items-center shrink-0">
-                  <Link
-                    href="/pricing"
-                    className="h-10 sm:h-11 px-4 sm:px-5 rounded-full bg-brand-green hover:bg-[#6da819] text-white font-bold text-xs sm:text-sm inline-flex items-center justify-center gap-1.5 shadow-[0_6px_20px_rgba(124,189,30,0.28)] hover:scale-[1.02] active:scale-95 transition-all whitespace-nowrap"
-                  >
-                    <Plus className="w-4 h-4" strokeWidth={2.8} />
-                    <span>Acheter des JP</span>
-                  </Link>
-                </div>
-              </div>
-            </section>
+            <AccountWalletSection
+              balance={balance}
+              transactions={transactions}
+              onOpenHistory={() => setShowHistory(true)}
+            />
 
             {/* Informations personnelles */}
             <section>
@@ -396,12 +340,7 @@ export default function AccountPage() {
                   </div>
                   <DarkModeToggle />
                 </div>
-                <MenuItem
-                  icon={Sparkles}
-                  title="Tarifs & Jetons JP"
-                  subtitle="Acheter des crédits JP par Mobile Money (100 JP = 1 000 Ar)"
-                  href="/pricing"
-                />
+                <AccountPricingMenuItem />
                 {(currentUser?.role === 'admin' || currentUser?.role === 'superadmin') && (
                   <MenuItem
                     icon={Sparkles}
@@ -486,81 +425,34 @@ export default function AccountPage() {
             </section>
 
             {/* Actions (Mobile only) */}
-            <section className="pt-4 space-y-3.5 lg:hidden">
-              <button
-                type="button"
-                className="w-full flex items-center justify-center gap-2 py-4 bg-red-500/10 text-brand-red font-bold text-xs sm:text-sm rounded-full hover:bg-red-500/15 active:scale-95 transition-all cursor-pointer"
-              >
-                <Trash2 className="w-4.5 h-4.5" strokeWidth={2} />
-                Supprimer mon compte
-              </button>
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="w-full flex items-center justify-center gap-2 py-4 bg-zinc-950 hover:bg-zinc-900 text-white dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-100 font-bold text-xs sm:text-sm rounded-full shadow-md active:scale-95 transition-all cursor-pointer"
-              >
-                <LogOut className="w-4.5 h-4.5" strokeWidth={2} />
-                Se déconnecter
-              </button>
-            </section>
+            {isLoggedIn && (
+              <section className="pt-4 space-y-3.5 lg:hidden">
+                <button
+                  type="button"
+                  className="w-full flex items-center justify-center gap-2 py-4 bg-red-500/10 text-brand-red font-bold text-xs sm:text-sm rounded-full hover:bg-red-500/15 active:scale-95 transition-all cursor-pointer"
+                >
+                  <Trash2 className="w-4.5 h-4.5" strokeWidth={2} />
+                  Supprimer mon compte
+                </button>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="w-full flex items-center justify-center gap-2 py-4 bg-zinc-950 hover:bg-zinc-900 text-white dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-100 font-bold text-xs sm:text-sm rounded-full shadow-md active:scale-95 transition-all cursor-pointer"
+                >
+                  <LogOut className="w-4.5 h-4.5" strokeWidth={2} />
+                  Se déconnecter
+                </button>
+              </section>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Discreet History Modal if requested */}
-      {showHistory && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200"
-          onClick={() => setShowHistory(false)}
-        >
-          <div
-            className="bg-white dark:bg-zinc-900 rounded-[2rem] p-6 max-w-md w-full shadow-2xl space-y-4 relative"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4 text-zinc-500" />
-                <h4 className="text-base font-bold text-zinc-900 dark:text-white">
-                  Historique des recharges
-                </h4>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowHistory(false)}
-                className="w-8 h-8 rounded-full bg-[#F5F5F7] dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 flex items-center justify-center hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
-              {transactions.map((tx) => (
-                <div
-                  key={tx._id || tx.ref}
-                  className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-[#F5F5F7] dark:bg-zinc-800/60 text-xs sm:text-sm"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <JpTokenIcon size={24} />
-                    <div className="min-w-0">
-                      <div className="font-bold text-zinc-900 dark:text-white truncate">
-                        +{Number(tx.tokens || Math.floor(tx.amount / 10)).toLocaleString('fr-FR')} JP
-                      </div>
-                      <div className="text-[11px] text-zinc-500 dark:text-zinc-400 truncate">
-                        via {tx.type} • {tx.phoneNumber}
-                      </div>
-                    </div>
-                  </div>
-                  <span className="font-bold text-brand-green text-xs shrink-0">
-                    {Number(tx.amount).toLocaleString('fr-FR')} Ar
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
+      <AccountHistoryModal
+        open={showHistory}
+        transactions={transactions}
+        onClose={() => setShowHistory(false)}
+      />
     </div>
   );
 }
