@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 
 function PricingLoadingFallback() {
   return (
-    <div className="min-h-[100dvh] -mb-16 md:-mb-24 lg:-mb-8 bg-[#F5F5F7] dark:bg-zinc-950 flex flex-col items-center justify-center p-6">
+    <div className="fixed inset-0 z-[130] w-full h-[100dvh] bg-[#F5F5F7] dark:bg-zinc-950 flex flex-col items-center justify-center p-6">
       <div className="w-16 h-16 rounded-full bg-brand-green/20 animate-pulse mb-4" />
       <p className="text-sm font-semibold text-zinc-500 dark:text-zinc-400">
         {PRICING_LOADING_TEXT}

@@ -38,6 +38,7 @@ interface PropertyStore {
   setActiveCategory: (category: HouseCategoryFilter) => void;
   setSortBy: (sort: string) => void;
   clearTopPropertiesCache: () => void;
+  invalidateLockedPropertiesCache: () => void;
 
   // User properties (Owner space / My Listings dashboard) state
   userProperties: any[];
@@ -57,9 +58,24 @@ export const usePropertyStore = create<PropertyStore>((set, get) => ({
   addProperty: (property) => {
     if (!property || (!property._id && !property.id)) return;
     const propId = property._id || property.id;
-    set((state) => ({
-      properties: { ...state.properties, [propId]: property },
-    }));
+    set((state) => {
+      const existing = state.properties[propId];
+      // Prevent a stale locked property object from overwriting an already-unlocked one
+      if (existing && existing.contactLocked === false && property.contactLocked === true) {
+        return {
+          properties: {
+            ...state.properties,
+            [propId]: { ...property, ...existing },
+          },
+        };
+      }
+      return {
+        properties: {
+          ...state.properties,
+          [propId]: existing ? { ...existing, ...property } : property,
+        },
+      };
+    });
   },
   addProperties: (properties) => {
     if (!Array.isArray(properties)) return;
@@ -178,6 +194,23 @@ export const usePropertyStore = create<PropertyStore>((set, get) => ({
       topProperties: [],
       isTopPropertiesLoaded: false,
       topPropertiesCache: {},
+    });
+  },
+
+  invalidateLockedPropertiesCache: () => {
+    set((state) => {
+      const unlockedOnly: Record<string, any> = {};
+      Object.entries(state.properties).forEach(([id, prop]) => {
+        if (prop && prop.contactLocked === false) {
+          unlockedOnly[id] = prop;
+        }
+      });
+      return {
+        properties: unlockedOnly,
+        topProperties: [],
+        isTopPropertiesLoaded: false,
+        topPropertiesCache: {},
+      };
     });
   },
 

@@ -378,20 +378,22 @@ export class PaymentsService {
 
   private async applyConfirmedPayment(payment: PaymentDocument) {
     payment.status = 'confirmed';
+    const isAssistance = payment.category === 'agency_assistance';
     const existingUser = await this.userModel
       .findById(payment.user)
-      .select('subscriptionExpiresAt')
+      .select('subscriptionExpiresAt assistanceExpiresAt')
       .lean()
       .exec();
 
     const nowMs = Date.now();
+    const relevantExpiry = isAssistance
+      ? existingUser?.assistanceExpiresAt || existingUser?.subscriptionExpiresAt
+      : existingUser?.subscriptionExpiresAt;
     const baseTimeMs =
-      existingUser?.subscriptionExpiresAt &&
-      new Date(existingUser.subscriptionExpiresAt).getTime() > nowMs
-        ? new Date(existingUser.subscriptionExpiresAt).getTime()
+      relevantExpiry && new Date(relevantExpiry).getTime() > nowMs
+        ? new Date(relevantExpiry).getTime()
         : nowMs;
 
-    const isAssistance = payment.category === 'agency_assistance';
     const durationHours =
       Number(payment.subscriptionDurationHours || payment.assistanceDurationHours) ||
       24;
@@ -403,32 +405,40 @@ export class PaymentsService {
       : TIME_SUBSCRIPTION_PLANS[payment.subscriptionPlanId as SubscriptionPlanId]?.label ||
         `${durationHours}h`;
 
-    payment.subscriptionExpiresAt = expiresAt;
     if (isAssistance) {
       payment.assistanceExpiresAt = expiresAt;
+    } else {
+      payment.subscriptionExpiresAt = expiresAt;
     }
     await payment.save();
 
-    const updatedUser = await this.userModel.findByIdAndUpdate(
-      payment.user,
-      {
-        $set: {
+    // For iOS (agency_assistance), do NOT set subscriptionExpiresAt or hasAllContactsUnlocked
+    // automatically on payment confirmation; an admin activates contact access remotely.
+    const userUpdateFields = isAssistance
+      ? {
+          assistanceExpiresAt: expiresAt,
+          assistancePlanLabel: planLabel,
+        }
+      : {
           subscriptionExpiresAt: expiresAt,
           subscriptionPlanLabel: planLabel,
-        },
-      },
+        };
+
+    const updatedUser = await this.userModel.findByIdAndUpdate(
+      payment.user,
+      { $set: userUpdateFields },
       { new: true },
     );
 
     this.logger.log(
-      `Payment ${payment.ref} confirmed (${payment.category}). Unified subscription (${planLabel}) expires: ${expiresAt.toISOString()}`,
+      `Payment ${payment.ref} confirmed (${payment.category}). ${isAssistance ? 'Assistance' : 'Subscription'} (${planLabel}) expires: ${expiresAt.toISOString()}`,
     );
 
     try {
       await this.notificationsService.createAndSend({
         userId: payment.user.toString(),
         title: isAssistance
-          ? '🎉 Reçu d’Assistance Tranogasy confirmé !'
+          ? '🎉 Reçu confirmé !'
           : '🎉 Abonnement activé !',
         body: isAssistance
           ? `Votre forfait ${planLabel} (${payment.amount.toLocaleString('fr-FR')} Ar) est validé. Réf: ${payment.ref}.`
@@ -458,13 +468,7 @@ export class PaymentsService {
         : payment.subscriptionPlanId
           ? TIME_SUBSCRIPTION_PLANS[payment.subscriptionPlanId as SubscriptionPlanId]?.label
           : null) ||
-      user?.subscriptionPlanLabel ||
-      null;
-
-    const unifiedExpiresAt =
-      payment.subscriptionExpiresAt ||
-      payment.assistanceExpiresAt ||
-      user?.subscriptionExpiresAt ||
+      (isAssistance ? user?.assistancePlanLabel : user?.subscriptionPlanLabel) ||
       null;
 
     return {
@@ -476,12 +480,18 @@ export class PaymentsService {
       subscriptionPlanId: payment.subscriptionPlanId || payment.assistancePlanId,
       subscriptionDurationHours:
         payment.subscriptionDurationHours || payment.assistanceDurationHours,
-      subscriptionExpiresAt: unifiedExpiresAt,
-      subscriptionPlanLabel: planLabel,
+      subscriptionExpiresAt: isAssistance
+        ? user?.subscriptionExpiresAt || null
+        : payment.subscriptionExpiresAt || user?.subscriptionExpiresAt || null,
+      subscriptionPlanLabel: isAssistance
+        ? user?.subscriptionPlanLabel || null
+        : planLabel,
       assistancePlanId: payment.assistancePlanId || payment.subscriptionPlanId,
       assistanceDurationHours:
         payment.assistanceDurationHours || payment.subscriptionDurationHours,
-      assistanceExpiresAt: unifiedExpiresAt,
+      assistanceExpiresAt: isAssistance
+        ? payment.assistanceExpiresAt || user?.assistanceExpiresAt || null
+        : payment.subscriptionExpiresAt || user?.subscriptionExpiresAt || null,
       assistancePlanLabel: planLabel,
     };
   }
@@ -635,10 +645,12 @@ export class PaymentsService {
 
   async getUserWallet(userIdOrPhone: string) {
     let user: any = null;
+    const walletUserSelect =
+      '_id username phone hasAllContactsUnlocked subscriptionExpiresAt subscriptionPlanLabel assistanceExpiresAt assistancePlanLabel';
     if (Types.ObjectId.isValid(userIdOrPhone)) {
       user = await this.userModel
         .findById(userIdOrPhone)
-        .select('_id username phone subscriptionExpiresAt subscriptionPlanLabel')
+        .select(walletUserSelect)
         .lean()
         .exec();
     }
@@ -655,7 +667,7 @@ export class PaymentsService {
             { phone: userIdOrPhone },
           ],
         })
-        .select('_id username phone subscriptionExpiresAt subscriptionPlanLabel')
+        .select(walletUserSelect)
         .lean()
         .exec();
     }
@@ -666,6 +678,7 @@ export class PaymentsService {
         subscriptionPlanLabel: null,
         assistanceExpiresAt: null,
         assistancePlanLabel: null,
+        hasAllContactsUnlocked: false,
         payments: [],
       };
     }
@@ -677,14 +690,25 @@ export class PaymentsService {
       .lean()
       .exec();
 
-    const unifiedExpiresAt = user.subscriptionExpiresAt || null;
-    const unifiedPlanLabel = user.subscriptionPlanLabel || null;
+    const latestConfirmedAssistance = payments.find(
+      (p: any) => p.category === 'agency_assistance',
+    );
+    const assistanceExpiresAt =
+      user.assistanceExpiresAt ||
+      latestConfirmedAssistance?.assistanceExpiresAt ||
+      user.subscriptionExpiresAt ||
+      null;
+    const assistancePlanLabel =
+      user.assistancePlanLabel ||
+      user.subscriptionPlanLabel ||
+      null;
 
     return {
-      subscriptionExpiresAt: unifiedExpiresAt,
-      subscriptionPlanLabel: unifiedPlanLabel,
-      assistanceExpiresAt: unifiedExpiresAt,
-      assistancePlanLabel: unifiedPlanLabel,
+      subscriptionExpiresAt: user.subscriptionExpiresAt || null,
+      subscriptionPlanLabel: user.subscriptionPlanLabel || null,
+      assistanceExpiresAt,
+      assistancePlanLabel,
+      hasAllContactsUnlocked: Boolean(user.hasAllContactsUnlocked),
       payments,
     };
   }

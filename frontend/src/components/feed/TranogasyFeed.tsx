@@ -11,7 +11,7 @@ import TikTokMapModal from './TikTokMapModal';
 import TikTokCommentsDrawer from './TikTokCommentsDrawer';
 import TikTokSkeleton from './TikTokSkeleton';
 import { usePropertyStore } from '@/store/propertyStore';
-import { getApiBaseUrl } from '@/services/api';
+import { getApiBaseUrl, getStoredSessionAuth } from '@/services/api';
 import { usePropertyDetailModalStore } from '@/store/propertyDetailModalStore';
 
 interface TranogasyFeedProps {
@@ -68,7 +68,9 @@ export default function TranogasyFeed({
       setIsLoading(true);
       try {
         const apiUrl = getApiBaseUrl();
-        const res = await fetch(`${apiUrl}/properties?page=1&limit=10`, {
+        const { userId } = getStoredSessionAuth();
+        const viewerQuery = userId ? `&viewerId=${encodeURIComponent(userId)}` : '';
+        const res = await fetch(`${apiUrl}/properties?page=1&limit=10${viewerQuery}`, {
           signal: controller.signal,
         });
         if (res.ok) {
@@ -114,7 +116,9 @@ export default function TranogasyFeed({
     try {
       const nextPage = page + 1;
       const apiUrl = getApiBaseUrl();
-      const res = await fetch(`${apiUrl}/properties?page=${nextPage}&limit=10`);
+      const { userId } = getStoredSessionAuth();
+      const viewerQuery = userId ? `&viewerId=${encodeURIComponent(userId)}` : '';
+      const res = await fetch(`${apiUrl}/properties?page=${nextPage}&limit=10${viewerQuery}`);
       if (res.ok) {
         const data = await res.json();
         const newProps = data.properties || [];
@@ -291,8 +295,17 @@ export default function TranogasyFeed({
     }
   };
 
-  const currentProperty = properties[currentIndex] || properties[0];
-  const activeProperty = selectedProperty || currentProperty;
+  const storeProperties = usePropertyStore((state) => state.properties);
+  const rawCurrentProperty = properties[currentIndex] || properties[0];
+  const currentProperty =
+    rawCurrentProperty?._id && storeProperties[String(rawCurrentProperty._id)]
+      ? { ...rawCurrentProperty, ...storeProperties[String(rawCurrentProperty._id)] }
+      : rawCurrentProperty;
+  const rawActiveProperty = selectedProperty || currentProperty;
+  const activeProperty =
+    rawActiveProperty?._id && storeProperties[String(rawActiveProperty._id)]
+      ? { ...rawActiveProperty, ...storeProperties[String(rawActiveProperty._id)] }
+      : rawActiveProperty;
 
   if (isLoading) {
     return <TikTokSkeleton embeddedInSearch={embeddedInSearch} />;

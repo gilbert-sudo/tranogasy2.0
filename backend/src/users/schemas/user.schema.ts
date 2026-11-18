@@ -48,6 +48,12 @@ export class User {
   @Prop({ default: null })
   subscriptionPlanLabel?: string;
 
+  @Prop({ default: null })
+  assistanceExpiresAt?: Date;
+
+  @Prop({ default: null })
+  assistancePlanLabel?: string;
+
   @Prop({ type: [String], default: [] })
   fcmTokens: string[];
 

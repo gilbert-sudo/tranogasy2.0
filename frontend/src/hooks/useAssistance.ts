@@ -40,7 +40,7 @@ export function useAssistance() {
   const [hasActiveAssistance, setHasActiveAssistance] = useState(false);
 
   const user = useUserStore((state) => state.user);
-  const updateSubscription = useUserStore((state) => state.updateSubscription);
+  const updateAssistance = useUserStore((state) => state.updateAssistance);
   const currentUser = user?.user || user;
 
   const clearError = useCallback(() => {
@@ -56,9 +56,9 @@ export function useAssistance() {
       setHasActiveAssistance(
         Boolean(expiresAt) && new Date(expiresAt as string).getTime() > Date.now()
       );
-      updateSubscription(expiresAt, planLabel);
+      updateAssistance(expiresAt, planLabel);
     },
-    [updateSubscription]
+    [updateAssistance]
   );
 
   const fetchAssistanceHistory = useCallback(async () => {
@@ -67,10 +67,12 @@ export function useAssistance() {
     const identifier = activeUser?._id || activeUser?.phone;
     if (!identifier) return;
 
-    if (activeUser?.subscriptionExpiresAt) {
+    const initialExpiry =
+      activeUser?.assistanceExpiresAt || activeUser?.subscriptionExpiresAt || null;
+    if (initialExpiry) {
       syncExpirationStatus(
-        String(activeUser.subscriptionExpiresAt),
-        activeUser.subscriptionPlanLabel || null
+        String(initialExpiry),
+        activeUser.assistancePlanLabel || activeUser.subscriptionPlanLabel || null
       );
     }
 

@@ -123,10 +123,45 @@ function PropertyDetailsContent({
   const userStore = useUserStore(state => state.user);
   const currentUser = userStore?.user || userStore;
   const closePropertyDetail = usePropertyDetailModalStore(state => state.closePropertyDetail);
+  const autoOpenContactForPropertyId = usePropertyDetailModalStore(
+    (state) => state.autoOpenContactForPropertyId
+  );
+  const setAutoOpenContactForPropertyId = usePropertyDetailModalStore(
+    (state) => state.setAutoOpenContactForPropertyId
+  );
   const isTransitioning = usePropertyDetailModalStore(
     (state) => state.isTransitioning && state.propertyId === property?._id
   );
   const profileHref = resolveProfileHref(property?.owner, property?.sources);
+
+  useEffect(() => {
+    if (!property?._id) return;
+    if (
+      autoOpenContactForPropertyId &&
+      String(autoOpenContactForPropertyId) === String(property._id)
+    ) {
+      setShowContact(true);
+      setAutoOpenContactForPropertyId(null);
+      return;
+    }
+    const store = usePropertyDetailModalStore.getState();
+    const returnCtx = store.getUnlockReturnContext();
+    if (
+      returnCtx &&
+      String(returnCtx.propertyId) === String(property._id) &&
+      typeof window !== 'undefined' &&
+      !window.location.pathname.startsWith('/pricing')
+    ) {
+      if (returnCtx.openContactModal) {
+        setShowContact(true);
+      }
+      store.clearUnlockReturnContext();
+    }
+  }, [
+    property?._id,
+    autoOpenContactForPropertyId,
+    setAutoOpenContactForPropertyId,
+  ]);
 
   const handleOpenOwnerProfile = () => {
     if (typeof document !== 'undefined') {

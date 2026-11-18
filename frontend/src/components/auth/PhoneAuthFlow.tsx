@@ -17,6 +17,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useProfileStore } from '@/store/profileStore';
+import { usePropertyStore } from '@/store/propertyStore';
+import { usePropertyDetailModalStore } from '@/store/propertyDetailModalStore';
 import type { ClaimableListingPreview, SuggestedFbProfile } from '@/services/auth.service';
 
 type AuthStep = 'phone' | 'verify' | 'claim' | 'welcome';
@@ -181,12 +183,44 @@ export default function PhoneAuthFlow({
     }
   };
 
-  const finishExistingUserLogin = () => {
+  const completeAuthAndReturn = (fallbackDestination: string, openProfileEditor = false) => {
+    usePropertyStore.getState().invalidateLockedPropertiesCache();
+    const modalStore = usePropertyDetailModalStore.getState();
+    const returnCtx = modalStore.getUnlockReturnContext();
+
     if (mode === 'modal' && onClose) {
+      if (returnCtx?.propertyId && returnCtx.openContactModal) {
+        modalStore.setAutoOpenContactForPropertyId(returnCtx.propertyId);
+      }
       onClose();
       return;
     }
-    router.push(redirectUrl || '/');
+
+    if (returnCtx?.propertyId) {
+      if (returnCtx.openContactModal) {
+        modalStore.setAutoOpenContactForPropertyId(returnCtx.propertyId);
+      }
+      modalStore.clearUnlockReturnContext();
+      if (returnCtx.wasModal) {
+        modalStore.openPropertyDetail(
+          returnCtx.propertyId,
+          returnCtx.propertySnapshot || null
+        );
+        router.replace(returnCtx.originUrl || '/');
+      } else {
+        router.replace(`/properties/${returnCtx.propertyId}`);
+      }
+      return;
+    }
+
+    if (openProfileEditor) {
+      setIsEditModalOpen(true);
+    }
+    router.push(fallbackDestination);
+  };
+
+  const finishExistingUserLogin = () => {
+    completeAuthAndReturn(redirectUrl || '/', false);
   };
 
   const handleVerifySubmit = async (e: React.FormEvent) => {
@@ -258,22 +292,14 @@ export default function PhoneAuthFlow({
       const res = await saveNewAccountUsername(username);
       if (!res.success) return;
     }
-    setIsEditModalOpen(true);
-    if (mode === 'modal' && onClose) {
-      onClose();
-    }
-    router.push('/profile');
+    completeAuthAndReturn('/profile', true);
   };
 
   const handleSkipWelcome = async () => {
     if (username.trim()) {
       await saveNewAccountUsername(username);
     }
-    if (mode === 'modal' && onClose) {
-      onClose();
-      return;
-    }
-    router.push('/');
+    completeAuthAndReturn('/', false);
   };
 
   return (
@@ -726,7 +752,7 @@ export default function PhoneAuthFlow({
                     <span>Enregistrement...</span>
                   </>
                 ) : (
-                  <span>Compléter mon profil</span>
+                  <span>{mode === 'modal' ? 'Continuer' : 'Compléter mon profil'}</span>
                 )}
               </button>
 

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { usePathname } from 'next/navigation';
 import { usePropertyDetailModalStore } from '@/store/propertyDetailModalStore';
 import PropertyDetailsClient from '@/app/properties/[id]/PropertyDetailsClient';
 
@@ -13,6 +14,7 @@ interface OverlayRect {
 }
 
 export default function PropertyDetailsModal() {
+  const pathname = usePathname();
   const isOpen = usePropertyDetailModalStore(s => s.isOpen);
   const propertyId = usePropertyDetailModalStore(s => s.propertyId);
   const initialProperty = usePropertyDetailModalStore(s => s.initialProperty);
@@ -42,11 +44,16 @@ export default function PropertyDetailsModal() {
   const openTimerRef = useRef<NodeJS.Timeout | null>(null);
   const closeTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastOpenedIdRef = useRef<string | null>(null);
+  const wasOnOverlayRouteRef = useRef<boolean>(false);
 
-  // Synchronize active property state when store triggers open
+  // Synchronize active property state when store triggers open or updates initialProperty
   if (isOpen && propertyId && activeId !== propertyId) {
     setActiveId(propertyId);
     setActiveProp(initialProperty || null);
+  } else if (isOpen && propertyId && activeId === propertyId && initialProperty && initialProperty !== activeProp) {
+    if (!(activeProp?.contactLocked === false && initialProperty?.contactLocked === true)) {
+      setActiveProp(initialProperty);
+    }
   }
 
   // Guaranteed cleanup of open transition
@@ -91,12 +98,20 @@ export default function PropertyDetailsModal() {
       document.body.style.overflow = originalOverflowRef.current || '';
     }
 
+    // Clear any unlock return context since user explicitly closed the property modal
+    usePropertyDetailModalStore.getState().clearUnlockReturnContext();
+
     // Restore URL cleanly using native replaceState to prevent Next.js RSC re-fetch
     if (shouldPopHistory && typeof window !== 'undefined' && previousUrlRef.current) {
       try {
-        History.prototype.replaceState.call(window.history, null, '', previousUrlRef.current);
+        History.prototype.replaceState.call(
+          window.history,
+          window.history.state,
+          '',
+          previousUrlRef.current
+        );
       } catch {
-        window.history.replaceState(null, '', previousUrlRef.current);
+        window.history.replaceState(window.history.state, '', previousUrlRef.current);
       }
     }
 
@@ -188,24 +203,44 @@ export default function PropertyDetailsModal() {
 
     // Record origin URL
     const currentUrl = window.location.pathname + window.location.search;
-    previousUrlRef.current = currentUrl;
+    const isOverlayRoute =
+      window.location.pathname.startsWith('/pricing') ||
+      window.location.pathname.startsWith('/properties/') ||
+      window.location.pathname.startsWith('/login') ||
+      window.location.pathname.startsWith('/signup');
+    const resolvedOriginUrl = !isOverlayRoute
+      ? currentUrl
+      : usePropertyDetailModalStore.getState().originUrl || '/';
+    previousUrlRef.current = resolvedOriginUrl;
+    usePropertyDetailModalStore.getState().setOriginUrl(resolvedOriginUrl);
 
     // Lock body scroll so origin feed retains exact position
     originalOverflowRef.current = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
 
     // Push native history state without triggering Next.js App Router background RSC fetches
-    if (window.location.pathname !== `/properties/${activeId}`) {
+    if (
+      window.location.pathname !== `/properties/${activeId}` &&
+      !window.location.pathname.startsWith('/pricing')
+    ) {
       try {
         History.prototype.pushState.call(
           window.history,
-          { modalPropertyId: activeId, returnUrl: currentUrl },
+          {
+            ...(window.history.state || {}),
+            modalPropertyId: activeId,
+            returnUrl: resolvedOriginUrl,
+          },
           '',
           `/properties/${activeId}`
         );
       } catch {
         window.history.pushState(
-          { modalPropertyId: activeId, returnUrl: currentUrl },
+          {
+            ...(window.history.state || {}),
+            modalPropertyId: activeId,
+            returnUrl: resolvedOriginUrl,
+          },
           '',
           `/properties/${activeId}`
         );
@@ -287,12 +322,79 @@ export default function PropertyDetailsModal() {
     };
   }, [activeId, transitionOrigin, finishOpenTransition, setIsTransitioning]);
 
+  // Track overlay routes (e.g. /pricing) so returning from /pricing keeps PropertyDetailsModal open and re-syncs URL
+  useEffect(() => {
+    if (!activeId || isClosingRef.current) return;
+
+    const isOnPricingOrAuth =
+      pathname?.startsWith('/pricing') ||
+      pathname?.startsWith('/login') ||
+      pathname?.startsWith('/signup');
+
+    if (isOnPricingOrAuth) {
+      wasOnOverlayRouteRef.current = true;
+      return;
+    }
+
+    if (wasOnOverlayRouteRef.current) {
+      document.body.style.overflow = 'hidden';
+      if (
+        typeof window !== 'undefined' &&
+        window.location.pathname !== `/properties/${activeId}`
+      ) {
+        try {
+          History.prototype.pushState.call(
+            window.history,
+            {
+              ...(window.history.state || {}),
+              modalPropertyId: activeId,
+              returnUrl: previousUrlRef.current || '/',
+            },
+            '',
+            `/properties/${activeId}`
+          );
+        } catch {
+          window.history.pushState(
+            {
+              ...(window.history.state || {}),
+              modalPropertyId: activeId,
+              returnUrl: previousUrlRef.current || '/',
+            },
+            '',
+            `/properties/${activeId}`
+          );
+        }
+      }
+      const timer = setTimeout(() => {
+        wasOnOverlayRouteRef.current = false;
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [pathname, activeId]);
+
   // Handle browser Back / Forward (popstate)
   useEffect(() => {
     const handlePopState = () => {
-      if (activeId && !isClosingRef.current) {
-        animateAndClose(false);
+      if (!activeId || isClosingRef.current) return;
+
+      const currentPath = window.location.pathname;
+      if (
+        wasOnOverlayRouteRef.current ||
+        currentPath.startsWith('/pricing') ||
+        currentPath === `/properties/${activeId}`
+      ) {
+        const store = usePropertyDetailModalStore.getState();
+        const returnCtx = store.getUnlockReturnContext();
+        if (returnCtx && String(returnCtx.propertyId) === String(activeId)) {
+          if (returnCtx.openContactModal) {
+            store.setAutoOpenContactForPropertyId(activeId);
+          }
+          store.clearUnlockReturnContext();
+        }
+        return;
       }
+
+      animateAndClose(false);
     };
 
     window.addEventListener('popstate', handlePopState);
@@ -303,8 +405,13 @@ export default function PropertyDetailsModal() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && activeId && !isClosingRef.current) {
-        const isLightboxOpen = document.querySelector('[class*="z-[100]"]');
-        if (!isLightboxOpen) {
+        if (typeof window !== 'undefined' && window.location.pathname.startsWith('/pricing')) {
+          return;
+        }
+        const isHigherOverlayOpen = document.querySelector(
+          '[class*="z-[100]"], [class*="z-[120]"], [class*="z-[130]"], [class*="z-[150]"]'
+        );
+        if (!isHigherOverlayOpen) {
           animateAndClose(true);
         }
       }

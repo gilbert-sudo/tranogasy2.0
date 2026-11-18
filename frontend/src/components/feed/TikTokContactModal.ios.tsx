@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   X,
   Phone,
@@ -10,14 +11,20 @@ import {
   ShieldCheck,
   MapPin,
   ChevronRight,
-  Headset,
+  Lock,
+  Clock,
+  RefreshCw,
+  Receipt,
 } from 'lucide-react';
 import { FeedProperty } from './types';
 import { resolveProfileHref } from '@/services/user.service';
-import {
-  AGENCY_SUPPORT_PHONE_DISPLAY,
-  AGENCY_SUPPORT_PHONE_TEL,
-} from '@/lib/platform';
+import { propertyService } from '@/services/property.service';
+import { useAuth } from '@/hooks/useAuth';
+import { useAssistance } from '@/hooks/useAssistance';
+import { useUserStore } from '@/store/userStore';
+import { useModalStore } from '@/store/modalStore';
+import { usePropertyStore } from '@/store/propertyStore';
+import { usePropertyDetailModalStore } from '@/store/propertyDetailModalStore';
 
 interface TikTokContactModalProps {
   property: FeedProperty | null;
@@ -25,14 +32,159 @@ interface TikTokContactModalProps {
 }
 
 export default function TikTokContactModal({
-  property,
+  property: propProperty,
   onClose,
 }: TikTokContactModalProps) {
+  const router = useRouter();
   const [copiedPhone, setCopiedPhone] = useState<string | null>(null);
+  const [isRefreshingAccess, setIsRefreshingAccess] = useState(false);
+
+  const userStore = useUserStore((state) => state.user);
+  const openModal = useModalStore((state) => state.openModal);
+  const { refreshUserSession } = useAuth();
+  const { hasActiveAssistance, fetchAssistanceHistory } = useAssistance();
+
+  const currentUser = userStore?.user || userStore;
+  const viewerId = currentUser?._id ? String(currentUser._id) : '';
+  const hasAllContactsUnlocked = Boolean(currentUser?.hasAllContactsUnlocked);
+  const subscriptionExpiresAt = currentUser?.subscriptionExpiresAt
+    ? String(currentUser.subscriptionExpiresAt)
+    : '';
+  const hasUserAssistance = hasActiveAssistance;
+
+  const storeProperty = usePropertyStore((state) =>
+    propProperty?._id ? state.properties[String(propProperty._id)] : undefined
+  );
+
+  const property: FeedProperty | null = React.useMemo(() => {
+    if (!propProperty) return null;
+    if (!storeProperty) return propProperty;
+    if (storeProperty.contactLocked === false) {
+      return { ...propProperty, ...storeProperty };
+    }
+    if (propProperty.contactLocked === false) {
+      return { ...storeProperty, ...propProperty };
+    }
+    return { ...propProperty, ...storeProperty };
+  }, [propProperty, storeProperty]);
+
+  const propId = property?._id ? String(property._id) : '';
+
+  const refreshContactUnlockStatus = async () => {
+    if (!propId || propId.startsWith('prop-') || !viewerId) return;
+    setIsRefreshingAccess(true);
+    try {
+      await Promise.all([refreshUserSession(), fetchAssistanceHistory()]);
+      const fresh = await propertyService.getPropertyById(propId);
+      if (fresh) {
+        usePropertyStore.getState().addProperty(fresh);
+        usePropertyDetailModalStore.getState().updateInitialProperty(fresh);
+      }
+    } catch {
+      // Ignore transient network errors
+    } finally {
+      setIsRefreshingAccess(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!viewerId) return;
+    refreshUserSession();
+    fetchAssistanceHistory();
+  }, [viewerId, refreshUserSession, fetchAssistanceHistory]);
+
+  useEffect(() => {
+    const propId = property?._id ? String(property._id) : '';
+    if (!propId || propId.startsWith('prop-') || !viewerId) return;
+    if (!property?.contactLocked) return;
+
+    let cancelled = false;
+    propertyService
+      .getPropertyById(propId)
+      .then((fresh) => {
+        if (!cancelled && fresh) {
+          usePropertyStore.getState().addProperty(fresh);
+          usePropertyDetailModalStore.getState().updateInitialProperty(fresh);
+        }
+      })
+      .catch(() => {
+        // Ignore transient network errors
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    property?._id,
+    property?.contactLocked,
+    viewerId,
+    hasAllContactsUnlocked,
+    subscriptionExpiresAt,
+  ]);
 
   if (!property) return null;
 
   const isLocked = Boolean(property.contactLocked);
+  const maskedPreview = property.maskedPhonePreview || '034 •• ••• ••';
+
+  const saveReturnContextForProperty = () => {
+    const modalState = usePropertyDetailModalStore.getState();
+    const isInsideDetailModal = Boolean(modalState.isOpen && modalState.propertyId);
+    const currentPathWithSearch =
+      typeof window !== 'undefined'
+        ? window.location.pathname + window.location.search
+        : `/properties/${property._id}`;
+    const isStandalonePropertyPage =
+      !isInsideDetailModal &&
+      typeof window !== 'undefined' &&
+      window.location.pathname.startsWith('/properties/');
+    const resolvedOriginUrl = isInsideDetailModal
+      ? modalState.originUrl || '/'
+      : currentPathWithSearch;
+
+    modalState.saveUnlockReturnContext({
+      propertyId: String(property._id),
+      propertySnapshot: property,
+      originUrl: resolvedOriginUrl,
+      wasModal: !isStandalonePropertyPage,
+      openContactModal: true,
+    });
+
+    return { isInsideDetailModal, resolvedOriginUrl };
+  };
+
+  const handleGoToPricing = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const { isInsideDetailModal, resolvedOriginUrl } = saveReturnContextForProperty();
+
+    if (
+      isInsideDetailModal &&
+      typeof window !== 'undefined' &&
+      window.location.pathname.startsWith('/properties/')
+    ) {
+      try {
+        History.prototype.replaceState.call(
+          window.history,
+          window.history.state,
+          '',
+          resolvedOriginUrl
+        );
+      } catch {
+        window.history.replaceState(window.history.state, '', resolvedOriginUrl);
+      }
+    }
+
+    onClose();
+    router.push('/pricing');
+  };
+
+  const handleLoginToUnlock = () => {
+    saveReturnContextForProperty();
+    usePropertyDetailModalStore
+      .getState()
+      .setAutoOpenContactForPropertyId(String(property._id));
+    openModal('login');
+  };
 
   const phoneNumbers = (
     isLocked
@@ -153,9 +305,7 @@ export default function TikTokContactModal({
         {/* Contact Numbers */}
         <div className="space-y-2.5">
           <label className="text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider block">
-            {phoneNumbers.length > 0
-              ? 'Numéros de contact'
-              : 'Service client TranoGasy'}
+            Numéros de téléphone
           </label>
 
           {phoneNumbers.length > 0 ? (
@@ -199,55 +349,72 @@ export default function TikTokContactModal({
                 </div>
               );
             })
-          ) : (
+          ) : isLocked ? (
             <div className="space-y-2.5">
               <div className="flex items-center justify-between gap-2 p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
-                <a
-                  href={`tel:${AGENCY_SUPPORT_PHONE_TEL}`}
-                  className="flex items-center gap-3 text-base font-bold text-zinc-900 dark:text-white hover:text-brand-green transition-colors flex-1 pl-0.5"
-                >
+                <div className="flex items-center gap-3 min-w-0 pl-0.5">
                   <div className="w-9 h-9 rounded-full bg-brand-green/10 text-brand-green flex items-center justify-center shrink-0">
-                    <Phone className="w-4 h-4" />
+                    <Lock className="w-4 h-4" />
                   </div>
-                  <div className="min-w-0">
-                    <div className="text-sm sm:text-base font-extrabold text-zinc-900 dark:text-white">
-                      {AGENCY_SUPPORT_PHONE_DISPLAY}
-                    </div>
-                    <div className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
-                      Agence TranoGasy
-                    </div>
+                  <div className="text-sm sm:text-base font-extrabold tracking-wider text-zinc-900 dark:text-white select-none">
+                    {maskedPreview}
                   </div>
-                </a>
-
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={(e) => handleCopy(AGENCY_SUPPORT_PHONE_TEL, e)}
-                    title="Copier le numéro"
-                    className="p-2 rounded-xl text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors cursor-pointer"
-                  >
-                    {copiedPhone === AGENCY_SUPPORT_PHONE_TEL ? (
-                      <Check className="w-4 h-4 text-brand-green" />
-                    ) : (
-                      <Copy className="w-4 h-4" />
-                    )}
-                  </button>
-                  <a
-                    href={`tel:${AGENCY_SUPPORT_PHONE_TEL}`}
-                    className="px-4 py-2 rounded-full bg-zinc-950 hover:bg-zinc-800 dark:bg-white dark:hover:bg-zinc-100 text-white dark:text-zinc-950 text-xs font-black shadow-md transition-all active:scale-95 cursor-pointer"
-                  >
-                    Appeler
-                  </a>
                 </div>
               </div>
 
-              <Link
-                href="/pricing"
-                onClick={onClose}
-                className="w-full py-3.5 px-6 rounded-full bg-zinc-950 hover:bg-zinc-800 dark:bg-white dark:hover:bg-zinc-100 text-white dark:text-zinc-950 font-bold text-xs sm:text-sm shadow-md shadow-black/20 dark:shadow-white/10 flex items-center justify-center gap-2 transition-all active:scale-95 cursor-pointer"
-              >
-                <Headset className="w-4 h-4 text-brand-green" />
-                <span>Assistance Agence</span>
-              </Link>
+              {currentUser && hasUserAssistance ? (
+                <div className="space-y-2">
+                  <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/40 text-xs text-amber-800 dark:text-amber-300 font-medium">
+                    <Clock className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span>
+                      Votre demande est enregistrée. Finalisez la mise en relation depuis votre reçu pour activer l&apos;accès aux contacts.
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={refreshContactUnlockStatus}
+                      disabled={isRefreshingAccess}
+                      className="flex-1 py-3 px-4 rounded-full bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-900 dark:text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer disabled:opacity-60"
+                    >
+                      <RefreshCw
+                        className={`w-3.5 h-3.5 ${isRefreshingAccess ? 'animate-spin' : ''}`}
+                      />
+                      <span>{isRefreshingAccess ? 'Vérification...' : 'Actualiser'}</span>
+                    </button>
+                    <Link
+                      href="/account"
+                      onClick={onClose}
+                      className="flex-1 py-3 px-4 rounded-full bg-zinc-950 hover:bg-zinc-800 dark:bg-white dark:hover:bg-zinc-100 text-white dark:text-zinc-950 font-bold text-xs shadow-md flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer"
+                    >
+                      <Receipt className="w-3.5 h-3.5 text-brand-green" />
+                      <span>Voir mon reçu</span>
+                    </Link>
+                  </div>
+                </div>
+              ) : currentUser ? (
+                <Link
+                  href="/pricing"
+                  onClick={handleGoToPricing}
+                  className="w-full py-3.5 px-6 rounded-full bg-zinc-950 hover:bg-zinc-800 dark:bg-white dark:hover:bg-zinc-100 text-white dark:text-zinc-950 font-bold text-xs sm:text-sm shadow-md shadow-black/20 dark:shadow-white/10 flex items-center justify-center gap-2 transition-all active:scale-95 cursor-pointer"
+                >
+                  <Phone className="w-4 h-4 text-brand-green" />
+                  <span>Contacter l&apos;annonceur</span>
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleLoginToUnlock}
+                  className="w-full py-3.5 px-6 rounded-full bg-zinc-950 hover:bg-zinc-800 dark:bg-white dark:hover:bg-zinc-100 text-white dark:text-zinc-950 font-bold text-xs sm:text-sm shadow-md shadow-black/20 dark:shadow-white/10 flex items-center justify-center gap-2 transition-all active:scale-95 cursor-pointer"
+                >
+                  <Phone className="w-4 h-4 text-brand-green" />
+                  <span>Contacter l&apos;annonceur</span>
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 text-sm font-medium text-center">
+              Aucun numéro de contact public n&apos;est renseigné pour cette annonce.
             </div>
           )}
         </div>

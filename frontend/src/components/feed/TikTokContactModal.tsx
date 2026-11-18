@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   X,
   Phone,
@@ -15,8 +16,11 @@ import {
 } from 'lucide-react';
 import { FeedProperty } from './types';
 import { resolveProfileHref } from '@/services/user.service';
+import { propertyService } from '@/services/property.service';
 import { useUserStore } from '@/store/userStore';
 import { useModalStore } from '@/store/modalStore';
+import { usePropertyStore } from '@/store/propertyStore';
+import { usePropertyDetailModalStore } from '@/store/propertyDetailModalStore';
 
 interface TikTokContactModalProps {
   property: FeedProperty | null;
@@ -24,19 +28,123 @@ interface TikTokContactModalProps {
 }
 
 export default function TikTokContactModal({
-  property,
+  property: propProperty,
   onClose,
 }: TikTokContactModalProps) {
+  const router = useRouter();
   const [copiedPhone, setCopiedPhone] = useState<string | null>(null);
 
   const userStore = useUserStore((state) => state.user);
   const openModal = useModalStore((state) => state.openModal);
   const currentUser = userStore?.user || userStore;
+  const viewerId = currentUser?._id ? String(currentUser._id) : '';
+  const subscriptionExpiresAt = currentUser?.subscriptionExpiresAt
+    ? String(currentUser.subscriptionExpiresAt)
+    : '';
+
+  const storeProperty = usePropertyStore((state) =>
+    propProperty?._id ? state.properties[String(propProperty._id)] : undefined
+  );
+
+  const property: FeedProperty | null = React.useMemo(() => {
+    if (!propProperty) return null;
+    if (!storeProperty) return propProperty;
+    if (storeProperty.contactLocked === false) {
+      return { ...propProperty, ...storeProperty };
+    }
+    if (propProperty.contactLocked === false) {
+      return { ...storeProperty, ...propProperty };
+    }
+    return { ...propProperty, ...storeProperty };
+  }, [propProperty, storeProperty]);
+
+  // Automatically re-fetch property when user logs in or activates a subscription while modal is open
+  useEffect(() => {
+    const propId = property?._id ? String(property._id) : '';
+    if (!propId || propId.startsWith('prop-') || !viewerId) return;
+    if (!property?.contactLocked) return;
+
+    let cancelled = false;
+    propertyService
+      .getPropertyById(propId)
+      .then((fresh) => {
+        if (!cancelled && fresh) {
+          usePropertyStore.getState().addProperty(fresh);
+          usePropertyDetailModalStore.getState().updateInitialProperty(fresh);
+        }
+      })
+      .catch(() => {
+        // Ignore transient network errors
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [property?._id, property?.contactLocked, viewerId, subscriptionExpiresAt]);
 
   if (!property) return null;
 
   const isLocked = Boolean(property.contactLocked);
   const maskedPreview = property.maskedPhonePreview || '034 •• ••• ••';
+
+  const saveReturnContextForProperty = () => {
+    const modalState = usePropertyDetailModalStore.getState();
+    const isInsideDetailModal = Boolean(modalState.isOpen && modalState.propertyId);
+    const currentPathWithSearch =
+      typeof window !== 'undefined'
+        ? window.location.pathname + window.location.search
+        : `/properties/${property._id}`;
+    const isStandalonePropertyPage =
+      !isInsideDetailModal &&
+      typeof window !== 'undefined' &&
+      window.location.pathname.startsWith('/properties/');
+    const resolvedOriginUrl = isInsideDetailModal
+      ? modalState.originUrl || '/'
+      : currentPathWithSearch;
+
+    modalState.saveUnlockReturnContext({
+      propertyId: String(property._id),
+      propertySnapshot: property,
+      originUrl: resolvedOriginUrl,
+      wasModal: !isStandalonePropertyPage,
+      openContactModal: true,
+    });
+
+    return { isInsideDetailModal, resolvedOriginUrl };
+  };
+
+  const handleGoToPricing = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const { isInsideDetailModal, resolvedOriginUrl } = saveReturnContextForProperty();
+
+    if (
+      isInsideDetailModal &&
+      typeof window !== 'undefined' &&
+      window.location.pathname.startsWith('/properties/')
+    ) {
+      try {
+        History.prototype.replaceState.call(
+          window.history,
+          window.history.state,
+          '',
+          resolvedOriginUrl
+        );
+      } catch {
+        window.history.replaceState(window.history.state, '', resolvedOriginUrl);
+      }
+    }
+
+    onClose();
+    router.push('/pricing');
+  };
+
+  const handleLoginToUnlock = () => {
+    saveReturnContextForProperty();
+    usePropertyDetailModalStore
+      .getState()
+      .setAutoOpenContactForPropertyId(String(property._id));
+    openModal('login');
+  };
 
   const phoneNumbers = (
     isLocked
@@ -184,7 +292,7 @@ export default function TikTokContactModal({
               {currentUser ? (
                 <Link
                   href="/pricing"
-                  onClick={onClose}
+                  onClick={handleGoToPricing}
                   className={unlockButtonClass}
                 >
                   {unlockButtonContent}
@@ -192,10 +300,7 @@ export default function TikTokContactModal({
               ) : (
                 <button
                   type="button"
-                  onClick={() => {
-                    onClose();
-                    openModal('login');
-                  }}
+                  onClick={handleLoginToUnlock}
                   className={unlockButtonClass}
                 >
                   {unlockButtonContent}

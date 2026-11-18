@@ -115,6 +115,7 @@ export function useAuth() {
         const isOutdated =
           checkRes.user.username !== latestUser.username ||
           checkRes.user.subscriptionExpiresAt !== latestUser.subscriptionExpiresAt ||
+          checkRes.user.assistanceExpiresAt !== latestUser.assistanceExpiresAt ||
           checkRes.user.hasAllContactsUnlocked !== latestUser.hasAllContactsUnlocked ||
           isDummy;
 

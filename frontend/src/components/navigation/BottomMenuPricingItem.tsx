@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { ChevronRight, Crown } from 'lucide-react';
+import { usePropertyDetailModalStore } from '@/store/propertyDetailModalStore';
 
 interface BottomMenuPricingItemProps {
   onSelect: () => void;
@@ -13,7 +14,10 @@ export default function BottomMenuPricingItem({
   return (
     <Link
       href="/pricing"
-      onClick={onSelect}
+      onClick={() => {
+        usePropertyDetailModalStore.getState().clearUnlockReturnContext();
+        onSelect();
+      }}
       className="flex items-center justify-between p-2.5 rounded-2xl hover:bg-amber-50/80 dark:hover:bg-amber-950/25 transition-all text-left group cursor-pointer"
     >
       <div className="flex items-center gap-3">

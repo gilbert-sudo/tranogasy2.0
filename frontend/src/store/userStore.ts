@@ -8,6 +8,7 @@ interface UserStore {
   sessionEpoch: number;
   setUser: (user: any) => void;
   updateSubscription: (expiresAt: string | null, planLabel?: string | null) => void;
+  updateAssistance: (expiresAt: string | null, planLabel?: string | null) => void;
   logout: () => void;
   initialize: () => void;
 }
@@ -36,6 +37,25 @@ export const useUserStore = create<UserStore>((set, get) => ({
         localStorage.setItem('user', JSON.stringify(updated));
       } catch (e) {
         console.error('Failed to persist updated user subscription', e);
+      }
+    }
+  },
+  updateAssistance: (expiresAt: string | null, planLabel?: string | null) => {
+    const current = get().user;
+    if (!current) return;
+    const patch = {
+      assistanceExpiresAt: expiresAt,
+      ...(planLabel !== undefined ? { assistancePlanLabel: planLabel } : {}),
+    };
+    const updated = current.user
+      ? { ...current, user: { ...current.user, ...patch } }
+      : { ...current, ...patch };
+    set({ user: updated });
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('user', JSON.stringify(updated));
+      } catch (e) {
+        console.error('Failed to persist updated user assistance status', e);
       }
     }
   },

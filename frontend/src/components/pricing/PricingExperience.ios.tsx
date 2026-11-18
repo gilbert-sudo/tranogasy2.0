@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -22,6 +22,8 @@ import {
 import { useUserStore } from '@/store/userStore';
 import { useModalStore } from '@/store/modalStore';
 import { usePropertyStore } from '@/store/propertyStore';
+import { usePropertyDetailModalStore } from '@/store/propertyDetailModalStore';
+import { propertyService } from '@/services/property.service';
 import { useAuth } from '@/hooks/useAuth';
 import { useAssistance } from '@/hooks/useAssistance';
 import {
@@ -55,6 +57,8 @@ export default function PricingExperience() {
   const [selectedPlan, setSelectedPlan] = useState<AgencyAssistancePlan>(
     AGENCY_ASSISTANCE_PLANS[1]
   );
+  const [pendingPlanAfterLogin, setPendingPlanAfterLogin] =
+    useState<AgencyAssistancePlan | null>(null);
 
   // Active Checkout Sheet state
   const [checkoutModalOpen, setCheckoutModalOpen] = useState<boolean>(false);
@@ -78,11 +82,74 @@ export default function PricingExperience() {
     operatorName: string;
   } | null>(null);
 
+  const returnToOriginProperty = useCallback(
+    async (options?: { unlocked?: boolean }): Promise<boolean> => {
+      const modalStore = usePropertyDetailModalStore.getState();
+      const returnCtx = modalStore.getUnlockReturnContext();
+      if (!returnCtx || !returnCtx.propertyId) {
+        return false;
+      }
+
+      let targetProperty =
+        usePropertyStore.getState().getProperty(returnCtx.propertyId) ||
+        returnCtx.propertySnapshot ||
+        null;
+
+      if (options?.unlocked) {
+        try {
+          const fresh = await propertyService.getPropertyById(returnCtx.propertyId);
+          if (fresh) {
+            targetProperty = fresh;
+            usePropertyStore.getState().addProperty(fresh);
+            modalStore.updateInitialProperty(fresh);
+          }
+        } catch {
+          // Fallback to snapshot; useProperty will also re-fetch
+        }
+      }
+
+      modalStore.clearUnlockReturnContext();
+      if (returnCtx.openContactModal) {
+        modalStore.setAutoOpenContactForPropertyId(returnCtx.propertyId);
+      }
+
+      if (returnCtx.wasModal) {
+        modalStore.openPropertyDetail(returnCtx.propertyId, targetProperty);
+        const destUrl =
+          returnCtx.originUrl &&
+          !returnCtx.originUrl.startsWith('/pricing') &&
+          !returnCtx.originUrl.startsWith('/properties/')
+            ? returnCtx.originUrl
+            : '/';
+        router.replace(destUrl);
+      } else {
+        router.replace(`/properties/${returnCtx.propertyId}`);
+      }
+
+      return true;
+    },
+    [router]
+  );
+
   useEffect(() => {
     initialize();
     refreshUserSession();
     fetchAssistanceHistory();
   }, [initialize, refreshUserSession, fetchAssistanceHistory]);
+
+  // Automatically open checkout modal once user finishes logging in on /pricing
+  useEffect(() => {
+    if (isLoggedIn && pendingPlanAfterLogin) {
+      const planToOpen = pendingPlanAfterLogin;
+      setPendingPlanAfterLogin(null);
+      setSelectedPlan(planToOpen);
+      setCheckoutStep('options');
+      setCheckoutNotice(null);
+      setPapiPaymentLink(null);
+      setPapiRef(null);
+      setCheckoutModalOpen(true);
+    }
+  }, [isLoggedIn, pendingPlanAfterLogin]);
 
   // Poll Papi payment status while waiting
   useEffect(() => {
@@ -103,7 +170,10 @@ export default function PricingExperience() {
           setCheckoutStep('options');
           setCheckoutNotice(null);
           usePropertyStore.getState().clearUserProperties();
-          refreshUserSession();
+          usePropertyStore.getState().invalidateLockedPropertiesCache();
+          await refreshUserSession();
+          const didReturn = await returnToOriginProperty({ unlocked: true });
+          if (didReturn || !isMounted) return;
           setCompletedReceipt({
             ref: res.ref || papiRef,
             planLabel: res.assistancePlanLabel || selectedPlan.durationLabel,
@@ -133,6 +203,7 @@ export default function PricingExperience() {
     checkAssistancePaymentStatus,
     selectedPlan,
     refreshUserSession,
+    returnToOriginProperty,
   ]);
 
   // Handle redirect return from Papi checkout
@@ -147,7 +218,10 @@ export default function PricingExperience() {
           const res = await checkAssistancePaymentStatus(refParam);
           if (active && res.status === 'confirmed') {
             usePropertyStore.getState().clearUserProperties();
-            refreshUserSession();
+            usePropertyStore.getState().invalidateLockedPropertiesCache();
+            await refreshUserSession();
+            const didReturn = await returnToOriginProperty({ unlocked: true });
+            if (didReturn || !active) return;
             setCompletedReceipt({
               ref: res.ref || refParam,
               planLabel: res.assistancePlanLabel || selectedPlan.durationLabel,
@@ -171,11 +245,13 @@ export default function PricingExperience() {
     selectedPlan,
     router,
     refreshUserSession,
+    returnToOriginProperty,
   ]);
 
   const openCheckoutForPlan = (plan: AgencyAssistancePlan) => {
     if (error) clearError();
     if (!isLoggedIn) {
+      setPendingPlanAfterLogin(plan);
       openModal('login');
       return;
     }
@@ -217,7 +293,10 @@ export default function PricingExperience() {
         setCheckoutStep('options');
         setCheckoutNotice(null);
         usePropertyStore.getState().clearUserProperties();
-        refreshUserSession();
+        usePropertyStore.getState().invalidateLockedPropertiesCache();
+        await refreshUserSession();
+        const didReturn = await returnToOriginProperty({ unlocked: true });
+        if (didReturn) return;
         setCompletedReceipt({
           ref: res.ref || papiRef,
           planLabel: res.assistancePlanLabel || selectedPlan.durationLabel,
@@ -242,7 +321,7 @@ export default function PricingExperience() {
   // ============================================================================
   if (completedReceipt) {
     return (
-      <div className="h-[100dvh] max-h-[100dvh] bg-[#F5F5F7] dark:bg-zinc-950 flex flex-col justify-between p-4 sm:p-6 font-sans select-none overflow-hidden">
+      <div className="fixed inset-0 z-[130] w-full h-[100dvh] max-h-[100dvh] bg-[#F5F5F7] dark:bg-zinc-950 flex flex-col justify-between p-4 sm:p-6 font-sans select-none overflow-hidden">
         <div className="max-w-md w-full mx-auto flex items-center justify-between shrink-0">
           <button
             type="button"
@@ -339,13 +418,17 @@ export default function PricingExperience() {
   // MAIN VIEW: MINIMALISTIC AGENCY ASSISTANCE
   // ============================================================================
   return (
-    <div className="h-[100dvh] max-h-[100dvh] bg-[#F5F5F7] dark:bg-zinc-950 text-zinc-900 dark:text-white font-sans selection:bg-brand-green/20 relative flex flex-col justify-between p-3.5 sm:p-5 lg:p-6 overflow-hidden select-none">
+    <div className="fixed inset-0 z-[130] w-full h-[100dvh] max-h-[100dvh] bg-[#F5F5F7] dark:bg-zinc-950 text-zinc-900 dark:text-white font-sans selection:bg-brand-green/20 flex flex-col justify-between p-3.5 sm:p-5 lg:p-6 overflow-hidden select-none">
       {/* Header (Minimalist — No subtitle) */}
       <header className="max-w-5xl w-full mx-auto flex items-center justify-between gap-3 shrink-0">
         <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={() => {
+            onClick={async () => {
+              const didReturn = await returnToOriginProperty({
+                unlocked: hasActiveAssistance,
+              });
+              if (didReturn) return;
               if (typeof window !== 'undefined' && window.history.length > 1) {
                 router.back();
               } else {

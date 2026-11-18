@@ -14,6 +14,7 @@ import {
   Check,
 } from 'lucide-react';
 import { usePayment } from '@/hooks/usePayment';
+import { usePropertyDetailModalStore } from '@/store/propertyDetailModalStore';
 import type { PaymentTransaction } from '@/services/payment.service';
 import { TIME_SUBSCRIPTION_PLANS } from '@/lib/platform';
 
@@ -85,6 +86,7 @@ export function AccountHeaderBadge({ balance }: { balance: number }) {
   return (
     <Link
       href="/pricing"
+      onClick={() => usePropertyDetailModalStore.getState().clearUnlockReturnContext()}
       className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white dark:bg-zinc-900 shadow-[0_4px_16px_rgba(0,0,0,0.05)] hover:scale-105 active:scale-95 transition-all"
     >
       {isActive ? (
@@ -171,6 +173,7 @@ export function AccountWalletSection({
         <div className="flex items-center shrink-0">
           <Link
             href="/pricing"
+            onClick={() => usePropertyDetailModalStore.getState().clearUnlockReturnContext()}
             className="h-10 sm:h-11 px-4 sm:px-5 rounded-full bg-brand-green hover:bg-[#6da819] text-white font-bold text-xs sm:text-sm inline-flex items-center justify-center gap-1.5 shadow-[0_6px_20px_rgba(124,189,30,0.28)] hover:scale-[1.02] active:scale-95 transition-all whitespace-nowrap"
           >
             <span>{isActive ? 'Prolonger' : 'Voir les offres'}</span>
@@ -183,7 +186,11 @@ export function AccountWalletSection({
 
 export function AccountPricingMenuItem() {
   return (
-    <Link href="/pricing" className="block">
+    <Link
+      href="/pricing"
+      onClick={() => usePropertyDetailModalStore.getState().clearUnlockReturnContext()}
+      className="block"
+    >
       <div className="flex items-center justify-between p-4 hover:bg-[#F5F5F7] dark:hover:bg-zinc-800/60 transition-colors cursor-pointer rounded-full">
         <div className="flex items-center gap-4 min-w-0">
           <div className="w-10 h-10 rounded-full bg-[#F5F5F7] dark:bg-zinc-800 flex items-center justify-center text-zinc-600 dark:text-zinc-300 shrink-0">

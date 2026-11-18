@@ -16,7 +16,7 @@ export default function AuthModals() {
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex flex-col md:items-center md:justify-center bg-[#F6F6F4] dark:bg-zinc-950 md:bg-black/45 md:dark:bg-black/65 md:backdrop-blur-sm animate-in fade-in duration-200"
+      className="fixed inset-0 z-[150] flex flex-col md:items-center md:justify-center bg-[#F6F6F4] dark:bg-zinc-950 md:bg-black/45 md:dark:bg-black/65 md:backdrop-blur-sm animate-in fade-in duration-200"
       onClick={(e) => {
         if (e.target === e.currentTarget) closeModal();
       }}
