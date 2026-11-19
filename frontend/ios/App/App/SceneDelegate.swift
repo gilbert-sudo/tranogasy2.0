@@ -18,15 +18,15 @@ private final class WeakScriptMessageHandler: NSObject, WKScriptMessageHandler {
     }
 }
 
-/// Capacitor bridge subclass that observes the web app's Light/Dark class on <html>
-/// so the native iOS status bar strip and clock/icon contrast always match TranoGasy's theme.
+/// Edge-to-edge Capacitor bridge controller that syncs the iPhone status bar clock/battery contrast
+/// (dark icons in Light Mode, white icons in Dark Mode) with TranoGasy's in-app theme class on <html>.
 final class TranoGasyBridgeViewController: CAPBridgeViewController, WKScriptMessageHandler {
-    var onThemeChanged: ((Bool) -> Void)?
-
     private static let themeHandlerName = "tgThemeSync"
 
     override func capacitorDidLoad() {
         super.capacitorDidLoad()
+        statusBarStyle = .darkContent
+
         guard let userContentController = webView?.configuration.userContentController else {
             return
         }
@@ -76,66 +76,10 @@ final class TranoGasyBridgeViewController: CAPBridgeViewController, WKScriptMess
             return
         }
         DispatchQueue.main.async { [weak self] in
-            self?.onThemeChanged?(isDark)
+            guard let self = self else { return }
+            self.statusBarStyle = isDark ? .lightContent : .darkContent
+            self.setNeedsStatusBarAppearanceUpdate()
         }
-    }
-}
-
-/// Native iOS container that pins the Capacitor WebView below the top status bar / Dynamic Island
-/// without modifying Web or Android layouts.
-final class SafeAreaHostViewController: UIViewController {
-    private let bridgeVC = TranoGasyBridgeViewController()
-    private var isDarkTheme = false
-
-    private static let lightBackground = UIColor.white
-    private static let darkBackground = UIColor(
-        red: 9.0 / 255.0,
-        green: 9.0 / 255.0,
-        blue: 11.0 / 255.0,
-        alpha: 1.0
-    )
-
-    override var preferredStatusBarStyle: UIStatusBarStyle {
-        return isDarkTheme ? .lightContent : .darkContent
-    }
-
-    override var childForStatusBarHidden: UIViewController? {
-        return bridgeVC
-    }
-
-    override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
-        return bridgeVC.supportedInterfaceOrientations
-    }
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        view.backgroundColor = Self.lightBackground
-
-        bridgeVC.onThemeChanged = { [weak self] isDark in
-            self?.applyTheme(isDark: isDark)
-        }
-
-        addChild(bridgeVC)
-        bridgeVC.view.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(bridgeVC.view)
-
-        NSLayoutConstraint.activate([
-            bridgeVC.view.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-            bridgeVC.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            bridgeVC.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            bridgeVC.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-        ])
-
-        bridgeVC.didMove(toParent: self)
-    }
-
-    private func applyTheme(isDark: Bool) {
-        guard isDarkTheme != isDark else { return }
-        isDarkTheme = isDark
-        UIView.animate(withDuration: 0.2) {
-            self.view.backgroundColor = isDark ? Self.darkBackground : Self.lightBackground
-        }
-        setNeedsStatusBarAppearanceUpdate()
     }
 }
 
@@ -151,7 +95,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
         window = UIWindow(windowScene: windowScene)
         window?.backgroundColor = .white
-        window?.rootViewController = SafeAreaHostViewController()
+        window?.rootViewController = TranoGasyBridgeViewController()
         window?.makeKeyAndVisible()
 
         SceneDelegateProxy.shared.scene(scene, willConnectTo: session, options: connectionOptions)

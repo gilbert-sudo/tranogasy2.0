@@ -638,7 +638,7 @@ function DashboardContent() {
       <Header />
 
       {/* Top Banner / Breadcrumb */}
-      <div className="sticky top-[64px] z-30 w-full bg-[#F8F9FA]/90 dark:bg-zinc-950/90 backdrop-blur-xl border-b border-zinc-200 dark:border-zinc-800">
+      <div className="sticky top-[calc(64px+var(--ios-safe-top))] z-30 w-full bg-[#F8F9FA]/90 dark:bg-zinc-950/90 backdrop-blur-xl border-b border-zinc-200 dark:border-zinc-800">
         <div className="mx-auto flex max-w-[2000px] items-center justify-between px-4 sm:px-6 md:px-8 lg:px-28 xl:px-32 2xl:px-36 py-3">
           <div className="flex items-center gap-3">
             <Link

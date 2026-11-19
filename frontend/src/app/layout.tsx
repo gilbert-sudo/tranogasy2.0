@@ -5,6 +5,7 @@ import BottomNavigation from "@/components/BottomNavigation";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import AuthModals from "@/components/AuthModals";
 import PropertyDetailsModal from "@/components/property/PropertyDetailsModal";
+import { APP_PLATFORM } from "@/lib/platform";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -44,6 +45,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
+  ...(APP_PLATFORM === "ios" ? { viewportFit: "cover" as const } : {}),
 };
 
 export default function RootLayout({
@@ -52,7 +54,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="fr" suppressHydrationWarning>
+    <html lang="fr" data-platform={APP_PLATFORM} suppressHydrationWarning>
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${outfit.variable} antialiased`}
       >

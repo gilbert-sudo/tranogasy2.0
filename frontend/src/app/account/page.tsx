@@ -123,6 +123,7 @@ export default function AccountPage() {
   const {
     isSubscribed,
     isLoading: isPushLoading,
+    feedback: pushFeedback,
     enableNotifications,
     sendTest,
   } = usePushNotifications();
@@ -199,7 +200,7 @@ export default function AccountPage() {
         <Header />
       </div>
 
-      <div className="sticky top-[64px] z-40 w-full bg-[#F5F5F7]/90 dark:bg-zinc-950/90 backdrop-blur-xl">
+      <div className="sticky top-[calc(64px+var(--ios-safe-top))] z-40 w-full bg-[#F5F5F7]/90 dark:bg-zinc-950/90 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 sm:px-6 md:px-8 lg:px-28 xl:px-32 2xl:px-36 py-2.5 md:py-4">
           <div className="flex items-center">
             <Link
@@ -489,6 +490,11 @@ export default function AccountPage() {
                     )}
                   </div>
                 </div>
+                {pushFeedback && (
+                  <p className="px-5 pb-2.5 -mt-1 text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+                    {pushFeedback}
+                  </p>
+                )}
                 <MenuItem
                   icon={MessageSquare}
                   title="Retours"

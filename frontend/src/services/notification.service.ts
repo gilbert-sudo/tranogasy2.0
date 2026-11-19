@@ -67,7 +67,12 @@ export const notificationService = {
     title?: string;
     body?: string;
   }) {
-    return apiFetch<{ success: boolean; result?: any; notification?: any }>(
+    return apiFetch<{
+      success: boolean;
+      message?: string;
+      result?: any;
+      notification?: any;
+    }>(
       '/api/notifications/test',
       {
         method: 'POST',

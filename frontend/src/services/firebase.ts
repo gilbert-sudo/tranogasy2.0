@@ -7,6 +7,8 @@ import {
   Messaging,
   MessagePayload,
 } from 'firebase/messaging';
+import { Capacitor } from '@capacitor/core';
+import { PushNotifications } from '@capacitor/push-notifications';
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -18,6 +20,15 @@ const firebaseConfig = {
 };
 
 let app: FirebaseApp | null = null;
+
+export function isNativeMobileApp(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return Capacitor.isNativePlatform();
+  } catch {
+    return false;
+  }
+}
 
 export function getFirebaseApp(): FirebaseApp | null {
   if (typeof window === 'undefined') return null;
@@ -49,63 +60,172 @@ export async function getFirebaseMessaging(): Promise<Messaging | null> {
 }
 
 /**
- * Requests push notification permission and generates an FCM token.
- * Ready for both Web PWA and future Capacitor native mobile builds.
+ * Checks current notification permission status across Native (iOS/Android Capacitor) and Web.
  */
-export async function requestPushToken(): Promise<string | null> {
-  if (typeof window === 'undefined') return null;
+export async function getPushPermissionStatus(): Promise<NotificationPermission> {
+  if (typeof window === 'undefined') return 'default';
 
-  // 1. Check if running inside Capacitor native mobile app
-  const capacitor = (window as any).Capacitor;
-  if (
-    capacitor &&
-    typeof capacitor.isNativePlatform === 'function' &&
-    capacitor.isNativePlatform()
-  ) {
-    console.log('[Push] Running in Capacitor native mobile environment');
-    const pushPlugin = capacitor.Plugins?.PushNotifications;
-    if (pushPlugin) {
-      try {
-        const permStatus = await pushPlugin.requestPermissions();
-        if (permStatus.receive === 'granted') {
-          await pushPlugin.register();
-          return new Promise<string | null>((resolve) => {
-            pushPlugin.addListener(
-              'registration',
-              (tokenData: { value: string }) => {
-                resolve(tokenData.value);
-              },
-            );
-            pushPlugin.addListener('registrationError', (err: any) => {
-              console.error('[Push] Capacitor registration error:', err);
-              resolve(null);
-            });
-          });
-        }
-      } catch (capErr) {
-        console.warn('[Push] Capacitor push registration error:', capErr);
-      }
+  if (isNativeMobileApp()) {
+    try {
+      const status = await PushNotifications.checkPermissions();
+      if (status.receive === 'granted') return 'granted';
+      if (status.receive === 'denied') return 'denied';
+      return 'default';
+    } catch {
+      return 'default';
     }
-    return null;
   }
 
-  // 2. Standard Web Push (Chrome, Firefox, Safari, Edge, Android Chrome)
+  if ('Notification' in window) {
+    return Notification.permission;
+  }
+  return 'default';
+}
+
+export interface RequestPushTokenResult {
+  token: string | null;
+  permission: NotificationPermission;
+  error?: string;
+}
+
+/**
+ * Requests push notification permission and generates a push token:
+ * - iOS Capacitor: APNs device token prefixed with `apns:`
+ * - Android Capacitor: Native FCM registration token
+ * - Web / PWA: Firebase Web Push FCM token
+ */
+export async function requestPushTokenWithStatus(): Promise<RequestPushTokenResult> {
+  if (typeof window === 'undefined') {
+    return { token: null, permission: 'default', error: 'Environnement non supporté.' };
+  }
+
+  // 1. Native Capacitor Mobile App (iOS & Android)
+  if (isNativeMobileApp()) {
+    try {
+      let permStatus = await PushNotifications.checkPermissions();
+      if (
+        permStatus.receive === 'prompt' ||
+        permStatus.receive === 'prompt-with-rationale'
+      ) {
+        permStatus = await PushNotifications.requestPermissions();
+      }
+
+      if (permStatus.receive !== 'granted') {
+        return {
+          token: null,
+          permission: 'denied',
+          error:
+            'Notifications refusées. Activez-les dans Réglages > TranoGasy > Notifications.',
+        };
+      }
+
+      const platform = Capacitor.getPlatform();
+
+      // Attach listeners BEFORE calling register() to avoid race conditions on cached tokens
+      const rawToken = await new Promise<string>((resolve, reject) => {
+        let settled = false;
+        let regHandle: { remove: () => Promise<void> } | null = null;
+        let errHandle: { remove: () => Promise<void> } | null = null;
+
+        const cleanup = () => {
+          regHandle?.remove().catch(() => {});
+          errHandle?.remove().catch(() => {});
+        };
+
+        const timeoutId = setTimeout(() => {
+          if (!settled) {
+            settled = true;
+            cleanup();
+            reject(
+              new Error(
+                'Délai dépassé lors de l’enregistrement des notifications push.'
+              )
+            );
+          }
+        }, 15000);
+
+        Promise.all([
+          PushNotifications.addListener('registration', (tokenData) => {
+            if (!settled) {
+              settled = true;
+              clearTimeout(timeoutId);
+              cleanup();
+              resolve(tokenData.value);
+            }
+          }),
+          PushNotifications.addListener('registrationError', (err) => {
+            if (!settled) {
+              settled = true;
+              clearTimeout(timeoutId);
+              cleanup();
+              reject(
+                new Error(
+                  (err as { error?: string })?.error ||
+                    'Impossible d’enregistrer l’appareil pour les notifications.'
+                )
+              );
+            }
+          }),
+        ])
+          .then(([rHandle, eHandle]) => {
+            regHandle = rHandle;
+            errHandle = eHandle;
+            return PushNotifications.register();
+          })
+          .catch((err) => {
+            if (!settled) {
+              settled = true;
+              clearTimeout(timeoutId);
+              cleanup();
+              reject(err);
+            }
+          });
+      });
+
+      const formattedToken =
+        platform === 'ios' && !rawToken.startsWith('apns:')
+          ? `apns:${rawToken}`
+          : rawToken;
+
+      return { token: formattedToken, permission: 'granted' };
+    } catch (capErr: unknown) {
+      const msg =
+        capErr instanceof Error
+          ? capErr.message
+          : 'Erreur lors de l’activation des notifications push.';
+      console.warn('[Push] Capacitor push registration error:', msg);
+      return { token: null, permission: 'default', error: msg };
+    }
+  }
+
+  // 2. Standard Web Push (Chrome, Firefox, Safari PWA, Edge, Android Chrome)
   if (!('Notification' in window)) {
-    console.warn('[Push] Browser does not support notifications.');
-    return null;
+    return {
+      token: null,
+      permission: 'denied',
+      error: 'Ce navigateur ne prend pas en charge les notifications push.',
+    };
   }
 
   const permission = await Notification.requestPermission();
   if (permission !== 'granted') {
-    console.log('[Push] Notification permission denied or dismissed by user.');
-    return null;
+    return {
+      token: null,
+      permission,
+      error: 'Permission de notification refusée.',
+    };
   }
 
   const messaging = await getFirebaseMessaging();
-  if (!messaging) return null;
+  if (!messaging) {
+    return {
+      token: null,
+      permission,
+      error: 'Firebase Messaging non disponible dans ce navigateur.',
+    };
+  }
 
   try {
-    // Register the dedicated Firebase Messaging Service Worker and wait until active
     await navigator.serviceWorker.register('/firebase-messaging-sw.js', {
       scope: '/',
     });
@@ -117,26 +237,75 @@ export async function requestPushToken(): Promise<string | null> {
       serviceWorkerRegistration: readyRegistration,
     });
 
-    return token || null;
-  } catch (error) {
-    console.error('[Push] Error retrieving Web FCM token:', error);
-    return null;
+    if (!token) {
+      return {
+        token: null,
+        permission,
+        error: 'Impossible d’obtenir le jeton de notification.',
+      };
+    }
+
+    return { token, permission: 'granted' };
+  } catch (error: unknown) {
+    const msg =
+      error instanceof Error
+        ? error.message
+        : 'Erreur lors de la récupération du jeton FCM.';
+    console.warn('[Push] Error retrieving Web FCM token:', msg);
+    return { token: null, permission, error: msg };
   }
 }
 
+export async function requestPushToken(): Promise<string | null> {
+  const res = await requestPushTokenWithStatus();
+  return res.token;
+}
+
 /**
- * Listens for incoming push notifications while the web app is in the foreground.
+ * Listens for incoming push notifications while the app is in the foreground
+ * (supports both Capacitor native iOS/Android and Firebase Web Push).
  */
 export function onForegroundMessage(
   callback: (payload: MessagePayload) => void,
 ): (() => void) | null {
   if (typeof window === 'undefined') return null;
 
+  if (isNativeMobileApp()) {
+    let listenerHandle: { remove: () => Promise<void> } | null = null;
+    let cancelled = false;
+
+    PushNotifications.addListener('pushNotificationReceived', (notification) => {
+      if (cancelled) return;
+      callback({
+        from: 'apns',
+        collapseKey: '',
+        messageId: notification.id || `native_${Date.now()}`,
+        notification: {
+          title: notification.title || 'TranoGasy',
+          body: notification.body || '',
+        },
+        data: (notification.data as Record<string, string>) || {},
+      });
+    })
+      .then((handle) => {
+        if (cancelled) {
+          handle.remove().catch(() => {});
+        } else {
+          listenerHandle = handle;
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+      listenerHandle?.remove().catch(() => {});
+    };
+  }
+
   let unsubscribe: (() => void) | null = null;
   getFirebaseMessaging().then((messaging) => {
     if (messaging) {
       unsubscribe = onMessage(messaging, (payload) => {
-        console.log('[Push] Foreground notification received:', payload);
         callback(payload);
       });
     }

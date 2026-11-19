@@ -50,7 +50,7 @@ export default function Header({ onSearchClick }: HeaderProps) {
   };
 
   return (
-    <header className="sticky top-0 z-50 w-full h-16 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border-b border-zinc-200/60 dark:border-zinc-800/60 shadow-sm transition-colors duration-300">
+    <header className="sticky top-0 z-50 w-full pt-[var(--ios-safe-top)] h-[calc(4rem+var(--ios-safe-top))] bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border-b border-zinc-200/60 dark:border-zinc-800/60 shadow-sm transition-colors duration-300">
       <div className="mx-auto flex h-full max-w-[2000px] items-center gap-2 sm:gap-3.5 px-4 sm:px-6 md:px-8 lg:px-28 xl:px-32 2xl:px-36">
         
         {/* ── LEFT: Branded Logo (Matches LandingNav scrolled) ── */}

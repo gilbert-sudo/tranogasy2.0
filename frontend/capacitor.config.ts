@@ -43,6 +43,11 @@ const config: CapacitorConfig = {
       '*.papi.mg',
     ],
   },
+  plugins: {
+    PushNotifications: {
+      presentationOptions: ['badge', 'sound', 'alert'],
+    },
+  },
   ios: {
     contentInset: 'never',
     allowsLinkPreview: false,

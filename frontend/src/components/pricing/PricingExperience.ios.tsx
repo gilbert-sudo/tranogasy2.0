@@ -321,7 +321,7 @@ export default function PricingExperience() {
   // ============================================================================
   if (completedReceipt) {
     return (
-      <div className="fixed inset-0 z-[130] w-full h-[100dvh] max-h-[100dvh] bg-[#F5F5F7] dark:bg-zinc-950 flex flex-col justify-between p-4 sm:p-6 font-sans select-none overflow-hidden">
+      <div className="fixed inset-0 z-[130] w-full h-[100dvh] max-h-[100dvh] bg-[#F5F5F7] dark:bg-zinc-950 flex flex-col justify-between p-4 pt-[calc(1rem+var(--ios-safe-top))] sm:p-6 sm:pt-[calc(1.5rem+var(--ios-safe-top))] font-sans select-none overflow-hidden">
         <div className="max-w-md w-full mx-auto flex items-center justify-between shrink-0">
           <button
             type="button"
@@ -418,7 +418,7 @@ export default function PricingExperience() {
   // MAIN VIEW: MINIMALISTIC AGENCY ASSISTANCE
   // ============================================================================
   return (
-    <div className="fixed inset-0 z-[130] w-full h-[100dvh] max-h-[100dvh] bg-[#F5F5F7] dark:bg-zinc-950 text-zinc-900 dark:text-white font-sans selection:bg-brand-green/20 flex flex-col justify-between p-3.5 sm:p-5 lg:p-6 overflow-hidden select-none">
+    <div className="fixed inset-0 z-[130] w-full h-[100dvh] max-h-[100dvh] bg-[#F5F5F7] dark:bg-zinc-950 text-zinc-900 dark:text-white font-sans selection:bg-brand-green/20 flex flex-col justify-between p-3.5 pt-[calc(0.875rem+var(--ios-safe-top))] sm:p-5 sm:pt-[calc(1.25rem+var(--ios-safe-top))] lg:p-6 overflow-hidden select-none">
       {/* Header (Minimalist — No subtitle) */}
       <header className="max-w-5xl w-full mx-auto flex items-center justify-between gap-3 shrink-0">
         <div className="flex items-center gap-3">

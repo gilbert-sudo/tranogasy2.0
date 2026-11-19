@@ -10,7 +10,7 @@ export default function ExploreLayout({
       <div className="shrink-0 w-full">
         <Header />
       </div>
-      <div className="w-full h-[calc(100dvh-4rem)] shrink-0 bg-black pb-16 md:pb-20 lg:pb-0">
+      <div className="w-full h-[calc(100dvh-4rem-var(--ios-safe-top))] shrink-0 bg-black pb-16 md:pb-20 lg:pb-0">
         {children}
       </div>
     </div>

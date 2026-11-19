@@ -147,7 +147,9 @@ export default function LandingNav() {
       <header
         className="fixed inset-x-0 top-0 z-50 overflow-hidden"
         style={{
-          height: isScrolled ? 'var(--nav-h, 64px)' : 'var(--hero-h, 305px)',
+          height: isScrolled
+            ? 'calc(var(--nav-h, 64px) + var(--ios-safe-top, 0px))'
+            : 'calc(var(--hero-h, 305px) + var(--ios-safe-top, 0px))',
           transition: 'height 0.4s cubic-bezier(0.2, 0.8, 0.2, 1)',
         } as React.CSSProperties}
       >
@@ -194,7 +196,10 @@ export default function LandingNav() {
         />
 
         {/* ── Container ── */}
-        <div className={`relative z-10 h-full flex flex-col ${isScrolled ? 'justify-center' : ''} w-full max-w-[2000px] mx-auto px-4 sm:px-6 md:px-8 lg:px-28 xl:px-32 2xl:px-36`}>
+        <div
+          className={`relative z-10 h-full flex flex-col ${isScrolled ? 'justify-center' : ''} w-full max-w-[2000px] mx-auto px-4 sm:px-6 md:px-8 lg:px-28 xl:px-32 2xl:px-36`}
+          style={{ paddingTop: 'var(--ios-safe-top, 0px)' }}
+        >
           
           {/* ══════════════════════════════════════════════════════════
               TOP ROW: Greeting / Location & Liquid Glass Bell + Actions
@@ -780,7 +785,7 @@ export default function LandingNav() {
 
       {/* ── Spacer matching the hero height ── */}
       <div
-        style={{ height: 'var(--hero-h, 305px)' }}
+        style={{ height: 'calc(var(--hero-h, 305px) + var(--ios-safe-top, 0px))' }}
         aria-hidden="true"
       />
     </>

@@ -278,7 +278,7 @@ export default function SearchEngineShell() {
         {/* ══════════════════════════════════════════════════════════════════
             FLOATING LIQUID-GLASS TOP OMNIBOX (Shown in all modes: map, split, list, feed)
         ══════════════════════════════════════════════════════════════════ */}
-        <div className="fixed top-2.5 sm:top-4 inset-x-0 z-40 px-3 sm:px-5 pointer-events-none">
+        <div className="fixed top-[calc(0.625rem+var(--ios-safe-top))] sm:top-[calc(1rem+var(--ios-safe-top))] inset-x-0 z-40 px-3 sm:px-5 pointer-events-none">
           <SearchTopOmnibox
             autoFocus={
               searchParams.get('focus') === '1' ||

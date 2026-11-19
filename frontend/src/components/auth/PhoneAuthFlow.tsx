@@ -323,7 +323,7 @@ export default function PhoneAuthFlow({
       />
 
       {/* Top Navigation / Header Bar */}
-      <div className="relative z-10 flex items-center justify-between px-6 sm:px-8 pt-9 pb-2 md:px-6 md:pt-7 min-h-[76px] md:min-h-[60px] shrink-0">
+      <div className="relative z-10 flex items-center justify-between px-6 sm:px-8 pt-[calc(2.25rem+var(--ios-safe-top))] pb-2 md:px-6 md:pt-7 min-h-[76px] md:min-h-[60px] shrink-0">
         {step !== 'phone' ? (
           <button
             type="button"

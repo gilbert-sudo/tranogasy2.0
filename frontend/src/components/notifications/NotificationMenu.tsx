@@ -42,6 +42,7 @@ export default function NotificationMenu() {
     permission,
     isSubscribed,
     isLoading: isEnablingPush,
+    feedback: pushFeedback,
     latestNotification,
     enableNotifications,
     sendTest,
@@ -290,7 +291,7 @@ export default function NotificationMenu() {
         `}
       >
         {/* ── Top Bar Header (With Native Mobile Go-Back Button) ── */}
-        <header className="sticky top-0 z-10 w-full h-16 shrink-0 bg-white/85 dark:bg-zinc-900/85 backdrop-blur-xl border-b border-zinc-200/60 dark:border-zinc-800/60 shadow-xs px-4 sm:px-5 flex items-center justify-between">
+        <header className="sticky top-0 z-10 w-full max-md:pt-[var(--ios-safe-top)] max-md:h-[calc(4rem+var(--ios-safe-top))] md:h-16 shrink-0 bg-white/85 dark:bg-zinc-900/85 backdrop-blur-xl border-b border-zinc-200/60 dark:border-zinc-800/60 shadow-xs px-4 sm:px-5 flex items-center justify-between">
           <div className="flex items-center gap-3 min-w-0">
             {/* Mobile Go-Back Button */}
             <button
@@ -347,27 +348,36 @@ export default function NotificationMenu() {
         {/* ── Scrollable Body ── */}
         <div className="flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5 space-y-3.5 pb-24 md:pb-5">
           {/* Push Activation Card */}
-          {!isSubscribed && permission !== 'denied' && (
-            <div className="p-4 rounded-3xl bg-white dark:bg-zinc-900 border border-brand-green/30 shadow-[0_8px_24px_rgba(124,189,30,0.12)] flex items-center gap-3.5">
-              <div className="w-11 h-11 rounded-2xl bg-brand-green text-white flex items-center justify-center shrink-0 shadow-md shadow-brand-green/30">
-                <Smartphone className="w-5 h-5" />
+          {!isSubscribed && (
+            <div className="p-4 rounded-3xl bg-white dark:bg-zinc-900 border border-brand-green/30 shadow-[0_8px_24px_rgba(124,189,30,0.12)] space-y-2">
+              <div className="flex items-center gap-3.5">
+                <div className="w-11 h-11 rounded-2xl bg-brand-green text-white flex items-center justify-center shrink-0 shadow-md shadow-brand-green/30">
+                  <Smartphone className="w-5 h-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs sm:text-sm font-black text-zinc-900 dark:text-white leading-snug">
+                    Activer les alertes push
+                  </p>
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400 line-clamp-1 mt-0.5">
+                    {permission === 'denied'
+                      ? 'Autorisez dans Réglages > TranoGasy'
+                      : 'Confirmations Papi & alertes en temps réel'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={enableNotifications}
+                  disabled={isEnablingPush}
+                  className="shrink-0 text-xs font-black px-4 py-2 rounded-full bg-brand-green hover:bg-brand-green/90 text-white shadow-md shadow-brand-green/25 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  {isEnablingPush ? '…' : 'Activer'}
+                </button>
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs sm:text-sm font-black text-zinc-900 dark:text-white leading-snug">
-                  Activer les alertes push
+              {pushFeedback && (
+                <p className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 px-1">
+                  {pushFeedback}
                 </p>
-                <p className="text-[11px] text-zinc-500 dark:text-zinc-400 line-clamp-1 mt-0.5">
-                  Confirmations Papi & alertes en temps réel
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={enableNotifications}
-                disabled={isEnablingPush}
-                className="shrink-0 text-xs font-black px-4 py-2 rounded-full bg-brand-green hover:bg-brand-green/90 text-white shadow-md shadow-brand-green/25 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
-              >
-                {isEnablingPush ? '…' : 'Activer'}
-              </button>
+              )}
             </div>
           )}
 

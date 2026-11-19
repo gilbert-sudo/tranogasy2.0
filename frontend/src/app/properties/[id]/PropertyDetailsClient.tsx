@@ -401,7 +401,7 @@ function PropertyDetailsContent({
       </div>
       
       {/* Mobile Top Actions */}
-      <div className="fixed top-0 left-0 right-0 z-50 pointer-events-none lg:hidden bg-gradient-to-b from-black/50 via-black/15 to-transparent pt-4 pb-10 px-4 flex justify-between items-start">
+      <div className="fixed top-0 left-0 right-0 z-50 pointer-events-none lg:hidden bg-gradient-to-b from-black/50 via-black/15 to-transparent pt-[calc(1rem+var(--ios-safe-top))] pb-10 px-4 flex justify-between items-start">
         <button 
           onClick={onBack || (() => router.back())} 
           aria-label="Retour"

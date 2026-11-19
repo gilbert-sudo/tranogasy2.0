@@ -702,7 +702,7 @@ export default function CreateListingForm({
     <div className={`w-full ${embedded ? 'bg-transparent' : 'min-h-screen bg-transparent'} text-zinc-900 dark:text-white`}>
       {/* ── BORDERLESS TOP BAR (Standalone only) ── */}
       {!embedded && (
-        <header className="sticky top-0 z-30 w-full backdrop-blur-xl bg-white/80 dark:bg-zinc-950/80 px-4 sm:px-8 py-3.5 flex items-center justify-between border-b border-zinc-200/40 dark:border-zinc-800/40">
+        <header className="sticky top-0 z-30 w-full backdrop-blur-xl bg-white/80 dark:bg-zinc-950/80 px-4 sm:px-8 pt-[calc(0.875rem+var(--ios-safe-top))] pb-3.5 flex items-center justify-between border-b border-zinc-200/40 dark:border-zinc-800/40">
           <div className="flex items-center gap-3">
             <button
               type="button"

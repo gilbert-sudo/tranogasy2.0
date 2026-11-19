@@ -88,7 +88,16 @@ export class NotificationsController {
         body: message,
         data: { url: body.url || '/' },
       });
-      return { success: res.successCount > 0, result: res };
+      return {
+        success: res.successCount > 0,
+        result: res,
+        ...(res.apnsConfigured === false
+          ? {
+              message:
+                'Clé APNs iOS (APNS_KEY_ID / APNS_PRIVATE_KEY_P8) non configurée sur le serveur backend.',
+            }
+          : {}),
+      };
     }
 
     if (body.userId) {

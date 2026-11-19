@@ -1,6 +1,14 @@
 @import "tailwindcss";
 @variant dark (&:where(.dark, .dark *));
 
+/* iOS-only edge-to-edge top safe area inset (strictly 0px on Web & Android) */
+:root {
+  --ios-safe-top: 0px;
+}
+html[data-platform="ios"] {
+  --ios-safe-top: env(safe-area-inset-top, 0px);
+}
+
 @theme {
   --color-brand-green: #7cbd1e;
   --color-brand-red: #ec1c24;
