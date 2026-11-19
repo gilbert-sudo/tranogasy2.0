@@ -12,9 +12,15 @@
     "start": "next start",
     "start:ios": "cross-env NEXT_PUBLIC_PLATFORM=ios next start",
     "start:android": "cross-env NEXT_PUBLIC_PLATFORM=android next start",
+    "cap:sync:ios": "cross-env CAP_TARGET_PLATFORM=ios cap sync ios",
+    "cap:sync:android": "cross-env CAP_TARGET_PLATFORM=android cap sync android",
+    "cap:open:ios": "cap open ios",
+    "cap:open:android": "cap open android",
     "lint": "eslint"
   },
   "dependencies": {
+    "@capacitor/core": "^8.6.2",
+    "@capacitor/ios": "^8.6.2",
     "@google-cloud/storage": "^8.4.0",
     "@react-google-maps/api": "^2.20.8",
     "@vis.gl/react-google-maps": "^1.10.1",
@@ -32,6 +38,7 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.6.2",
     "@tailwindcss/postcss": "^4",
     "@types/google.maps": "^3.66.4",
     "@types/node": "^20",
