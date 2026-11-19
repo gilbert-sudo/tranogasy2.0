@@ -47,7 +47,7 @@ const config: CapacitorConfig = {
     contentInset: 'never',
     allowsLinkPreview: false,
     scrollEnabled: true,
-    backgroundColor: '#09090b',
+    backgroundColor: '#ffffff',
   },
   android: {
     allowMixedContent: false,
