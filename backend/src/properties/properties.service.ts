@@ -403,7 +403,7 @@ export class PropertiesService {
   async searchProperties(query: Record<string, any>, viewerUserId?: string) {
     const page = Math.max(1, parseInt(query.page, 10) || 1);
     const limit = Math.min(500, Math.max(1, parseInt(query.limit, 10) || 250));
-    const effectiveViewerId = viewerUserId || query.viewerId || undefined;
+    const effectiveViewerId = viewerUserId || undefined;
 
     const mongoFilter: Record<string, any> = {};
 

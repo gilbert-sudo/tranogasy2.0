@@ -16,11 +16,19 @@ interface UserStore {
 export const useUserStore = create<UserStore>((set, get) => ({
   user: null,
   sessionEpoch: 0,
-  setUser: (user) =>
+  setUser: (user) => {
     set((state) => ({
       user,
       sessionEpoch: user ? state.sessionEpoch : state.sessionEpoch + 1,
-    })),
+    }));
+    if (typeof window !== 'undefined' && user?.authToken) {
+      try {
+        localStorage.setItem('authToken', String(user.authToken));
+      } catch {
+        // Ignore storage quota errors
+      }
+    }
+  },
   updateSubscription: (expiresAt: string | null, planLabel?: string | null) => {
     const current = get().user;
     if (!current) return;

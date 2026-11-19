@@ -190,10 +190,24 @@ export function useUserProfile(identifier?: string | null, sourceName?: string |
         if (res?.user) {
           patchCachedUser(targetUserId, res.user);
           if (isOwnProfile && currentUser) {
-            setUserInStore({
-              ...currentUser,
-              ...res.user,
-            });
+            const existingSession = useUserStore.getState().user;
+            const mergedUser = { ...currentUser, ...res.user };
+            const updatedSession = existingSession?.user
+              ? { ...existingSession, user: mergedUser }
+              : {
+                  ...mergedUser,
+                  ...(existingSession?.authToken
+                    ? { authToken: existingSession.authToken }
+                    : {}),
+                };
+            setUserInStore(updatedSession);
+            if (typeof window !== 'undefined') {
+              try {
+                localStorage.setItem('user', JSON.stringify(updatedSession));
+              } catch {
+                // Ignore storage quota errors
+              }
+            }
           }
         }
         return res?.user || null;

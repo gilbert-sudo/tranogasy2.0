@@ -20,6 +20,12 @@ import {
 } from '../common/property-sanitizer.util';
 import { User, UserDocument } from './schemas/user.schema';
 import { Property, PropertyDocument } from '../properties/schemas/property.schema';
+import { Favorite, FavoriteDocument } from '../favorites/schemas/favorite.schema';
+import {
+  Notification,
+  NotificationDocument,
+} from '../notifications/schemas/notification.schema';
+import { Comment, CommentDocument } from '../comments/schemas/comment.schema';
 import { PropertiesService } from '../properties/properties.service';
 import { SmsService } from '../sms/sms.service';
 
@@ -32,6 +38,10 @@ export class UsersService {
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     @InjectModel(Property.name) private propertyModel: Model<PropertyDocument>,
+    @InjectModel(Favorite.name) private favoriteModel: Model<FavoriteDocument>,
+    @InjectModel(Notification.name)
+    private notificationModel: Model<NotificationDocument>,
+    @InjectModel(Comment.name) private commentModel: Model<CommentDocument>,
     private readonly configService: ConfigService,
     private readonly smsService: SmsService,
     private readonly propertiesService: PropertiesService,
@@ -512,6 +522,65 @@ export class UsersService {
     return {
       message: 'Profil mis à jour avec succès',
       user: updated,
+    };
+  }
+
+  async deleteAccount(userId: string): Promise<{
+    deleted: boolean;
+    message: string;
+    deletedPropertiesCount: number;
+  }> {
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new BadRequestException('Identifiant utilisateur invalide');
+    }
+
+    const userObjectId = new Types.ObjectId(userId);
+    const existing = await this.userModel.findById(userObjectId).lean().exec();
+    if (!existing) {
+      throw new NotFoundException('Utilisateur non trouvé');
+    }
+
+    const ownedProperties = await this.propertyModel
+      .find({ owner: userObjectId })
+      .select('_id')
+      .lean()
+      .exec();
+    const ownedPropertyIds = ownedProperties.map((p) => p._id);
+
+    await Promise.all([
+      this.favoriteModel.deleteMany({
+        $or: [
+          { user: userObjectId },
+          ...(ownedPropertyIds.length > 0
+            ? [{ property: { $in: ownedPropertyIds } }]
+            : []),
+        ],
+      }),
+      this.notificationModel.deleteMany({ user: userObjectId }),
+      ownedPropertyIds.length > 0
+        ? this.commentModel.deleteMany({ property: { $in: ownedPropertyIds } })
+        : Promise.resolve(),
+      this.commentModel.updateMany(
+        { user: userObjectId },
+        {
+          $set: {
+            user: null,
+            authorName: 'Compte supprimé',
+            authorAvatar: null,
+          },
+        },
+      ),
+      ownedPropertyIds.length > 0
+        ? this.propertyModel.deleteMany({ _id: { $in: ownedPropertyIds } })
+        : Promise.resolve(),
+    ]);
+
+    await this.userModel.findByIdAndDelete(userObjectId).exec();
+
+    return {
+      deleted: true,
+      message: 'Votre compte et vos données associées ont été supprimés définitivement.',
+      deletedPropertiesCount: ownedPropertyIds.length,
     };
   }
 }

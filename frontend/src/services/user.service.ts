@@ -100,5 +100,21 @@ export const userService = {
       }
     );
   },
+
+  deleteAccount: (
+    userId: string
+  ): Promise<{
+    deleted: boolean;
+    message: string;
+    deletedPropertiesCount: number;
+  }> => {
+    return apiFetch<{
+      deleted: boolean;
+      message: string;
+      deletedPropertiesCount: number;
+    }>(`/users/${encodeURIComponent(userId)}`, {
+      method: 'DELETE',
+    });
+  },
 };
 

@@ -9,7 +9,12 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type { Request } from 'express';
+import {
+  assertVerifiedUserMatchesIdentifier,
+  extractRequiredVerifiedToken,
+} from '../common/auth.util';
 import { PaymentsService } from './payments.service';
 import type {
   AssistancePlanId,
@@ -18,7 +23,10 @@ import type {
 
 @Controller('api/payments')
 export class PaymentsController {
-  constructor(private readonly paymentsService: PaymentsService) {}
+  constructor(
+    private readonly paymentsService: PaymentsService,
+    private readonly configService: ConfigService,
+  ) {}
 
   /**
    * Generates a Papi hosted payment link for Web/Android time-based subscriptions
@@ -36,8 +44,19 @@ export class PaymentsController {
       successUrl?: string;
       failureUrl?: string;
     },
+    @Headers('x-auth-token') authToken?: string,
+    @Headers('authorization') authHeader?: string,
   ) {
-    return this.paymentsService.createSubscriptionPaymentLink(body);
+    const verified = extractRequiredVerifiedToken(
+      this.configService,
+      authToken,
+      authHeader,
+    );
+    return this.paymentsService.createSubscriptionPaymentLink({
+      ...body,
+      userId: verified.userId,
+      userPhone: verified.phone || body.userPhone,
+    });
   }
 
   /**
@@ -56,8 +75,19 @@ export class PaymentsController {
       successUrl?: string;
       failureUrl?: string;
     },
+    @Headers('x-auth-token') authToken?: string,
+    @Headers('authorization') authHeader?: string,
   ) {
-    return this.paymentsService.createAssistancePaymentLink(body);
+    const verified = extractRequiredVerifiedToken(
+      this.configService,
+      authToken,
+      authHeader,
+    );
+    return this.paymentsService.createAssistancePaymentLink({
+      ...body,
+      userId: verified.userId,
+      userPhone: verified.phone || body.userPhone,
+    });
   }
 
   /**
@@ -71,7 +101,19 @@ export class PaymentsController {
     @Req() req: Request & { rawBody?: Buffer },
   ) {
     const rawBody = req.rawBody || JSON.stringify(body);
-    return this.paymentsService.handlePapiWebhook(rawBody, signature, body);
+    const resolvedSignature =
+      signature ||
+      (typeof req.headers['x-signature'] === 'string'
+        ? req.headers['x-signature']
+        : undefined) ||
+      (typeof req.headers['papi-signature'] === 'string'
+        ? req.headers['papi-signature']
+        : undefined);
+    return this.paymentsService.handlePapiWebhook(
+      rawBody,
+      resolvedSignature,
+      body,
+    );
   }
 
   /**
@@ -83,7 +125,17 @@ export class PaymentsController {
   }
 
   @Get('wallet/:identifier')
-  async getUserWallet(@Param('identifier') identifier: string) {
-    return this.paymentsService.getUserWallet(identifier);
+  async getUserWallet(
+    @Param('identifier') identifier: string,
+    @Headers('x-auth-token') authToken?: string,
+    @Headers('authorization') authHeader?: string,
+  ) {
+    const verified = extractRequiredVerifiedToken(
+      this.configService,
+      authToken,
+      authHeader,
+    );
+    assertVerifiedUserMatchesIdentifier(verified, identifier, true);
+    return this.paymentsService.getUserWallet(verified.userId);
   }
 }

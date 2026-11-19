@@ -67,12 +67,11 @@ export function useAssistance() {
     const identifier = activeUser?._id || activeUser?.phone;
     if (!identifier) return;
 
-    const initialExpiry =
-      activeUser?.assistanceExpiresAt || activeUser?.subscriptionExpiresAt || null;
+    const initialExpiry = activeUser?.assistanceExpiresAt || null;
     if (initialExpiry) {
       syncExpirationStatus(
         String(initialExpiry),
-        activeUser.assistancePlanLabel || activeUser.subscriptionPlanLabel || null
+        activeUser.assistancePlanLabel || null
       );
     }
 
@@ -88,8 +87,8 @@ export function useAssistance() {
           return;
         }
 
-        const expiresAt = res?.assistanceExpiresAt ?? res?.subscriptionExpiresAt;
-        const planLabel = res?.assistancePlanLabel ?? res?.subscriptionPlanLabel;
+        const expiresAt = res?.assistanceExpiresAt;
+        const planLabel = res?.assistancePlanLabel;
         if (expiresAt !== undefined) {
           syncExpirationStatus(expiresAt || null, planLabel ?? null);
         } else if (planLabel !== undefined) {
@@ -186,8 +185,8 @@ export function useAssistance() {
       try {
         const res = await assistanceService.getAssistanceStatus(ref);
         if (res.status === 'confirmed') {
-          const expiresAt = res.assistanceExpiresAt || res.subscriptionExpiresAt || null;
-          const planLabel = res.assistancePlanLabel ?? res.subscriptionPlanLabel ?? null;
+          const expiresAt = res.assistanceExpiresAt || null;
+          const planLabel = res.assistancePlanLabel ?? null;
           if (expiresAt) {
             syncExpirationStatus(expiresAt, planLabel);
           } else if (planLabel) {

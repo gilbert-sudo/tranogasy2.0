@@ -22,6 +22,7 @@ import { usePropertyStore } from '@/store/propertyStore';
 import { useFavoriteStore } from '@/store/favoriteStore';
 import { useFavorite } from '@/hooks/useFavorite';
 import { useUserStore } from '@/store/userStore';
+import { useModalStore } from '@/store/modalStore';
 import { usePropertyDetailModalStore } from '@/store/propertyDetailModalStore';
 import { resolveProfileHref } from '@/services/user.service';
 import { formatPublicationDateTime, formatExactPublicationDateTime } from '@/lib/dateFormat';
@@ -135,11 +136,13 @@ function PropertyCardComponent({ property }: PropertyProps) {
     }
   }, [currentUserId, property?._id, checkFavorite]);
 
+  const openModal = useModalStore((state) => state.openModal);
+
   const handleFavoriteClick = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     if (!currentUser) {
-      alert('Veuillez vous connecter pour ajouter aux favoris');
+      openModal('login');
       return;
     }
     await toggleFavorite(property._id, currentUser._id);
@@ -163,7 +166,7 @@ function PropertyCardComponent({ property }: PropertyProps) {
         .slice(0, 3)
         .map((img: any) => (typeof img === 'string' ? img : img?.src))
         .filter(Boolean)
-    : ['https://via.placeholder.com/400x300?text=TranoGasy'];
+    : ['/icon-logo.png'];
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [touchStart, setTouchStart] = useState<number | null>(null);

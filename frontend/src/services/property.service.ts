@@ -1,4 +1,4 @@
-import { apiFetch, getStoredSessionAuth } from './api';
+import { apiFetch } from './api';
 
 export interface SearchPropertiesParams {
   page?: string | number;
@@ -23,19 +23,11 @@ export interface SearchPropertiesParams {
 
 export const propertyService = {
   getPropertyById: (id: string) => {
-    const { userId } = getStoredSessionAuth();
-    return apiFetch<any>(`/properties/${encodeURIComponent(id)}`, {
-      params: userId ? { viewerId: userId } : undefined,
-    });
+    return apiFetch<any>(`/properties/${encodeURIComponent(id)}`);
   },
   
   getProperties: (params?: any) => {
-    const { userId } = getStoredSessionAuth();
-    const mergedParams =
-      userId && !params?.viewerId
-        ? { ...params, viewerId: userId }
-        : params;
-    return apiFetch<any>('/properties', { params: mergedParams });
+    return apiFetch<any>('/properties', { params });
   },
 
   searchProperties: async (params?: SearchPropertiesParams) => {
@@ -47,10 +39,6 @@ export const propertyService = {
         }
       });
     }
-    const { userId } = getStoredSessionAuth();
-    if (userId && !cleanParams.viewerId) {
-      cleanParams.viewerId = userId;
-    }
     try {
       return await apiFetch<any>('/properties/search', { params: cleanParams });
     } catch {
@@ -59,7 +47,6 @@ export const propertyService = {
         params: {
           page: cleanParams.page || '1',
           limit: cleanParams.limit || '200',
-          ...(cleanParams.viewerId ? { viewerId: cleanParams.viewerId } : {}),
         },
       });
     }

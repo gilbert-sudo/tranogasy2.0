@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { X, Share2, Phone, MapPin, Heart, ChevronLeft, BedDouble, Expand, Home, Utensils, Droplets, Grid2X2, ChevronRight, MessageCircle, Send, Layers } from 'lucide-react';
+import { X, Share2, Phone, MapPin, Heart, ChevronLeft, BedDouble, Expand, Home, Utensils, Droplets, Grid2X2, ChevronRight, MessageCircle, Send, Layers, Check } from 'lucide-react';
 import { getHouseTypeLabel, isCommercialHouseType } from '@/lib/propertyTypes';
 import {
   FaCar, FaMotorcycle, FaWifi, FaParking, FaShieldAlt, FaSwimmingPool, FaHotTub, FaBed, FaShower
@@ -22,6 +22,7 @@ import PropertyEntryFees from '@/components/property/PropertyEntryFees';
 import TikTokCommentsDrawer from '@/components/feed/TikTokCommentsDrawer';
 import TikTokContactModal from '@/components/feed/TikTokContactModal';
 import { useUserStore } from '@/store/userStore';
+import { useModalStore } from '@/store/modalStore';
 import { usePropertyDetailModalStore } from '@/store/propertyDetailModalStore';
 import { useProperty } from '@/hooks/useProperty';
 import { useFavorite } from '@/hooks/useFavorite';
@@ -117,10 +118,12 @@ function PropertyDetailsContent({
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [currentMobileImageIndex, setCurrentMobileImageIndex] = useState(0);
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
+  const [shareToast, setShareToast] = useState<string | null>(null);
   const lightboxRef = useRef<HTMLDivElement | null>(null);
   const initialLightboxIndexRef = useRef<number>(0);
 
   const userStore = useUserStore(state => state.user);
+  const openModal = useModalStore(state => state.openModal);
   const currentUser = userStore?.user || userStore;
   const closePropertyDetail = usePropertyDetailModalStore(state => state.closePropertyDetail);
   const autoOpenContactForPropertyId = usePropertyDetailModalStore(
@@ -183,7 +186,7 @@ function PropertyDetailsContent({
     e.preventDefault();
     e.stopPropagation();
     if (!currentUser) {
-      alert('Veuillez vous connecter pour ajouter aux favoris');
+      openModal('login');
       return;
     }
     await toggleFavorite(property._id, currentUser._id);
@@ -191,7 +194,7 @@ function PropertyDetailsContent({
 
   const images = property?.images && property.images.length > 0 
     ? property.images.map((img: any) => typeof img === 'string' ? img : img.src)
-    : ['https://via.placeholder.com/1200x800?text=TranoGasy'];
+    : ['/icon-logo.png'];
 
   const openLightbox = (index: number) => {
     if (!images.length) return;
@@ -343,8 +346,9 @@ function PropertyDetailsContent({
           url: window.location.href,
         });
       } else {
-        navigator.clipboard.writeText(window.location.href);
-        alert('Lien copié dans le presse-papiers !');
+        await navigator.clipboard.writeText(window.location.href);
+        setShareToast('Lien copié dans le presse-papiers');
+        setTimeout(() => setShareToast(null), 2500);
       }
     } catch (error) {
       console.error('Erreur lors du partage:', error);
@@ -1001,6 +1005,17 @@ function PropertyDetailsContent({
           <div className="absolute bottom-6 left-1/2 -translate-x-1/2 text-white px-5 py-2.5 rounded-full bg-white/10 border border-white/20 text-sm font-bold tracking-widest backdrop-blur-md z-20">
             {lightboxIndex + 1} / {images.length}
           </div>
+        </div>
+      )}
+
+      {shareToast && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-24 lg:bottom-8 left-1/2 -translate-x-1/2 z-[130] px-4 py-2.5 rounded-full bg-zinc-950/95 dark:bg-white/95 text-white dark:text-zinc-950 text-xs sm:text-sm font-bold shadow-xl flex items-center gap-2 backdrop-blur-md animate-in fade-in slide-in-from-bottom-2 duration-200"
+        >
+          <Check className="w-4 h-4 text-brand-green shrink-0" />
+          <span>{shareToast}</span>
         </div>
       )}
 

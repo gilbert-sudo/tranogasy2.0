@@ -186,7 +186,7 @@ function MapPropertyPreviewCarouselComponent({
           const imgUrl =
             typeof rawImg === 'string'
               ? rawImg
-              : rawImg?.src || 'https://via.placeholder.com/400x300?text=TranoGasy';
+              : rawImg?.src || '/icon-logo.png';
           const displayPrice =
             property.type === 'sale' ? property.price : property.rent;
           const isFav = Boolean(favorites[property._id]);

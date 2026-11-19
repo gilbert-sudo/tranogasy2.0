@@ -18,6 +18,7 @@ import {
   Compass,
   Loader2,
   Sparkles,
+  AlertCircle,
 } from 'lucide-react';
 import { cityService, CityLocation } from '@/services/city.service';
 import { Circle } from '../map/Circle';
@@ -54,6 +55,7 @@ function ListingLocationPickerContent({
   const [resolvingMessage, setResolvingMessage] = useState('');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isLocatingUser, setIsLocatingUser] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
 
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({
     lat: -18.8792,
@@ -247,6 +249,7 @@ function ListingLocationPickerContent({
   const handleSelectGooglePlace = async (
     prediction: google.maps.places.AutocompletePrediction
   ) => {
+    setLocationError(null);
     setIsResolving(true);
     const placeName =
       prediction.structured_formatting?.main_text || prediction.description;
@@ -256,7 +259,7 @@ function ListingLocationPickerContent({
       // 1. Get coords from Google Places API
       const placeCoords = await getPlaceCoordinates(prediction);
       if (!placeCoords) {
-        alert("Impossible de récupérer les coordonnées GPS de ce lieu.");
+        setLocationError("Impossible de récupérer les coordonnées GPS de ce lieu.");
         setIsResolving(false);
         return;
       }
@@ -300,7 +303,7 @@ function ListingLocationPickerContent({
       setIsDropdownOpen(false);
     } catch (err) {
       console.error('Error resolving Google Place:', err);
-      alert('Une erreur est survenue lors de la sélection du lieu.');
+      setLocationError('Une erreur est survenue lors de la sélection du lieu.');
     } finally {
       setIsResolving(false);
       setResolvingMessage('');
@@ -309,6 +312,7 @@ function ListingLocationPickerContent({
 
   // Handle selection of a backend city (fallback)
   const handleChooseBackendCity = (city: CityLocation) => {
+    setLocationError(null);
     onSelectCity(city);
     if (city.coords) {
       onCoordsChange(city.coords);
@@ -324,6 +328,7 @@ function ListingLocationPickerContent({
   // Handle map click to refine coordinates
   const handleMapClick = (e: MapMouseEvent) => {
     if (e.detail?.latLng) {
+      setLocationError(null);
       const newCoords = {
         lat: e.detail.latLng.lat,
         lng: e.detail.latLng.lng,
@@ -334,8 +339,9 @@ function ListingLocationPickerContent({
 
   // Get current device GPS position
   const handleUseCurrentLocation = () => {
+    setLocationError(null);
     if (!navigator.geolocation) {
-      alert("La géolocalisation n'est pas prise en charge par votre navigateur.");
+      setLocationError("La géolocalisation n'est pas prise en charge par votre navigateur.");
       return;
     }
 
@@ -368,7 +374,7 @@ function ListingLocationPickerContent({
       },
       (err) => {
         console.warn('Geolocation error:', err.message);
-        alert("Impossible de récupérer votre position GPS actuelle.");
+        setLocationError("Impossible de récupérer votre position GPS actuelle.");
         setIsLocatingUser(false);
       },
       { enableHighAccuracy: true, timeout: 8000 }
@@ -390,6 +396,26 @@ function ListingLocationPickerContent({
           Recherchez par lieu Google Places ou nom de commune / fokontany, puis affinez le repère sur la carte.
         </p>
       </div>
+
+      {locationError && (
+        <div
+          role="alert"
+          className="flex items-center justify-between gap-2.5 px-4 py-2.5 rounded-2xl bg-red-500/10 border border-red-500/20 text-xs sm:text-sm font-semibold text-red-600 dark:text-red-400"
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{locationError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setLocationError(null)}
+            aria-label="Fermer l'alerte"
+            className="p-1 rounded-full hover:bg-red-500/15 transition-colors cursor-pointer shrink-0"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* 1. Location Selection Input / Dropdown */}
       {!selectedCity ? (

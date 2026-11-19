@@ -49,6 +49,31 @@ function saveLocalAccountToRegistry(phone: string, account: StoredPhoneAccount):
   }
 }
 
+function removeLocalAccountFromRegistry(phone?: string | null, userId?: string | null): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const registry = getLocalAccountsRegistry();
+    if (phone && registry[phone]) {
+      delete registry[phone];
+    }
+    if (userId) {
+      for (const [k, v] of Object.entries(registry)) {
+        if (v?._id && String(v._id) === String(userId)) {
+          delete registry[k];
+        }
+      }
+    }
+    localStorage.setItem(KNOWN_ACCOUNTS_STORAGE_KEY, JSON.stringify(registry));
+    const keysToRemove = [phone, userId].filter(Boolean) as string[];
+    for (const key of keysToRemove) {
+      localStorage.removeItem(`tranogasy_sub_transactions_${key}`);
+      localStorage.removeItem(`tranogasy_assistance_receipts_${key}`);
+    }
+  } catch {
+    // Ignore storage errors
+  }
+}
+
 export function useAuth() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -444,6 +469,41 @@ export function useAuth() {
     router.replace('/');
   }, [logoutAction, router]);
 
+  const deleteAccount = useCallback(async (): Promise<{
+    success: boolean;
+    error?: string;
+  }> => {
+    setError(null);
+    const activeSession = useUserStore.getState().user;
+    const activeUser = activeSession?.user || activeSession;
+    if (!activeUser?._id) {
+      const msg = 'Aucun compte connecté à supprimer.';
+      setError(msg);
+      return { success: false, error: msg };
+    }
+
+    setIsLoading(true);
+    try {
+      const isSyntheticId = String(activeUser._id).startsWith('tg_');
+      if (!isSyntheticId) {
+        await userService.deleteAccount(String(activeUser._id));
+      }
+      removeLocalAccountFromRegistry(activeUser.phone, activeUser._id);
+      logoutAction();
+      router.replace('/');
+      return { success: true };
+    } catch (err: unknown) {
+      const msg =
+        err instanceof Error
+          ? err.message
+          : 'Impossible de supprimer votre compte pour le moment.';
+      setError(msg);
+      return { success: false, error: msg };
+    } finally {
+      setIsLoading(false);
+    }
+  }, [logoutAction, router]);
+
   return {
     requestSmsVerification,
     resendSmsVerification,
@@ -454,6 +514,7 @@ export function useAuth() {
     formatPhoneNumber,
     clearError,
     logout,
+    deleteAccount,
     verifiedPhone,
     isLoading,
     error,

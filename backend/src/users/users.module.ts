@@ -1,5 +1,11 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
+import { Comment, CommentSchema } from '../comments/schemas/comment.schema';
+import { Favorite, FavoriteSchema } from '../favorites/schemas/favorite.schema';
+import {
+  Notification,
+  NotificationSchema,
+} from '../notifications/schemas/notification.schema';
 import { PropertiesModule } from '../properties/properties.module';
 import { Property, PropertySchema } from '../properties/schemas/property.schema';
 import { SmsModule } from '../sms/sms.module';
@@ -14,6 +20,9 @@ import { UsersService } from './users.service';
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
       { name: Property.name, schema: PropertySchema },
+      { name: Favorite.name, schema: FavoriteSchema },
+      { name: Notification.name, schema: NotificationSchema },
+      { name: Comment.name, schema: CommentSchema },
     ]),
   ],
   controllers: [UsersController],

@@ -7,10 +7,12 @@ import {
   Param,
   Post,
   Query,
-  UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { resolveAuthSecret, verifyAuthToken } from '../common/phone.util';
+import {
+  extractOptionalVerifiedToken,
+  extractRequiredVerifiedToken,
+} from '../common/auth.util';
 import { PropertiesService } from './properties.service';
 
 @Controller('api/properties')
@@ -20,53 +22,26 @@ export class PropertiesController {
     private readonly configService: ConfigService,
   ) {}
 
-  private extractVerifiedToken(authTokenHeader?: string, authHeader?: string) {
-    const rawBearer = authHeader?.startsWith('Bearer ')
-      ? authHeader.slice(7).trim()
-      : undefined;
-    const token = authTokenHeader || rawBearer;
-    const secret = resolveAuthSecret(
-      this.configService.get<string>('AUTH_TOKEN_SECRET') ||
-        this.configService.get<string>('JWT_SECRET'),
-      this.configService.get<string>('DATABASE_URI'),
-    );
-    const verified = verifyAuthToken(token, secret);
-    if (!verified) {
-      throw new UnauthorizedException('Jeton de session invalide ou expiré. Veuillez vous reconnecter.');
-    }
-    return verified;
-  }
-
   private extractOptionalViewerId(
     authTokenHeader?: string,
     authHeader?: string,
-    explicitViewerId?: string,
   ): string | undefined {
-    const rawBearer = authHeader?.startsWith('Bearer ')
-      ? authHeader.slice(7).trim()
-      : undefined;
-    const token = authTokenHeader || rawBearer;
-    if (token) {
-      const secret = resolveAuthSecret(
-        this.configService.get<string>('AUTH_TOKEN_SECRET') ||
-          this.configService.get<string>('JWT_SECRET'),
-        this.configService.get<string>('DATABASE_URI'),
-      );
-      const verified = verifyAuthToken(token, secret);
-      if (verified?.userId) return verified.userId;
-    }
-    return explicitViewerId ? String(explicitViewerId).trim() : undefined;
+    const verified = extractOptionalVerifiedToken(
+      this.configService,
+      authTokenHeader,
+      authHeader,
+    );
+    return verified?.userId || undefined;
   }
 
   @Get()
   async getPaginatedProperties(
     @Query('page') page: string,
     @Query('limit') limit: string,
-    @Query('viewerId') viewerId?: string,
     @Headers('x-auth-token') authToken?: string,
     @Headers('authorization') authHeader?: string,
   ) {
-    const resolvedViewer = this.extractOptionalViewerId(authToken, authHeader, viewerId);
+    const resolvedViewer = this.extractOptionalViewerId(authToken, authHeader);
     return this.propertiesService.getPaginatedProperties(
       page ? parseInt(page, 10) : 1,
       limit ? parseInt(limit, 10) : 20,
@@ -77,11 +52,10 @@ export class PropertiesController {
   @Get('latest')
   async getLatestProperties(
     @Query('limit') limit: string,
-    @Query('viewerId') viewerId?: string,
     @Headers('x-auth-token') authToken?: string,
     @Headers('authorization') authHeader?: string,
   ) {
-    const resolvedViewer = this.extractOptionalViewerId(authToken, authHeader, viewerId);
+    const resolvedViewer = this.extractOptionalViewerId(authToken, authHeader);
     return this.propertiesService.getLatestProperties(
       limit ? parseInt(limit, 10) : 10,
       resolvedViewer,
@@ -94,11 +68,7 @@ export class PropertiesController {
     @Headers('x-auth-token') authToken?: string,
     @Headers('authorization') authHeader?: string,
   ) {
-    const resolvedViewer = this.extractOptionalViewerId(
-      authToken,
-      authHeader,
-      query?.viewerId,
-    );
+    const resolvedViewer = this.extractOptionalViewerId(authToken, authHeader);
     return this.propertiesService.searchProperties(query, resolvedViewer);
   }
 
@@ -107,7 +77,11 @@ export class PropertiesController {
     @Headers('x-auth-token') authToken?: string,
     @Headers('authorization') authHeader?: string,
   ) {
-    const verified = this.extractVerifiedToken(authToken, authHeader);
+    const verified = extractRequiredVerifiedToken(
+      this.configService,
+      authToken,
+      authHeader,
+    );
     return this.propertiesService.findClaimableForUser(verified.userId);
   }
 
@@ -122,7 +96,11 @@ export class PropertiesController {
     @Headers('x-auth-token') authToken?: string,
     @Headers('authorization') authHeader?: string,
   ) {
-    const verified = this.extractVerifiedToken(authToken, authHeader);
+    const verified = extractRequiredVerifiedToken(
+      this.configService,
+      authToken,
+      authHeader,
+    );
     if (!Array.isArray(body?.propertyIds) || body.propertyIds.length === 0) {
       throw new BadRequestException('Veuillez sélectionner au moins une annonce à réclamer.');
     }
@@ -132,24 +110,31 @@ export class PropertiesController {
   @Get(':id')
   async findOne(
     @Param('id') id: string,
-    @Query('viewerId') viewerId?: string,
     @Headers('x-auth-token') authToken?: string,
     @Headers('authorization') authHeader?: string,
   ) {
-    const resolvedViewer = this.extractOptionalViewerId(authToken, authHeader, viewerId);
+    const resolvedViewer = this.extractOptionalViewerId(authToken, authHeader);
     return this.propertiesService.findOne(id, resolvedViewer);
   }
 
   @Post()
-  async create(@Body() createPropertyDto: any) {
+  async create(
+    @Body() createPropertyDto: any,
+    @Headers('x-auth-token') authToken?: string,
+    @Headers('authorization') authHeader?: string,
+  ) {
+    const verified = extractRequiredVerifiedToken(
+      this.configService,
+      authToken,
+      authHeader,
+    );
     const safeDto =
       createPropertyDto && typeof createPropertyDto === 'object'
         ? { ...createPropertyDto }
-        : createPropertyDto;
-    if (safeDto && typeof safeDto === 'object') {
-      delete safeDto.created_at;
-      delete safeDto.updated_at;
-    }
+        : {};
+    delete safeDto.created_at;
+    delete safeDto.updated_at;
+    safeDto.owner = verified.userId;
     return this.propertiesService.create(safeDto);
   }
 }

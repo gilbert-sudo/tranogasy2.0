@@ -14,7 +14,11 @@ import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { Model, Types } from 'mongoose';
 import * as os from 'os';
-import { normalizeMalagasyPhone } from '../common/phone.util';
+import {
+  normalizeMalagasyPhone,
+  resolveAuthSecret,
+  signAuthToken,
+} from '../common/phone.util';
 import {
   getRequiredMissingSpecs,
   isCommercialHouseType,
@@ -593,7 +597,10 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
   /**
    * Authenticates an admin using phone number or email + password (for phone-only OTP bypass on admin console).
    */
-  async adminLogin(identifier: string, password: string): Promise<{ message: string; user: any }> {
+  async adminLogin(
+    identifier: string,
+    password: string,
+  ): Promise<{ message: string; user: any; authToken: string }> {
     const cleanId = (identifier || '').trim();
     const cleanPassword = (password || '').trim();
     if (!cleanId || !cleanPassword) {
@@ -633,9 +640,21 @@ export class FbIngestionService implements OnModuleInit, OnModuleDestroy {
     delete userObj.password;
     delete userObj.backUpCode;
 
+    const secret = resolveAuthSecret(
+      this.configService.get<string>('AUTH_TOKEN_SECRET') ||
+        this.configService.get<string>('JWT_SECRET'),
+      this.configService.get<string>('DATABASE_URI'),
+    );
+    const authToken = signAuthToken(
+      String(userObj._id),
+      String(userObj.phone || ''),
+      secret,
+    );
+
     return {
       message: 'Connexion administrateur réussie',
       user: userObj,
+      authToken,
     };
   }
 

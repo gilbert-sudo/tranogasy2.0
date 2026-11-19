@@ -2,6 +2,7 @@ import {
   Injectable,
   BadRequestException,
   NotFoundException,
+  UnauthorizedException,
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -377,17 +378,55 @@ export class PaymentsService {
   }
 
   private async applyConfirmedPayment(payment: PaymentDocument) {
+    const claimed = await this.paymentModel
+      .findOneAndUpdate(
+        { _id: payment._id, status: { $ne: 'confirmed' } },
+        {
+          $set: {
+            status: 'confirmed',
+            ...(payment.papiRawStatus ? { papiRawStatus: payment.papiRawStatus } : {}),
+            ...(payment.operator ? { operator: payment.operator } : {}),
+            ...(payment.papiPaymentMethod
+              ? { papiPaymentMethod: payment.papiPaymentMethod }
+              : {}),
+          },
+        },
+        { new: true },
+      )
+      .exec();
+
+    if (!claimed) {
+      // Another concurrent webhook or polling request already confirmed this payment.
+      const existingConfirmed = await this.paymentModel
+        .findById(payment._id)
+        .lean()
+        .exec();
+      if (existingConfirmed) {
+        payment.status = 'confirmed';
+        if (existingConfirmed.assistanceExpiresAt) {
+          payment.assistanceExpiresAt = existingConfirmed.assistanceExpiresAt;
+        }
+        if (existingConfirmed.subscriptionExpiresAt) {
+          payment.subscriptionExpiresAt = existingConfirmed.subscriptionExpiresAt;
+        }
+      }
+      this.logger.log(
+        `Payment ${payment.ref} already confirmed concurrently; skipping duplicate extension.`,
+      );
+      return this.userModel.findById(payment.user).lean().exec();
+    }
+
     payment.status = 'confirmed';
-    const isAssistance = payment.category === 'agency_assistance';
+    const isAssistance = claimed.category === 'agency_assistance';
     const existingUser = await this.userModel
-      .findById(payment.user)
+      .findById(claimed.user)
       .select('subscriptionExpiresAt assistanceExpiresAt')
       .lean()
       .exec();
 
     const nowMs = Date.now();
     const relevantExpiry = isAssistance
-      ? existingUser?.assistanceExpiresAt || existingUser?.subscriptionExpiresAt
+      ? existingUser?.assistanceExpiresAt
       : existingUser?.subscriptionExpiresAt;
     const baseTimeMs =
       relevantExpiry && new Date(relevantExpiry).getTime() > nowMs
@@ -395,22 +434,27 @@ export class PaymentsService {
         : nowMs;
 
     const durationHours =
-      Number(payment.subscriptionDurationHours || payment.assistanceDurationHours) ||
-      24;
+      Number(
+        isAssistance
+          ? claimed.assistanceDurationHours
+          : claimed.subscriptionDurationHours,
+      ) || 24;
     const expiresAt = new Date(baseTimeMs + durationHours * 3600 * 1000);
 
     const planLabel = isAssistance
-      ? AGENCY_ASSISTANCE_PLANS[payment.assistancePlanId as AssistancePlanId]?.label ||
-        `${durationHours}h`
-      : TIME_SUBSCRIPTION_PLANS[payment.subscriptionPlanId as SubscriptionPlanId]?.label ||
-        `${durationHours}h`;
+      ? AGENCY_ASSISTANCE_PLANS[claimed.assistancePlanId as AssistancePlanId]
+          ?.label || `${durationHours}h`
+      : TIME_SUBSCRIPTION_PLANS[claimed.subscriptionPlanId as SubscriptionPlanId]
+          ?.label || `${durationHours}h`;
 
     if (isAssistance) {
+      claimed.assistanceExpiresAt = expiresAt;
       payment.assistanceExpiresAt = expiresAt;
     } else {
+      claimed.subscriptionExpiresAt = expiresAt;
       payment.subscriptionExpiresAt = expiresAt;
     }
-    await payment.save();
+    await claimed.save();
 
     // For iOS (agency_assistance), do NOT set subscriptionExpiresAt or hasAllContactsUnlocked
     // automatically on payment confirmation; an admin activates contact access remotely.
@@ -425,28 +469,28 @@ export class PaymentsService {
         };
 
     const updatedUser = await this.userModel.findByIdAndUpdate(
-      payment.user,
+      claimed.user,
       { $set: userUpdateFields },
       { new: true },
     );
 
     this.logger.log(
-      `Payment ${payment.ref} confirmed (${payment.category}). ${isAssistance ? 'Assistance' : 'Subscription'} (${planLabel}) expires: ${expiresAt.toISOString()}`,
+      `Payment ${claimed.ref} confirmed (${claimed.category}). ${isAssistance ? 'Assistance' : 'Subscription'} (${planLabel}) expires: ${expiresAt.toISOString()}`,
     );
 
     try {
       await this.notificationsService.createAndSend({
-        userId: payment.user.toString(),
+        userId: claimed.user.toString(),
         title: isAssistance
           ? '🎉 Reçu confirmé !'
           : '🎉 Abonnement activé !',
         body: isAssistance
-          ? `Votre forfait ${planLabel} (${payment.amount.toLocaleString('fr-FR')} Ar) est validé. Réf: ${payment.ref}.`
-          : `Votre accès ${planLabel} (${payment.amount.toLocaleString('fr-FR')} Ar) est actif sur TranoGasy.`,
+          ? `Votre forfait ${planLabel} (${claimed.amount.toLocaleString('fr-FR')} Ar) est validé. Réf: ${claimed.ref}.`
+          : `Votre accès ${planLabel} (${claimed.amount.toLocaleString('fr-FR')} Ar) est actif sur TranoGasy.`,
         data: {
           url: '/pricing',
           type: 'payment_success',
-          ref: payment.ref,
+          ref: claimed.ref,
         },
       });
     } catch (notifErr: any) {
@@ -477,22 +521,22 @@ export class PaymentsService {
       amount: payment.amount,
       operator: payment.operator,
       category: payment.category || 'time_subscription',
-      subscriptionPlanId: payment.subscriptionPlanId || payment.assistancePlanId,
-      subscriptionDurationHours:
-        payment.subscriptionDurationHours || payment.assistanceDurationHours,
+      subscriptionPlanId: payment.subscriptionPlanId || undefined,
+      subscriptionDurationHours: payment.subscriptionDurationHours || undefined,
       subscriptionExpiresAt: isAssistance
         ? user?.subscriptionExpiresAt || null
         : payment.subscriptionExpiresAt || user?.subscriptionExpiresAt || null,
       subscriptionPlanLabel: isAssistance
         ? user?.subscriptionPlanLabel || null
         : planLabel,
-      assistancePlanId: payment.assistancePlanId || payment.subscriptionPlanId,
-      assistanceDurationHours:
-        payment.assistanceDurationHours || payment.subscriptionDurationHours,
+      assistancePlanId: payment.assistancePlanId || undefined,
+      assistanceDurationHours: payment.assistanceDurationHours || undefined,
       assistanceExpiresAt: isAssistance
         ? payment.assistanceExpiresAt || user?.assistanceExpiresAt || null
-        : payment.subscriptionExpiresAt || user?.subscriptionExpiresAt || null,
-      assistancePlanLabel: planLabel,
+        : user?.assistanceExpiresAt || null,
+      assistancePlanLabel: isAssistance
+        ? planLabel
+        : user?.assistancePlanLabel || null,
     };
   }
 
@@ -506,25 +550,42 @@ export class PaymentsService {
   ) {
     this.logger.log(`Received Papi webhook: ${JSON.stringify(payload)}`);
 
-    if (this.webhookSecret && signatureHeader && rawBody) {
-      try {
-        const computedHmac = crypto
-          .createHmac('sha256', this.webhookSecret)
-          .update(
-            Buffer.isBuffer(rawBody)
-              ? rawBody
-              : Buffer.from(rawBody, 'utf8'),
-          )
-          .digest('hex');
+    if (!this.webhookSecret) {
+      this.logger.error('Papi webhook rejected: PAPI_WEBHOOK_SECRET is not configured.');
+      throw new UnauthorizedException('Webhook Papi non configuré.');
+    }
 
-        if (computedHmac.toLowerCase() !== signatureHeader.toLowerCase()) {
-          this.logger.warn(
-            `Papi webhook signature mismatch! Computed: ${computedHmac}, Header: ${signatureHeader}`,
-          );
-        }
-      } catch (err: any) {
-        this.logger.error(`Error validating signature: ${err.message}`);
-      }
+    if (!signatureHeader || !rawBody) {
+      this.logger.warn('Papi webhook rejected: missing signature header or raw body.');
+      throw new UnauthorizedException('Signature webhook Papi manquante.');
+    }
+
+    const normalizedSignature = signatureHeader
+      .trim()
+      .replace(/^sha256=/i, '')
+      .toLowerCase();
+
+    const computedHmac = crypto
+      .createHmac('sha256', this.webhookSecret)
+      .update(
+        Buffer.isBuffer(rawBody)
+          ? rawBody
+          : Buffer.from(rawBody, 'utf8'),
+      )
+      .digest('hex')
+      .toLowerCase();
+
+    const sigBuf = Buffer.from(normalizedSignature, 'utf8');
+    const expectedBuf = Buffer.from(computedHmac, 'utf8');
+
+    if (
+      sigBuf.length !== expectedBuf.length ||
+      !crypto.timingSafeEqual(sigBuf, expectedBuf)
+    ) {
+      this.logger.warn(
+        `Papi webhook signature mismatch! Computed length=${expectedBuf.length}, Header length=${sigBuf.length}`,
+      );
+      throw new UnauthorizedException('Signature webhook Papi invalide.');
     }
 
     const ref = payload?.merchantPaymentReference || payload?.reference;
@@ -581,7 +642,9 @@ export class PaymentsService {
 
     const user = await this.userModel
       .findById(payment.user)
-      .select('username phone subscriptionExpiresAt subscriptionPlanLabel')
+      .select(
+        'username phone subscriptionExpiresAt subscriptionPlanLabel assistanceExpiresAt assistancePlanLabel',
+      )
       .lean()
       .exec();
 
@@ -696,11 +759,14 @@ export class PaymentsService {
     const assistanceExpiresAt =
       user.assistanceExpiresAt ||
       latestConfirmedAssistance?.assistanceExpiresAt ||
-      user.subscriptionExpiresAt ||
       null;
     const assistancePlanLabel =
       user.assistancePlanLabel ||
-      user.subscriptionPlanLabel ||
+      (latestConfirmedAssistance?.assistancePlanId
+        ? AGENCY_ASSISTANCE_PLANS[
+            latestConfirmedAssistance.assistancePlanId as AssistancePlanId
+          ]?.label
+        : null) ||
       null;
 
     return {

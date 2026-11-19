@@ -1,7 +1,9 @@
 import { useState, useCallback } from 'react';
 import { useFavoriteStore } from '../store/favoriteStore';
 import { useUserStore } from '../store/userStore';
+import { useModalStore } from '../store/modalStore';
 import { favoriteService } from '../services/favorite.service';
+import { ApiError, getStoredSessionAuth } from '../services/api';
 
 // Module-level deduplication so 200 mounted cards trigger at most 1 network request
 let inFlightUserFavsPromise: Promise<any[]> | null = null;
@@ -21,6 +23,14 @@ export function useFavorite() {
     async (propertyId: string, userId: string) => {
       const currentFavorites = useFavoriteStore.getState().favorites;
       const previousState = currentFavorites[propertyId] || false;
+      const { authToken } = getStoredSessionAuth();
+
+      if (!authToken) {
+        setError('Votre session a expiré. Veuillez vous reconnecter.');
+        useModalStore.getState().openModal('login');
+        return previousState;
+      }
+
       const optimisticState = !previousState;
 
       // Optimistic Update
@@ -30,10 +40,15 @@ export function useFavorite() {
         const data = await favoriteService.toggleFavorite(userId, propertyId);
         setFavorite(propertyId, data.isFavorite);
         return data.isFavorite;
-      } catch (e: any) {
-        console.error('Failed to toggle favorite, reverting state:', e);
-        // Revert on network error
+      } catch (e: unknown) {
+        // Revert on error
         setFavorite(propertyId, previousState);
+        if (e instanceof ApiError && e.status === 401) {
+          setError('Votre session a expiré. Veuillez vous reconnecter.');
+          useModalStore.getState().openModal('login');
+        } else {
+          console.warn('Failed to toggle favorite, reverting state:', e);
+        }
         return previousState;
       }
     },
@@ -43,6 +58,12 @@ export function useFavorite() {
   const fetchFavorites = useCallback(
     async (userId: string) => {
       if (!userId) return [];
+      const { authToken } = getStoredSessionAuth();
+      if (!authToken) {
+        setFavorites({}, userId);
+        setFavoritePropertiesData([]);
+        return [];
+      }
       if (inFlightUserFavsPromise && inFlightUserId === userId) {
         return inFlightUserFavsPromise;
       }
@@ -71,9 +92,20 @@ export function useFavorite() {
           setFavoritePropertiesData(props);
 
           return props;
-        } catch (e: any) {
-          console.error('Failed to fetch favorites:', e);
-          setError(e.message || 'Impossible de charger les favoris.');
+        } catch (e: unknown) {
+          if (e instanceof ApiError && e.status === 401) {
+            // Stop repeated retries from mounted cards when a legacy/expired token is present
+            setFavorites({}, userId);
+            setFavoritePropertiesData([]);
+            setError('Votre session a expiré. Veuillez vous reconnecter.');
+            return [];
+          }
+          console.warn('Failed to fetch favorites:', e);
+          setError(
+            e instanceof Error
+              ? e.message
+              : 'Impossible de charger les favoris.'
+          );
           return [];
         } finally {
           setIsLoading(false);

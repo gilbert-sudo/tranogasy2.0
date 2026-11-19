@@ -1,13 +1,33 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { sanitizePropertyForViewer } from '../common/property-sanitizer.util';
+import { User, UserDocument } from '../users/schemas/user.schema';
 import { Favorite, FavoriteDocument } from './schemas/favorite.schema';
 
 @Injectable()
 export class FavoritesService {
   constructor(
     @InjectModel(Favorite.name) private favoriteModel: Model<FavoriteDocument>,
+    @InjectModel(User.name) private userModel: Model<UserDocument>,
   ) {}
+
+  private async hasFullContactAccess(viewerUserId?: string): Promise<boolean> {
+    if (!viewerUserId || !Types.ObjectId.isValid(viewerUserId)) {
+      return false;
+    }
+    const viewer = await this.userModel
+      .findById(viewerUserId)
+      .select('hasAllContactsUnlocked subscriptionExpiresAt')
+      .lean()
+      .catch(() => null);
+    if (!viewer) return false;
+    if (viewer.hasAllContactsUnlocked) return true;
+    if (viewer.subscriptionExpiresAt) {
+      return new Date(viewer.subscriptionExpiresAt).getTime() > Date.now();
+    }
+    return false;
+  }
 
   async toggleFavorite(userId: string, propertyId: string) {
     if (!Types.ObjectId.isValid(userId) || !Types.ObjectId.isValid(propertyId)) {
@@ -50,7 +70,7 @@ export class FavoritesService {
 
     const skip = (page - 1) * limit;
 
-    const [favorites, total] = await Promise.all([
+    const [favorites, total, viewerHasFullAccess] = await Promise.all([
       this.favoriteModel
         .find({ user: userId })
         .populate({
@@ -66,10 +86,17 @@ export class FavoritesService {
         .limit(limit)
         .lean(),
       this.favoriteModel.countDocuments({ user: userId }),
+      this.hasFullContactAccess(userId),
     ]);
 
-    // Extract the properties, filtering out any nulls if property was deleted
-    const properties = favorites.map(f => f.property).filter(p => p !== null);
+    // Extract the properties, filtering out any nulls if property was deleted,
+    // and enforce contact paywall sanitization for the viewer.
+    const properties = favorites
+      .map((f) => f.property)
+      .filter((p) => p !== null)
+      .map((p) =>
+        sanitizePropertyForViewer(p, false, userId, viewerHasFullAccess),
+      );
 
     return {
       properties,
