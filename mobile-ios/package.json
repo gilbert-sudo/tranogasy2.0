@@ -1,0 +1,22 @@
+{
+  "name": "tranogasy-ios",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Native iOS Capacitor wrapper for TranoGasy",
+  "scripts": {
+    "cap:add:ios": "cap add ios",
+    "cap:sync": "cap sync ios",
+    "configure:ios": "node scripts/configure-ios.mjs"
+  },
+  "dependencies": {
+    "@capacitor/app": "^6.0.2",
+    "@capacitor/browser": "^6.0.3",
+    "@capacitor/core": "^6.2.0",
+    "@capacitor/ios": "^6.2.0",
+    "@capacitor/splash-screen": "^6.0.3",
+    "@capacitor/status-bar": "^6.0.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.2.0"
+  }
+}
