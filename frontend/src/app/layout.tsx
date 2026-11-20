@@ -5,6 +5,7 @@ import BottomNavigation from "@/components/BottomNavigation";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import AuthModals from "@/components/AuthModals";
 import PropertyDetailsModal from "@/components/property/PropertyDetailsModal";
+import NativeAppBootstrap from "@/components/mobile/NativeAppBootstrap";
 import { APP_PLATFORM } from "@/lib/platform";
 
 const geistSans = Geist({
@@ -65,6 +66,7 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <div className="flex min-h-screen flex-col bg-background pb-16 md:pb-24 lg:pb-8">
+            <NativeAppBootstrap />
             <main className="flex-1">{children}</main>
             <BottomNavigation />
             <AuthModals />

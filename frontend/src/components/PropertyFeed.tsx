@@ -16,6 +16,31 @@ interface PropertyFeedProps {
 }
 
 const PAGE_LIMIT = 10;
+const OFFLINE_FEED_STORAGE_PREFIX = 'tranogasy_feed_cache_v1_';
+
+function readOfflineFeedCache(key: string): any[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(`${OFFLINE_FEED_STORAGE_PREFIX}${key}`);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed?.properties) ? parsed.properties : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeOfflineFeedCache(key: string, items: any[]): void {
+  if (typeof window === 'undefined' || !Array.isArray(items) || items.length === 0) return;
+  try {
+    localStorage.setItem(
+      `${OFFLINE_FEED_STORAGE_PREFIX}${key}`,
+      JSON.stringify({ savedAt: Date.now(), properties: items.slice(0, PAGE_LIMIT) })
+    );
+  } catch {
+    // Ignore storage quota errors
+  }
+}
 
 interface PrefetchedBatch {
   page: number;
@@ -295,13 +320,14 @@ export default function PropertyFeed({
           : fetched.length < PAGE_LIMIT;
         const newHasMore = fetched.length === PAGE_LIMIT && !reachedEnd;
 
-        // Persist to Zustand store so on second render it will be taken from Zustand
+        // Persist to Zustand store and offline localStorage cache
         setTopPropertiesData(currentCacheKey, {
           properties: fetched,
           page: 1,
           hasMore: newHasMore,
         });
         addPropertiesToGlobalStore(fetched);
+        writeOfflineFeedCache(currentCacheKey, fetched);
 
         retryAttemptRef.current = 0;
         setProperties(fetched);
@@ -326,12 +352,37 @@ export default function PropertyFeed({
           return;
         }
 
+        // If device is offline, hydrate from localStorage cache immediately instead of hanging on retries
+        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+          const offlineCached = readOfflineFeedCache(currentCacheKey);
+          setIsLoadingInitial(false);
+          setIsFilterLoading(false);
+          setIsWakingUp(false);
+          if (offlineCached.length > 0) {
+            setProperties(offlineCached);
+            addPropertiesToGlobalStore(offlineCached);
+            setHasMore(false);
+            setHasFailed(false);
+          } else {
+            setHasFailed(true);
+          }
+          return;
+        }
+
         const nextAttempt = retryAttemptRef.current + 1;
         retryAttemptRef.current = nextAttempt;
         setRetryCount(nextAttempt);
 
         if (nextAttempt < 8) {
-          setIsWakingUp(true);
+          const offlineCached = readOfflineFeedCache(currentCacheKey);
+          if (offlineCached.length > 0 && nextAttempt === 1) {
+            setProperties(offlineCached);
+            addPropertiesToGlobalStore(offlineCached);
+            setIsLoadingInitial(false);
+            setIsFilterLoading(false);
+          } else {
+            setIsWakingUp(true);
+          }
           const delayMs = Math.min(2000 + nextAttempt * 1000, 5000);
           retryTimeoutRef.current = setTimeout(() => {
             if (isMountedRef.current && reqId === activeReqIdRef.current) {
@@ -341,8 +392,19 @@ export default function PropertyFeed({
         } else {
           const reason = error instanceof Error ? error.message : String(error);
           console.warn(`[PropertyFeed] Serveur API inaccessible (${url}) : ${reason}`);
+          const offlineCached = readOfflineFeedCache(currentCacheKey);
           setIsLoadingInitial(false);
           setIsFilterLoading(false);
+          setIsWakingUp(false);
+          if (offlineCached.length > 0) {
+            setProperties(offlineCached);
+            addPropertiesToGlobalStore(offlineCached);
+            setHasMore(false);
+            setHasFailed(false);
+          } else {
+            setHasFailed(true);
+          }
+          return;
           setIsWakingUp(false);
           setHasFailed(true);
         }
@@ -629,11 +691,18 @@ export default function PropertyFeed({
     prefetchNextPage,
   ]);
 
-  // Track mount status & clean up timeouts and abort controllers
+  // Track mount status, auto-refresh when back online, & clean up timeouts/aborts
   useEffect(() => {
     isMountedRef.current = true;
+    const handleOnline = () => {
+      if (isMountedRef.current) {
+        void fetchPageRef.current(1, filterType, houseTypeFilter, sortBy, false);
+      }
+    };
+    window.addEventListener('online', handleOnline);
     return () => {
       isMountedRef.current = false;
+      window.removeEventListener('online', handleOnline);
       activeReqIdRef.current += 1;
       clearPendingRetry();
       if (fetchAbortControllerRef.current) {
@@ -643,7 +712,7 @@ export default function PropertyFeed({
         prefetchAbortControllerRef.current.abort();
       }
     };
-  }, [clearPendingRetry]);
+  }, [clearPendingRetry, filterType, houseTypeFilter, sortBy]);
 
   // IntersectionObserver for infinite scrolling
   useEffect(() => {

@@ -1,3 +1,4 @@
+import { Capacitor } from '@capacitor/core';
 import { apiFetch } from './api';
 
 export interface PublicProfileUser {
@@ -37,8 +38,21 @@ export interface UpdateUserProfilePayload {
   email?: string;
 }
 
+function buildProfilePath(identifier: string): string {
+  const encoded = encodeURIComponent(identifier);
+  try {
+    if (typeof window !== 'undefined' && Capacitor.isNativePlatform()) {
+      return `/profile?id=${encoded}`;
+    }
+  } catch {
+    // Web fallback
+  }
+  return `/profile/${encoded}`;
+}
+
 /**
- * Helper to resolve the clean `/profile/[id]` URL for any property owner, curated source, or comment author.
+ * Helper to resolve the clean `/profile/[id]` URL (or `/profile?id=...` in locally bundled mobile apps)
+ * for any property owner, curated source, or comment author.
  */
 export function resolveProfileHref(
   owner?: { _id?: string; username?: string; role?: string } | string | null,
@@ -46,33 +60,33 @@ export function resolveProfileHref(
   fallbackName?: string | null
 ): string {
   if (typeof owner === 'string' && owner.trim()) {
-    return `/profile/${encodeURIComponent(owner.trim())}`;
+    return buildProfilePath(owner.trim());
   }
 
   const ownerObj = typeof owner === 'object' && owner !== null ? owner : null;
 
   if (ownerObj?._id) {
-    return `/profile/${encodeURIComponent(ownerObj._id)}`;
+    return buildProfilePath(ownerObj._id);
   }
 
   if (ownerObj?.username && ownerObj.role !== 'admin') {
-    return `/profile/${encodeURIComponent(ownerObj.username.trim())}`;
+    return buildProfilePath(ownerObj.username.trim());
   }
 
   if (sources?.username) {
-    return `/profile/${encodeURIComponent(sources.username.trim().replace(/^@/, ''))}`;
+    return buildProfilePath(sources.username.trim().replace(/^@/, ''));
   }
 
   if (ownerObj?.username) {
-    return `/profile/${encodeURIComponent(ownerObj.username.trim())}`;
+    return buildProfilePath(ownerObj.username.trim());
   }
 
   if (sources?.username) {
-    return `/profile/${encodeURIComponent(sources.username.trim())}`;
+    return buildProfilePath(sources.username.trim());
   }
 
   if (fallbackName && fallbackName.trim()) {
-    return `/profile/${encodeURIComponent(fallbackName.trim().replace(/^@/, ''))}`;
+    return buildProfilePath(fallbackName.trim().replace(/^@/, ''));
   }
 
   return '/profile';

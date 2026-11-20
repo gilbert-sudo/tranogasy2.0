@@ -3,6 +3,16 @@ import { getGcsBucket, getGcsErrorMessage } from '@/lib/gcs';
 
 export const runtime = 'nodejs';
 
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-auth-token',
+};
+
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -20,7 +30,7 @@ export async function POST(req: NextRequest) {
     if (!fileName) {
       return NextResponse.json(
         { error: 'Aucun nom ou URL de fichier valide fourni' },
-        { status: 400 }
+        { status: 400, headers: CORS_HEADERS }
       );
     }
 
@@ -37,17 +47,23 @@ export async function POST(req: NextRequest) {
       console.log(`[GCS Delete] File ${fileName} does not exist in bucket, skipping delete.`);
     }
 
-    return NextResponse.json({
-      success: true,
-      message: 'Image supprimée avec succès du cloud Google Cloud Storage',
-      deletedFile: fileName,
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        message: 'Image supprimée avec succès du cloud Google Cloud Storage',
+        deletedFile: fileName,
+      },
+      { headers: CORS_HEADERS }
+    );
   } catch (error: unknown) {
     console.error('Error deleting image from GCS:', error);
     const message = getGcsErrorMessage(
       error,
       'Erreur lors de la suppression sur Google Cloud Storage'
     );
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json(
+      { error: message },
+      { status: 500, headers: CORS_HEADERS }
+    );
   }
 }

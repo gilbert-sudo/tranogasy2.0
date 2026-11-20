@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const targetPlatform = process.env.NEXT_PUBLIC_PLATFORM || 'web';
+const isStaticMobileExport = process.env.CAP_STATIC_EXPORT === '1';
 const baseResolveExtensions = ['.tsx', '.ts', '.jsx', '.js', '.mjs', '.json'];
 const platformResolveExtensions =
   targetPlatform === 'ios'
@@ -10,6 +11,12 @@ const platformResolveExtensions =
     : ['.web.tsx', '.web.ts', '.web.jsx', '.web.js', ...baseResolveExtensions];
 
 const nextConfig: NextConfig = {
+  ...(isStaticMobileExport
+    ? {
+        output: 'export' as const,
+        trailingSlash: true,
+      }
+    : {}),
   allowedDevOrigins: [
     '172.28.224.1',
     '192.168.88.168',
@@ -31,6 +38,7 @@ const nextConfig: NextConfig = {
     },
   },
   images: {
+    ...(isStaticMobileExport ? { unoptimized: true } : {}),
     remotePatterns: [
       {
         protocol: 'https',

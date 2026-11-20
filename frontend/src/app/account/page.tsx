@@ -29,6 +29,7 @@ import {
 import { useUserStore } from '@/store/userStore';
 import { useModalStore } from '@/store/modalStore';
 import { useAuth } from '@/hooks/useAuth';
+import { resolveProfileHref } from '@/services/user.service';
 import Header from '@/components/Header';
 import DarkModeToggle from '@/components/DarkModeToggle';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
@@ -190,7 +191,7 @@ export default function AccountPage() {
   const currentUser = user?.user || user;
   const isLoggedIn = !!currentUser;
   const profileUrl = currentUser?._id
-    ? `/profile/${currentUser._id}`
+    ? resolveProfileHref(currentUser)
     : '/profile';
 
   return (

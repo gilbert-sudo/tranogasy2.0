@@ -47,7 +47,7 @@ import {
 import { useUserStore } from '@/store/userStore';
 import { useModalStore } from '@/store/modalStore';
 import { usePropertyStore } from '@/store/propertyStore';
-import { propertyService } from '@/services/property.service';
+import { propertyService, resolvePropertyHref } from '@/services/property.service';
 import { useImageUpload } from '@/hooks/useImageUpload';
 import { CityLocation } from '@/services/city.service';
 import ListingImageUploader from './ListingImageUploader';
@@ -438,7 +438,7 @@ export default function CreateListingForm({
           <div className="flex flex-col sm:flex-row gap-3 pt-2">
             <button
               type="button"
-              onClick={() => router.push(`/properties/${createdProperty._id}`)}
+              onClick={() => router.push(resolvePropertyHref(createdProperty._id))}
               className="flex-1 py-3.5 px-5 rounded-2xl bg-brand-green hover:bg-[#6fa81a] text-white font-bold text-sm shadow-md transition-all cursor-pointer"
             >
               Voir mon annonce

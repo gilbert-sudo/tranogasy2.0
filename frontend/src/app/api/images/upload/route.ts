@@ -3,6 +3,16 @@ import { getGcsBucket, getGcsErrorMessage } from '@/lib/gcs';
 
 export const runtime = 'nodejs';
 
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-auth-token',
+};
+
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
+}
+
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
@@ -11,7 +21,7 @@ export async function POST(req: NextRequest) {
     if (!file) {
       return NextResponse.json(
         { error: 'Aucun fichier fourni' },
-        { status: 400 }
+        { status: 400, headers: CORS_HEADERS }
       );
     }
 
@@ -35,20 +45,25 @@ export async function POST(req: NextRequest) {
 
     const imageUrl = `https://storage.googleapis.com/${bucketName}/${gcsFileName}`;
 
-    return NextResponse.json({
-      success: true,
-      imageUrl,
-      fileName: gcsFileName,
-      size: file.size,
-      mimeType: file.type,
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        imageUrl,
+        fileName: gcsFileName,
+        size: file.size,
+        mimeType: file.type,
+      },
+      { headers: CORS_HEADERS }
+    );
   } catch (error: unknown) {
     console.error('Error uploading image to GCS:', error);
     const message = getGcsErrorMessage(
       error,
       'Erreur lors du téléversement sur Google Cloud Storage'
     );
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json(
+      { error: message },
+      { status: 500, headers: CORS_HEADERS }
+    );
   }
 }
-

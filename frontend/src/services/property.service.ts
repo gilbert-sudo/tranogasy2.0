@@ -1,4 +1,32 @@
+import { Capacitor } from '@capacitor/core';
 import { apiFetch } from './api';
+
+export function resolvePropertyHref(propertyId: string): string {
+  const encoded = encodeURIComponent(propertyId);
+  try {
+    if (typeof window !== 'undefined' && Capacitor.isNativePlatform()) {
+      return `/property?id=${encoded}`;
+    }
+  } catch {
+    // Web fallback
+  }
+  return `/properties/${encoded}`;
+}
+
+export function resolvePublicPropertyShareUrl(propertyId: string): string {
+  const encoded = encodeURIComponent(propertyId);
+  if (typeof window !== 'undefined') {
+    const origin = window.location.origin || '';
+    if (
+      origin.startsWith('https://') &&
+      !origin.includes('localhost') &&
+      !Capacitor.isNativePlatform()
+    ) {
+      return `${origin}/properties/${encoded}`;
+    }
+  }
+  return `https://tranogasy2.vercel.app/properties/${encoded}`;
+}
 
 export interface SearchPropertiesParams {
   page?: string | number;

@@ -23,7 +23,7 @@ import { useUserStore } from '@/store/userStore';
 import { useModalStore } from '@/store/modalStore';
 import { usePropertyStore } from '@/store/propertyStore';
 import { usePropertyDetailModalStore } from '@/store/propertyDetailModalStore';
-import { propertyService } from '@/services/property.service';
+import { propertyService, resolvePropertyHref } from '@/services/property.service';
 import { useAuth } from '@/hooks/useAuth';
 import { useAssistance } from '@/hooks/useAssistance';
 import {
@@ -123,7 +123,7 @@ export default function PricingExperience() {
             : '/';
         router.replace(destUrl);
       } else {
-        router.replace(`/properties/${returnCtx.propertyId}`);
+        router.replace(resolvePropertyHref(returnCtx.propertyId));
       }
 
       return true;

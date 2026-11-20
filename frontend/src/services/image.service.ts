@@ -1,4 +1,5 @@
 import imageCompression from 'browser-image-compression';
+import { Capacitor } from '@capacitor/core';
 
 export interface UploadedImage {
   id: string;
@@ -11,6 +12,21 @@ export interface UploadedImage {
   error?: string;
 }
 
+function getImageApiOrigin(): string {
+  if (typeof window === 'undefined') return '';
+  try {
+    if (Capacitor.isNativePlatform()) {
+      return (
+        process.env.NEXT_PUBLIC_IMAGE_API_ORIGIN ||
+        'https://tranogasy-ios.vercel.app'
+      ).replace(/\/$/, '');
+    }
+  } catch {
+    // Web browser fallback
+  }
+  return '';
+}
+
 export const imageService = {
   /**
    * Compresses an image client-side and uploads it to Google Cloud Storage with real-time stage progress.
@@ -21,7 +37,7 @@ export const imageService = {
   ): Promise<{ src: string; fileName: string; name: string }> => {
     // 1. Client-side compression
     onProgress?.(20, 'compressing');
-    
+
     const compressionOptions = {
       maxSizeMB: 0.25,
       maxWidthOrHeight: 1920,
@@ -45,7 +61,8 @@ export const imageService = {
 
     onProgress?.(65, 'uploading');
 
-    const res = await fetch('/api/images/upload', {
+    const uploadUrl = `${getImageApiOrigin()}/api/images/upload`;
+    const res = await fetch(uploadUrl, {
       method: 'POST',
       body: formData,
     });
@@ -72,7 +89,8 @@ export const imageService = {
    */
   deleteImageFromGCS: async (imageUrl: string, fileName?: string): Promise<boolean> => {
     try {
-      const res = await fetch('/api/images/server-delete', {
+      const deleteUrl = `${getImageApiOrigin()}/api/images/server-delete`;
+      const res = await fetch(deleteUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ imageUrl, fileName }),

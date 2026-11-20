@@ -7,7 +7,7 @@ on:
       - main
     paths:
       - 'frontend/ios/**'
-      - 'frontend/mobile-shell/**'
+      - 'frontend/scripts/build-mobile.mjs'
       - 'frontend/capacitor.config.ts'
       - '.github/workflows/ios-testflight.yml'
 
@@ -28,10 +28,14 @@ jobs:
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Install frontend dependencies & sync Capacitor iOS
+      - name: Install frontend dependencies, build local iOS bundle & sync Capacitor
         working-directory: frontend
+        env:
+          NEXT_PUBLIC_API_URL: https://tranogasy2-api.onrender.com/api
+          NEXT_PUBLIC_IMAGE_API_ORIGIN: https://tranogasy-ios.vercel.app
         run: |
           npm ci
+          npm run build:mobile:ios
           npm run cap:sync:ios
 
       - name: Install Apple Certificate & Provisioning Profile

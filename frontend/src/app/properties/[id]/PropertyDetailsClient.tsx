@@ -27,6 +27,7 @@ import { usePropertyDetailModalStore } from '@/store/propertyDetailModalStore';
 import { useProperty } from '@/hooks/useProperty';
 import { useFavorite } from '@/hooks/useFavorite';
 import { resolveProfileHref } from '@/services/user.service';
+import { resolvePublicPropertyShareUrl } from '@/services/property.service';
 import { formatPublicationDateTime, formatExactPublicationDateTime } from '@/lib/dateFormat';
 
 const FEATURE_ICONS: Record<string, { icon: React.ElementType, label: string }> = {
@@ -338,15 +339,18 @@ function PropertyDetailsContent({
   };
 
   const handleShare = async () => {
+    const shareUrl = property?._id
+      ? resolvePublicPropertyShareUrl(String(property._id))
+      : window.location.href;
     try {
       if (navigator.share) {
         await navigator.share({
           title: property?.title,
           text: property?.description,
-          url: window.location.href,
+          url: shareUrl,
         });
       } else {
-        await navigator.clipboard.writeText(window.location.href);
+        await navigator.clipboard.writeText(shareUrl);
         setShareToast('Lien copié dans le presse-papiers');
         setTimeout(() => setShareToast(null), 2500);
       }
