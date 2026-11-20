@@ -8,8 +8,10 @@ interface LandingSectionFeedProps {
   initialProperties?: any[];
 }
 
+const EMPTY_PROPERTIES: never[] = [];
+
 export default function LandingSectionFeed({
-  initialProperties = [],
+  initialProperties = EMPTY_PROPERTIES,
 }: LandingSectionFeedProps) {
   const activeTab = usePropertyStore((state) => state.activeTab);
   const setActiveTab = usePropertyStore((state) => state.setActiveTab);

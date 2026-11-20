@@ -110,9 +110,9 @@ export default function ClaimableListingsBanner({
             type="button"
             onClick={() => setIsDismissed(true)}
             aria-label="Fermer"
-            className="p-1.5 rounded-full text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-200/60 dark:hover:bg-zinc-800 transition cursor-pointer"
+            className="w-9 h-9 rounded-full bg-white dark:bg-zinc-800/90 border border-zinc-300/90 dark:border-zinc-600/80 shadow-xs text-zinc-700 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-700 hover:border-zinc-400 flex items-center justify-center transition-all active:scale-90 cursor-pointer shrink-0"
           >
-            <X className="w-4 h-4" />
+            <X className="w-4 h-4 stroke-[2.25]" />
           </button>
         </div>
       </div>

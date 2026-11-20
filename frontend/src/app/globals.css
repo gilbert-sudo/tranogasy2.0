@@ -248,6 +248,20 @@ html[data-platform="ios"] {
   animation: glassIslandRise 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+@keyframes carouselProgress {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.animate-carousel-progress {
+  transform-origin: left center;
+  animation: carouselProgress 5s linear forwards;
+}
+
 .font-outfit {
   font-family: var(--font-outfit), var(--font-geist-sans), sans-serif;
 }

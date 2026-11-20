@@ -358,12 +358,12 @@ export default function PhoneAuthFlow({
             type="button"
             onClick={onClose}
             aria-label="Fermer"
-            className="w-10 h-10 md:w-9 md:h-9 -mr-2 md:-mr-1.5 rounded-full flex items-center justify-center text-zinc-600 dark:text-zinc-300 hover:bg-black/5 dark:hover:bg-white/10 active:scale-95 transition-all cursor-pointer"
+            className="w-11 h-11 md:w-10 md:h-10 rounded-full bg-white dark:bg-zinc-800/90 border border-zinc-300/90 dark:border-zinc-600/80 shadow-xs flex items-center justify-center text-zinc-800 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-700 hover:border-zinc-400 dark:hover:border-zinc-500 active:scale-90 transition-all cursor-pointer shrink-0"
           >
-            <X className="w-6 h-6 md:w-5 md:h-5" strokeWidth={2.3} />
+            <X className="w-5 h-5" strokeWidth={2.25} />
           </button>
         ) : (
-          <div className="w-10 h-10 md:w-9 md:h-9" />
+          <div className="w-11 h-11 md:w-10 md:h-10" />
         )}
       </div>
 

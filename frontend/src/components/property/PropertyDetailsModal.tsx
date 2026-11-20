@@ -296,8 +296,8 @@ export default function PropertyDetailsModal() {
               top: 0,
               left: 0,
               width: window.innerWidth,
-              height: isMobile ? 350 : 420,
-              borderRadius: isMobile ? '0 0 2rem 2rem' : '1.5rem',
+              height: isMobile ? 450 : 460,
+              borderRadius: isMobile ? '0px' : '1.5rem',
             };
           }
 

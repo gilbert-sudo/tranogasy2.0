@@ -115,7 +115,7 @@ function SearchFloatingBottomHudComponent({
     <div className="w-[calc(100vw-0.75rem)] sm:w-fit max-w-[calc(100vw-0.75rem)] mx-auto pointer-events-none font-outfit select-none">
       <div
         className={`pointer-events-auto flex flex-row items-center justify-between sm:justify-center gap-1.5 sm:gap-2
-          p-1.5 sm:p-2 rounded-full overflow-hidden transition-colors duration-300
+          p-2 rounded-full overflow-hidden transition-colors duration-300
           ${
             isFeedMode
               ? 'bg-zinc-950/85 backdrop-blur-2xl border border-white/15 shadow-[0_12px_36px_rgba(0,0,0,0.65)]'
@@ -127,7 +127,7 @@ function SearchFloatingBottomHudComponent({
           type="button"
           onClick={onOpenFilterModal}
           title="Ouvrir les filtres avancés"
-          className={`flex items-center gap-1.5 sm:gap-2.5 h-10 sm:h-11 px-2 sm:px-3.5 rounded-full
+          className={`flex items-center gap-2 sm:gap-2.5 h-12 px-3 sm:px-4 rounded-full
             transition-all active:scale-95 cursor-pointer shrink-0 ${
               isFeedMode
                 ? 'bg-white/12 hover:bg-white/18 text-white'
@@ -136,13 +136,13 @@ function SearchFloatingBottomHudComponent({
         >
           {/* Result Counter Badge */}
           <span
-            className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1 rounded-full text-xs sm:text-sm font-medium tracking-wide shrink-0 shadow-xs ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-semibold tracking-wide shrink-0 shadow-xs ${
               isFeedMode
                 ? 'bg-white text-zinc-950'
                 : 'bg-zinc-950 text-white dark:bg-white dark:text-zinc-950'
             }`}
           >
-            <Sparkles className="w-3.5 h-3.5 text-brand-green shrink-0" />
+            <Sparkles className="w-4 h-4 text-brand-green shrink-0" />
             <span>{totalResults}</span>
             <span className="hidden sm:inline">
               {totalResults > 1 ? 'biens' : 'bien'}
@@ -195,17 +195,17 @@ function SearchFloatingBottomHudComponent({
 
           {/* Compact Filter Icon / Active Counter */}
           {activeFiltersCount > 0 ? (
-            <span className="inline-flex items-center justify-center min-w-[20px] h-[20px] px-1.5 rounded-full bg-brand-green text-white text-[11px] font-semibold shrink-0">
+            <span className="inline-flex items-center justify-center min-w-[24px] h-[24px] px-1.5 rounded-full bg-brand-green text-white text-xs font-bold shrink-0">
               {activeFiltersCount}
             </span>
           ) : (
-            <SlidersHorizontal className="w-3.5 h-3.5 opacity-70 shrink-0" />
+            <SlidersHorizontal className="w-4.5 h-4.5 opacity-80 shrink-0" />
           )}
         </button>
 
         {/* Subtle Vertical Divider */}
         <div
-          className={`h-5 sm:h-6 w-px shrink-0 ${
+          className={`h-6 w-px shrink-0 ${
             isFeedMode ? 'bg-white/15' : 'bg-zinc-200/90 dark:bg-white/10'
           }`}
         />
@@ -216,15 +216,15 @@ function SearchFloatingBottomHudComponent({
           <button
             type="button"
             onClick={() => onSetViewMode('map')}
-            className={`flex items-center justify-center gap-1.5 h-10 sm:h-11 px-2 sm:px-4 rounded-full text-xs sm:text-sm font-normal tracking-wide transition-all duration-200 active:scale-95 cursor-pointer min-w-0 ${
+            className={`flex items-center justify-center gap-1.5 h-12 px-2 sm:px-4.5 rounded-full text-sm font-medium tracking-wide transition-all duration-200 active:scale-95 cursor-pointer min-w-0 ${
               viewMode === 'map'
-                ? 'bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 font-medium shadow-sm'
+                ? 'bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 font-semibold shadow-sm'
                 : isFeedMode
                 ? 'text-zinc-200 hover:bg-white/10 hover:text-white'
                 : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
             }`}
           >
-            <MapIcon className="w-4 h-4 stroke-[1.85] shrink-0" />
+            <MapIcon className="w-4.5 h-4.5 stroke-[2] shrink-0" />
             <span className="truncate">Carte</span>
           </button>
 
@@ -232,15 +232,15 @@ function SearchFloatingBottomHudComponent({
           <button
             type="button"
             onClick={() => onSetViewMode('split')}
-            className={`hidden lg:flex items-center justify-center gap-1.5 h-11 px-4 rounded-full text-sm font-normal tracking-wide transition-all duration-200 active:scale-95 cursor-pointer ${
+            className={`hidden lg:flex items-center justify-center gap-1.5 h-12 px-4.5 rounded-full text-sm font-medium tracking-wide transition-all duration-200 active:scale-95 cursor-pointer ${
               viewMode === 'split'
-                ? 'bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 font-medium shadow-sm'
+                ? 'bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 font-semibold shadow-sm'
                 : isFeedMode
                 ? 'text-zinc-200 hover:bg-white/10 hover:text-white'
                 : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
             }`}
           >
-            <Columns2 className="w-4 h-4 stroke-[1.85] shrink-0" />
+            <Columns2 className="w-4.5 h-4.5 stroke-[2] shrink-0" />
             <span>Split</span>
           </button>
 
@@ -248,15 +248,15 @@ function SearchFloatingBottomHudComponent({
           <button
             type="button"
             onClick={() => onSetViewMode('list')}
-            className={`flex items-center justify-center gap-1.5 h-10 sm:h-11 px-2 sm:px-4 rounded-full text-xs sm:text-sm font-normal tracking-wide transition-all duration-200 active:scale-95 cursor-pointer min-w-0 ${
+            className={`flex items-center justify-center gap-1.5 h-12 px-2 sm:px-4.5 rounded-full text-sm font-medium tracking-wide transition-all duration-200 active:scale-95 cursor-pointer min-w-0 ${
               viewMode === 'list'
-                ? 'bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 font-medium shadow-sm'
+                ? 'bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 font-semibold shadow-sm'
                 : isFeedMode
                 ? 'text-zinc-200 hover:bg-white/10 hover:text-white'
                 : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
             }`}
           >
-            <LayoutGrid className="w-4 h-4 stroke-[1.85] shrink-0" />
+            <LayoutGrid className="w-4.5 h-4.5 stroke-[2] shrink-0" />
             <span className="truncate">Liste</span>
           </button>
 
@@ -264,13 +264,13 @@ function SearchFloatingBottomHudComponent({
           <button
             type="button"
             onClick={() => onSetViewMode('feed')}
-            className={`flex items-center justify-center gap-1.5 h-10 sm:h-11 px-2 sm:px-4 rounded-full text-xs sm:text-sm font-normal tracking-wide transition-all duration-200 active:scale-95 cursor-pointer min-w-0 ${
+            className={`flex items-center justify-center gap-1.5 h-12 px-2 sm:px-4.5 rounded-full text-sm font-medium tracking-wide transition-all duration-200 active:scale-95 cursor-pointer min-w-0 ${
               viewMode === 'feed'
-                ? 'bg-brand-green text-white font-medium shadow-[0_4px_14px_rgba(124,189,30,0.45)]'
+                ? 'bg-brand-green text-white font-semibold shadow-[0_4px_14px_rgba(124,189,30,0.45)]'
                 : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
             }`}
           >
-            <Play className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[1.85] fill-current shrink-0" />
+            <Play className="w-4.5 h-4.5 stroke-[2] fill-current shrink-0" />
             <span className="truncate">Feed</span>
           </button>
         </div>

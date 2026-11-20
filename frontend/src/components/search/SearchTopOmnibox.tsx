@@ -533,11 +533,11 @@ function SearchTopOmniboxComponent({
             transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] shrink-0 overflow-hidden
             ${
               isExpanded
-                ? 'max-w-0 w-0 h-11 opacity-0 scale-75 px-0 py-0 border-0 pointer-events-none sm:max-w-[150px] sm:w-auto sm:h-14 sm:opacity-100 sm:scale-100 sm:px-5 sm:py-3.5 sm:border sm:pointer-events-auto'
-                : 'w-11 h-11 sm:w-auto sm:h-14 px-0 sm:px-5 md:px-6 py-0 sm:py-3.5 opacity-100 scale-100'
+                ? 'max-w-0 w-0 h-13 opacity-0 scale-75 px-0 py-0 border-0 pointer-events-none sm:max-w-[150px] sm:w-auto sm:h-14 sm:opacity-100 sm:scale-100 sm:px-5 sm:py-3.5 sm:border sm:pointer-events-auto'
+                : 'w-13 h-13 sm:w-auto sm:h-14 px-0 sm:px-5 md:px-6 py-0 sm:py-3.5 opacity-100 scale-100'
             }`}
         >
-          <ArrowLeft className="w-4.5 h-4.5 stroke-[1.75] shrink-0" />
+          <ArrowLeft className="w-5 h-5 stroke-[2] shrink-0" />
           <span
             className={`hidden md:inline text-sm font-light tracking-wider whitespace-nowrap transition-all duration-300 ${
               isExpanded ? 'lg:inline md:hidden' : ''
@@ -556,7 +556,7 @@ function SearchTopOmniboxComponent({
               inputRef.current?.focus();
               setIsDropdownOpen(true);
             }}
-            className={`relative flex items-center w-full h-12 sm:h-14 pl-3.5 sm:pl-5 pr-1.5 sm:pr-2 rounded-full
+            className={`relative flex items-center w-full h-13 sm:h-14 pl-4 sm:pl-5 pr-2 rounded-full
               backdrop-blur-2xl border cursor-text
               transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]
               ${
@@ -625,7 +625,7 @@ function SearchTopOmniboxComponent({
                   ? 'Affiner par mot-clé…'
                   : 'Quartier, lieu Google, mot-clé ou n° bien...'
               }
-              className="flex-1 min-w-0 bg-transparent text-xs sm:text-sm md:text-[15px] font-light tracking-wide text-zinc-900 dark:text-white placeholder:text-zinc-400 dark:placeholder:text-zinc-500 outline-none"
+              className="flex-1 min-w-0 bg-transparent text-[15px] font-normal tracking-wide text-zinc-900 dark:text-white placeholder:text-zinc-400 dark:placeholder:text-zinc-500 outline-none"
             />
 
             {(isSearchingPlaces || isResolvingPlace) && (
@@ -723,7 +723,7 @@ function SearchTopOmniboxComponent({
                       handleCloseSearch();
                     }}
                     disabled={isLocatingUser}
-                    className="flex items-center justify-center sm:justify-start gap-2 px-4 sm:px-5 py-2.5 sm:py-3 rounded-full bg-zinc-100 hover:bg-zinc-200/80 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-100 border border-zinc-200/80 dark:border-zinc-700 text-xs sm:text-sm font-normal tracking-wide sm:tracking-wider transition-all active:scale-95 cursor-pointer min-w-0"
+                    className="flex items-center justify-center sm:justify-start gap-2 min-h-[44px] px-5 py-3 rounded-full bg-zinc-100 hover:bg-zinc-200/80 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-100 border border-zinc-200/80 dark:border-zinc-700 text-sm font-medium tracking-wide transition-all active:scale-95 cursor-pointer min-w-0"
                   >
                     {isLocatingUser ? (
                       <Loader2 className="w-4 h-4 animate-spin shrink-0 text-brand-green" />
@@ -740,21 +740,21 @@ function SearchTopOmniboxComponent({
                         onClearLocationZone();
                         handleCloseSearch();
                       }}
-                      className="flex items-center justify-center sm:justify-start gap-1.5 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:text-red-500 text-xs font-light tracking-wide transition-colors cursor-pointer shrink-0"
+                      className="flex items-center justify-center sm:justify-start gap-1.5 min-h-[44px] px-4 py-2.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:text-red-500 text-sm font-medium tracking-wide transition-colors cursor-pointer shrink-0"
                     >
-                      <X className="w-3.5 h-3.5 shrink-0" />
+                      <X className="w-4 h-4 shrink-0" />
                       <span className="truncate">Effacer la zone radar</span>
                     </button>
                   )}
                 </div>
 
                 {/* Radius Selector Pills */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-1.5 text-[10px] sm:text-[11px] font-light uppercase tracking-wider sm:tracking-widest text-zinc-400 px-1">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider sm:tracking-widest text-zinc-400 px-1">
                     <Radar className="w-3.5 h-3.5 text-brand-green shrink-0" />
                     <span className="truncate">Rayon du radar géographique</span>
                   </div>
-                  <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar py-0.5 -mx-1 px-1">
+                  <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5 -mx-1 px-1">
                     {RADIUS_OPTIONS.map((opt) => {
                       const isSelected = filters.searchRadius === opt.value;
                       return (
@@ -762,10 +762,10 @@ function SearchTopOmniboxComponent({
                           key={opt.value}
                           type="button"
                           onClick={() => onSetFilter('searchRadius', opt.value)}
-                          className={`px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-full text-xs font-light tracking-wider whitespace-nowrap transition-all cursor-pointer shrink-0 ${
+                          className={`min-h-[42px] px-4.5 py-2.5 rounded-full text-sm tracking-wide whitespace-nowrap transition-all cursor-pointer shrink-0 ${
                             isSelected
-                              ? 'bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 font-normal shadow-sm'
-                              : 'bg-zinc-100/80 dark:bg-zinc-800/80 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200/70 dark:hover:bg-zinc-700'
+                              ? 'bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 font-semibold shadow-sm'
+                              : 'bg-zinc-100/80 dark:bg-zinc-800/80 text-zinc-700 dark:text-zinc-200 font-medium hover:bg-zinc-200/70 dark:hover:bg-zinc-700'
                           }`}
                         >
                           {opt.label}
@@ -892,15 +892,15 @@ function SearchTopOmniboxComponent({
                     <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                     <span className="truncate">Secteurs très recherchés</span>
                   </div>
-                  <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-1.5 sm:gap-2">
+                  <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
                     {popularCities.map((city) => (
                       <button
                         key={city._id}
                         type="button"
                         onClick={() => handleSelectBackendCity(city)}
-                        className="flex items-center gap-2 px-3.5 sm:px-4 py-2 sm:py-2.5 min-w-0 sm:max-w-[240px] rounded-full bg-zinc-100/90 dark:bg-zinc-800/80 hover:bg-brand-green hover:text-white text-zinc-800 dark:text-zinc-200 text-xs font-light tracking-wide capitalize transition-all active:scale-95 cursor-pointer"
+                        className="flex items-center gap-2 min-h-[42px] px-4 py-2.5 min-w-0 sm:max-w-[240px] rounded-full bg-zinc-100/90 dark:bg-zinc-800/80 hover:bg-brand-green hover:text-white text-zinc-800 dark:text-zinc-200 text-sm font-medium tracking-wide capitalize transition-all active:scale-95 cursor-pointer"
                       >
-                        <MapPin className="w-3.5 h-3.5 stroke-[1.75] shrink-0 text-brand-green group-hover:text-white" />
+                        <MapPin className="w-4 h-4 stroke-[1.75] shrink-0 text-brand-green group-hover:text-white" />
                         <span className="truncate">{city.fokontany}</span>
                       </button>
                     ))}
@@ -942,8 +942,8 @@ function SearchTopOmniboxComponent({
             shadow-[0_12px_36px_rgba(0,0,0,0.14),inset_0_1px_1px_rgba(255,255,255,0.3)]
             ${
               isExpanded
-                ? 'max-w-0 w-0 h-11 opacity-0 scale-75 px-0 py-0 border-0 pointer-events-none sm:max-w-[170px] sm:w-auto sm:h-14 sm:opacity-100 sm:scale-100 sm:px-5 sm:py-3.5 sm:border sm:pointer-events-auto'
-                : 'h-11 sm:h-14 px-3.5 sm:px-6 py-0 sm:py-3.5 opacity-100 scale-100'
+                ? 'max-w-0 w-0 h-13 opacity-0 scale-75 px-0 py-0 border-0 pointer-events-none sm:max-w-[170px] sm:w-auto sm:h-14 sm:opacity-100 sm:scale-100 sm:px-5 sm:py-3.5 sm:border sm:pointer-events-auto'
+                : 'h-13 sm:h-14 px-4.5 sm:px-6 py-0 sm:py-3.5 opacity-100 scale-100'
             }
             ${
               activeFiltersCount > 0
@@ -951,16 +951,16 @@ function SearchTopOmniboxComponent({
                 : 'bg-white/90 dark:bg-zinc-900/90 text-zinc-900 dark:text-white border-white/85 dark:border-white/15 hover:bg-white dark:hover:bg-zinc-800'
             }`}
         >
-          <SlidersHorizontal className="w-4 h-4 sm:w-4.5 sm:h-4.5 stroke-[1.75] shrink-0" />
+          <SlidersHorizontal className="w-5 h-5 stroke-[1.9] shrink-0" />
           <span
-            className={`text-xs sm:text-sm font-light tracking-wider whitespace-nowrap ${
+            className={`text-sm font-semibold tracking-wide whitespace-nowrap ${
               isExpanded ? 'hidden lg:inline' : 'inline'
             }`}
           >
             Filtres
           </span>
           {activeFiltersCount > 0 && (
-            <span className="flex h-5 min-w-5 px-1.5 items-center justify-center rounded-full bg-brand-green text-white text-[11px] font-medium leading-none shadow-xs shrink-0">
+            <span className="flex h-6 min-w-6 px-1.5 items-center justify-center rounded-full bg-brand-green text-white text-xs font-bold leading-none shadow-xs shrink-0">
               {activeFiltersCount}
             </span>
           )}
@@ -969,26 +969,26 @@ function SearchTopOmniboxComponent({
 
       {/* ══════════════════════════════════════════════════════════════
           ROW 2: FLOATING QUICK-FILTER & CATEGORY PILLS RIBBON
-          (Big Padding, Thin Font, Ultra-Rounded)
+          (Landing-page proportions: h-12, generous padding & text-sm)
       ══════════════════════════════════════════════════════════════ */}
       {showCategoryRibbon && (
-        <div className="w-full max-w-5xl mx-auto flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5 px-0.5 pointer-events-auto">
+        <div className="w-full max-w-5xl mx-auto flex items-center gap-2.5 overflow-x-auto no-scrollbar py-0.5 px-0.5 pointer-events-auto">
           {/* Mobile-Only Offer Type Toggle Pill */}
           <button
             type="button"
             onClick={() =>
               onSetFilter('type', filters.type === 'rent' ? 'sale' : 'rent')
             }
-            className="sm:hidden flex items-center gap-2 px-4 py-2 rounded-full bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 text-xs font-light tracking-wider shadow-md shrink-0 cursor-pointer active:scale-95 transition-all"
+            className="sm:hidden flex items-center gap-2 h-12 px-5 rounded-full bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 text-sm font-semibold tracking-wide shadow-md shrink-0 cursor-pointer active:scale-95 transition-all"
           >
-            <span className="w-2 h-2 rounded-full bg-brand-green" />
+            <span className="w-2.5 h-2.5 rounded-full bg-brand-green" />
             <span>{filters.type === 'rent' ? 'Location' : 'Vente'}</span>
           </button>
 
           {/* Active Geo-Radius Pill if searchCoords is set */}
           {filters.searchCoords && (
-            <div className="flex items-center gap-2 pl-3.5 pr-2 py-2 rounded-full bg-brand-green text-white shadow-[0_8px_24px_rgba(124,189,30,0.4)] text-xs font-light tracking-wider shrink-0">
-              <Radar className="w-3.5 h-3.5 animate-pulse shrink-0" />
+            <div className="flex items-center gap-2 h-12 pl-4.5 pr-2.5 rounded-full bg-brand-green text-white shadow-[0_8px_24px_rgba(124,189,30,0.4)] text-sm font-semibold tracking-wide shrink-0">
+              <Radar className="w-4.5 h-4.5 animate-pulse shrink-0" />
               <span className="max-w-[120px] sm:max-w-[150px] truncate">
                 {filters.searchPlaceName || 'Zone radar'}
               </span>
@@ -996,7 +996,7 @@ function SearchTopOmniboxComponent({
                 value={filters.searchRadius}
                 onChange={(e) => onSetFilter('searchRadius', Number(e.target.value))}
                 aria-label="Rayon de recherche"
-                className="bg-black/20 text-white rounded-full px-2 py-0.5 text-[11px] font-light outline-none cursor-pointer"
+                className="bg-black/20 text-white rounded-full px-2.5 py-1 text-xs font-medium outline-none cursor-pointer"
               >
                 {RADIUS_OPTIONS.map((r) => (
                   <option key={r.value} value={r.value} className="bg-zinc-900 text-white">
@@ -1007,10 +1007,10 @@ function SearchTopOmniboxComponent({
               <button
                 type="button"
                 onClick={onClearLocationZone}
-                className="w-5 h-5 rounded-full bg-black/20 hover:bg-black/40 flex items-center justify-center transition-colors cursor-pointer"
+                className="w-6.5 h-6.5 rounded-full bg-black/25 hover:bg-black/45 flex items-center justify-center transition-colors cursor-pointer"
                 title="Retirer la zone"
               >
-                <X className="w-3 h-3" />
+                <X className="w-4 h-4 stroke-[2.25]" />
               </button>
             </div>
           )}
@@ -1024,13 +1024,13 @@ function SearchTopOmniboxComponent({
                 key={cat.id}
                 type="button"
                 onClick={() => onSetFilter('houseType', cat.id)}
-                className={`flex items-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 rounded-full text-xs font-light tracking-wider whitespace-nowrap transition-all duration-300 active:scale-95 cursor-pointer shrink-0 backdrop-blur-2xl border ${
+                className={`flex items-center gap-2.5 h-12 px-5 rounded-full text-sm tracking-wide whitespace-nowrap transition-all duration-300 active:scale-95 cursor-pointer shrink-0 backdrop-blur-2xl border ${
                   isActive
-                    ? 'bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 border-zinc-950 dark:border-white font-normal shadow-[0_8px_24px_rgba(0,0,0,0.2)]'
-                    : 'bg-white/85 dark:bg-zinc-900/85 text-zinc-700 dark:text-zinc-200 border-white/80 dark:border-white/10 hover:bg-white dark:hover:bg-zinc-800 shadow-[0_4px_16px_rgba(0,0,0,0.06)]'
+                    ? 'bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 border-zinc-950 dark:border-white font-semibold shadow-[0_8px_24px_rgba(0,0,0,0.2)]'
+                    : 'bg-white/90 dark:bg-zinc-900/90 text-zinc-800 dark:text-zinc-100 font-medium border-white/85 dark:border-white/15 hover:bg-white dark:hover:bg-zinc-800 shadow-[0_4px_16px_rgba(0,0,0,0.08)]'
                 }`}
               >
-                <Icon className="w-3.5 h-3.5 stroke-[1.75]" />
+                <Icon className="w-4.5 h-4.5 stroke-[1.9]" />
                 <span>{cat.label}</span>
               </button>
             );
@@ -1044,10 +1044,10 @@ function SearchTopOmniboxComponent({
                 key={rooms}
                 type="button"
                 onClick={() => onSetFilter('minRooms', isActive ? 0 : rooms)}
-                className={`flex items-center gap-1.5 px-4 sm:px-5 py-2 sm:py-2.5 rounded-full text-xs font-light tracking-wider whitespace-nowrap transition-all duration-300 active:scale-95 cursor-pointer shrink-0 backdrop-blur-2xl border ${
+                className={`flex items-center gap-2 h-12 px-5 rounded-full text-sm tracking-wide whitespace-nowrap transition-all duration-300 active:scale-95 cursor-pointer shrink-0 backdrop-blur-2xl border ${
                   isActive
-                    ? 'bg-brand-green text-white border-brand-green font-normal shadow-[0_8px_20px_rgba(124,189,30,0.35)]'
-                    : 'bg-white/85 dark:bg-zinc-900/85 text-zinc-700 dark:text-zinc-200 border-white/80 dark:border-white/10 hover:bg-white dark:hover:bg-zinc-800 shadow-[0_4px_16px_rgba(0,0,0,0.06)]'
+                    ? 'bg-brand-green text-white border-brand-green font-semibold shadow-[0_8px_20px_rgba(124,189,30,0.35)]'
+                    : 'bg-white/90 dark:bg-zinc-900/90 text-zinc-800 dark:text-zinc-100 font-medium border-white/85 dark:border-white/15 hover:bg-white dark:hover:bg-zinc-800 shadow-[0_4px_16px_rgba(0,0,0,0.08)]'
                 }`}
               >
                 <span>{rooms}+ pièces</span>
@@ -1064,13 +1064,13 @@ function SearchTopOmniboxComponent({
                 key={feat.key}
                 type="button"
                 onClick={() => onToggleFeature(feat.key)}
-                className={`flex items-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 rounded-full text-xs font-light tracking-wider whitespace-nowrap transition-all duration-300 active:scale-95 cursor-pointer shrink-0 backdrop-blur-2xl border ${
+                className={`flex items-center gap-2.5 h-12 px-5 rounded-full text-sm tracking-wide whitespace-nowrap transition-all duration-300 active:scale-95 cursor-pointer shrink-0 backdrop-blur-2xl border ${
                   isActive
-                    ? 'bg-brand-green text-white border-brand-green font-normal shadow-[0_8px_20px_rgba(124,189,30,0.35)]'
-                    : 'bg-white/85 dark:bg-zinc-900/85 text-zinc-700 dark:text-zinc-200 border-white/80 dark:border-white/10 hover:bg-white dark:hover:bg-zinc-800 shadow-[0_4px_16px_rgba(0,0,0,0.06)]'
+                    ? 'bg-brand-green text-white border-brand-green font-semibold shadow-[0_8px_20px_rgba(124,189,30,0.35)]'
+                    : 'bg-white/90 dark:bg-zinc-900/90 text-zinc-800 dark:text-zinc-100 font-medium border-white/85 dark:border-white/15 hover:bg-white dark:hover:bg-zinc-800 shadow-[0_4px_16px_rgba(0,0,0,0.08)]'
                 }`}
               >
-                <Icon className="w-3.5 h-3.5 stroke-[1.75]" />
+                <Icon className="w-4.5 h-4.5 stroke-[1.9]" />
                 <span>{feat.label}</span>
               </button>
             );

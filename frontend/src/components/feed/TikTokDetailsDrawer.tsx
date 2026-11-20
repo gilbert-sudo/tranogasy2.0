@@ -105,9 +105,10 @@ export function TikTokDetailsSkeleton({
           {!isDesktop && onClose && (
             <button
               onClick={onClose}
-              className="w-8 h-8 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500 flex items-center justify-center"
+              aria-label="Fermer"
+              className="w-10 h-10 rounded-full bg-zinc-100/90 dark:bg-zinc-800/90 border border-zinc-300/90 dark:border-zinc-600/80 shadow-xs text-zinc-800 dark:text-zinc-100 hover:bg-zinc-200 dark:hover:bg-zinc-700 flex items-center justify-center transition-all active:scale-90 cursor-pointer shrink-0"
             >
-              <X className="w-5 h-5" />
+              <X className="w-5 h-5 stroke-[2.25]" />
             </button>
           )}
         </div>
@@ -369,10 +370,11 @@ export default function TikTokDetailsDrawer({
                 <button
                   type="button"
                   onClick={onClose}
-                  className="w-8 h-8 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:text-zinc-900 dark:hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+                  aria-label="Fermer"
+                  className="w-10 h-10 rounded-full bg-zinc-100/90 dark:bg-zinc-800/90 border border-zinc-300/90 dark:border-zinc-600/80 shadow-xs text-zinc-800 dark:text-zinc-100 hover:bg-zinc-200 dark:hover:bg-zinc-700 hover:border-zinc-400 dark:hover:border-zinc-500 flex items-center justify-center transition-all active:scale-90 cursor-pointer shrink-0"
                   title="Fermer"
                 >
-                  <X className="w-5 h-5" />
+                  <X className="w-5 h-5 stroke-[2.25]" />
                 </button>
               )}
             </div>
@@ -499,7 +501,7 @@ export default function TikTokDetailsDrawer({
           <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-widest">
             Équipements & Atouts
           </h4>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2.5">
             {activeFeatures.map((key) => {
               const def = FEATURE_DEFINITIONS[key];
               if (!def) return null;
@@ -508,13 +510,13 @@ export default function TikTokDetailsDrawer({
               return (
                 <div
                   key={key}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium shadow-xs ${
+                  className={`inline-flex items-center gap-2 min-h-[40px] px-4 py-2 rounded-full border text-sm font-semibold shadow-xs ${
                     isExternalWater
                       ? "bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800/80 text-amber-800 dark:text-amber-200"
-                      : "bg-zinc-100 dark:bg-zinc-800/80 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200"
+                      : "bg-zinc-100 dark:bg-zinc-800/80 border-zinc-200 dark:border-zinc-700 text-zinc-800 dark:text-zinc-100"
                   }`}
                 >
-                  <Icon className={`w-3.5 h-3.5 ${isExternalWater ? "text-amber-600 dark:text-amber-400" : "text-zinc-500 dark:text-zinc-400"}`} />
+                  <Icon className={`w-4.5 h-4.5 shrink-0 ${isExternalWater ? "text-amber-600 dark:text-amber-400" : "text-zinc-600 dark:text-zinc-300"}`} />
                   <span>{def.label}</span>
                 </div>
               );
@@ -542,7 +544,9 @@ export default function TikTokDetailsDrawer({
           </span>
         </h4>
         <div className="h-56 rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-700 relative">
-          <PropertyLocationDisplayer position={position} circle={useCircle} />
+          {(isDesktop || isOpen) && (
+            <PropertyLocationDisplayer position={position} circle={useCircle} />
+          )}
         </div>
       </div>
 

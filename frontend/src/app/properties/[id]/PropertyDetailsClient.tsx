@@ -29,6 +29,7 @@ import { useFavorite } from '@/hooks/useFavorite';
 import { resolveProfileHref } from '@/services/user.service';
 import { resolvePublicPropertyShareUrl } from '@/services/property.service';
 import { formatPublicationDateTime, formatExactPublicationDateTime } from '@/lib/dateFormat';
+import { APP_PLATFORM } from '@/lib/platform';
 
 const FEATURE_ICONS: Record<string, { icon: React.ElementType, label: string }> = {
   electricityJirama: { icon: FaPlugCircleBolt, label: "Électricité JIRAMA" },
@@ -118,10 +119,16 @@ function PropertyDetailsContent({
   const [showComments, setShowComments] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [currentMobileImageIndex, setCurrentMobileImageIndex] = useState(0);
+  const [isCarouselPaused, setIsCarouselPaused] = useState(false);
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
+  const [isDescriptionTruncated, setIsDescriptionTruncated] = useState(false);
   const [shareToast, setShareToast] = useState<string | null>(null);
   const lightboxRef = useRef<HTMLDivElement | null>(null);
   const initialLightboxIndexRef = useRef<number>(0);
+  const descriptionRef = useRef<HTMLDivElement | null>(null);
+  const mobileGalleryRef = useRef<HTMLDivElement | null>(null);
+  const isProgrammaticGalleryScrollRef = useRef<boolean>(false);
+  const programmaticGalleryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const userStore = useUserStore(state => state.user);
   const openModal = useModalStore(state => state.openModal);
@@ -375,77 +382,219 @@ function PropertyDetailsContent({
         ...(parsedArea ? [{ value: `${parsedArea}`, label: "Surface (m²)", icon: Expand }] : []),
       ];
 
+  // Detect whether description actually overflows 50 lines before showing "Lire la suite"
+  useEffect(() => {
+    const el = descriptionRef.current;
+    if (!el || isDescriptionExpanded) return;
+
+    const checkOverflow = () => {
+      if (!descriptionRef.current) return;
+      setIsDescriptionTruncated(
+        descriptionRef.current.scrollHeight > descriptionRef.current.clientHeight + 2
+      );
+    };
+
+    checkOverflow();
+    if (typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(checkOverflow);
+      observer.observe(el);
+      return () => observer.disconnect();
+    }
+  }, [property?.description, isDescriptionExpanded]);
+
+  const scrollMobileGalleryToIndex = useCallback(
+    (targetIndex: number) => {
+      const container = mobileGalleryRef.current;
+      if (!container || images.length <= 1) return;
+      const clamped = ((targetIndex % images.length) + images.length) % images.length;
+      setCurrentMobileImageIndex(clamped);
+      const width = container.clientWidth;
+      if (width > 0) {
+        isProgrammaticGalleryScrollRef.current = true;
+        if (programmaticGalleryTimerRef.current) {
+          clearTimeout(programmaticGalleryTimerRef.current);
+        }
+        container.scrollTo({
+          left: clamped * width,
+          behavior: 'smooth',
+        });
+        programmaticGalleryTimerRef.current = setTimeout(() => {
+          isProgrammaticGalleryScrollRef.current = false;
+        }, 500);
+      }
+    },
+    [images.length]
+  );
+
+  // Auto-advance mobile hero carousel every 5 seconds unless paused or lightbox is open
+  useEffect(() => {
+    if (images.length <= 1 || isCarouselPaused || lightboxIndex !== null) return;
+    const timer = setTimeout(() => {
+      scrollMobileGalleryToIndex((currentMobileImageIndex + 1) % images.length);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [
+    images.length,
+    isCarouselPaused,
+    lightboxIndex,
+    currentMobileImageIndex,
+    scrollMobileGalleryToIndex,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      if (programmaticGalleryTimerRef.current) {
+        clearTimeout(programmaticGalleryTimerRef.current);
+      }
+    };
+  }, []);
+
   const handleMobileScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    if (isProgrammaticGalleryScrollRef.current) return;
     const scrollPosition = e.currentTarget.scrollLeft;
     const width = e.currentTarget.clientWidth;
-    const newIndex = Math.round(scrollPosition / width);
-    setCurrentMobileImageIndex(newIndex);
+    if (width === 0) return;
+    const newIndex = Math.max(0, Math.min(images.length - 1, Math.round(scrollPosition / width)));
+    if (newIndex !== currentMobileImageIndex) {
+      setCurrentMobileImageIndex(newIndex);
+    }
   };
 
-  const renderMobileGallery = () => (
-    <div 
-      data-detail-hero-image={property?._id}
-      className="lg:hidden relative w-full h-[350px] sm:h-[450px] overflow-hidden mb-6 rounded-b-[2rem] shadow-sm"
-    >
-      <div 
-        className="flex overflow-x-auto snap-x snap-mandatory h-full w-full" 
-        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-        onScroll={handleMobileScroll}
+  const renderMobileTopActions = () => (
+    <div className="fixed top-0 left-0 right-0 z-50 pointer-events-none lg:hidden bg-gradient-to-b from-black/40 via-black/10 to-transparent pt-[calc(1rem+var(--ios-safe-top))] pb-10 px-4 flex justify-between items-start">
+      <button 
+        onClick={onBack || (() => router.back())} 
+        aria-label="Retour"
+        className="pointer-events-auto h-10 w-10 rounded-full bg-black/30 hover:bg-black/45 backdrop-blur-md flex items-center justify-center text-white border border-white/20 shadow-sm hover:scale-105 active:scale-90 transition-all cursor-pointer"
       >
-        {images.map((img: string, idx: number) => (
-          <div 
-            key={idx} 
-            className="w-full flex-shrink-0 h-full relative snap-center" 
-            onClick={() => openLightbox(idx)}
-            style={{ opacity: (idx === 0 && isTransitioning) ? 0 : 1 }}
-          >
-            <Image src={img} fill className="object-cover" alt={`Photo ${idx+1}`} priority={idx === 0} />
-          </div>
-        ))}
-      </div>
-      
-      {/* Mobile Top Actions */}
-      <div className="fixed top-0 left-0 right-0 z-50 pointer-events-none lg:hidden bg-gradient-to-b from-black/50 via-black/15 to-transparent pt-[calc(1rem+var(--ios-safe-top))] pb-10 px-4 flex justify-between items-start">
+        <ChevronLeft className="h-6 w-6 pr-0.5" />
+      </button>
+      <div className="flex gap-2 pointer-events-auto">
         <button 
-          onClick={onBack || (() => router.back())} 
-          aria-label="Retour"
-          className="pointer-events-auto h-10 w-10 rounded-full bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl flex items-center justify-center text-zinc-900 dark:text-zinc-100 shadow-sm border border-white/60 dark:border-white/10 hover:scale-105 active:scale-90 transition-all cursor-pointer"
+          onClick={handleShare} 
+          aria-label="Partager"
+          className="h-10 w-10 cursor-pointer rounded-full bg-black/30 hover:bg-black/45 backdrop-blur-md flex items-center justify-center text-white border border-white/20 shadow-sm hover:scale-105 active:scale-90 transition-all"
         >
-          <ChevronLeft className="h-6 w-6 pr-0.5" />
+          <Share2 className="h-4 w-4" />
         </button>
-        <div className="flex gap-2 pointer-events-auto">
-          <button 
-            onClick={handleShare} 
-            aria-label="Partager"
-            className="h-10 w-10 cursor-pointer rounded-full bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl flex items-center justify-center text-zinc-900 dark:text-zinc-100 shadow-sm border border-white/60 dark:border-white/10 hover:scale-105 active:scale-90 transition-all"
-          >
-            <Share2 className="h-4 w-4" />
-          </button>
-          <button 
-            onClick={handleFavoriteClick} 
-            aria-label="Ajouter aux favoris"
-            className={`h-10 w-10 cursor-pointer rounded-full bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl flex items-center justify-center shadow-sm border border-white/60 dark:border-white/10 hover:scale-105 active:scale-90 transition-all ${isFavorite ? 'text-brand-red' : 'text-zinc-700 dark:text-zinc-200'}`}
-          >
-            <Heart className={`h-5 w-5 transition-transform duration-300 ${isFavorite ? 'fill-brand-red scale-110 drop-shadow-[0_2px_6px_rgba(236,28,36,0.5)]' : ''}`} />
-          </button>
-        </div>
-      </div>
-
-      <div className="absolute bottom-4 right-4 z-10 flex items-center gap-2 pointer-events-none">
-        {images.length > 0 && (
-          <div className="bg-black/60 backdrop-blur-md text-white h-7 w-7 rounded-full flex items-center justify-center shadow-sm border border-white/10">
-            <Expand className="h-3.5 w-3.5" />
-          </div>
-        )}
-
-        {images.length > 1 && (
-          <div className="bg-black/60 backdrop-blur-md text-white px-3 py-1.5 rounded-full text-xs font-bold tracking-widest shadow-sm border border-white/10">
-            {currentMobileImageIndex + 1} / {images.length}
-          </div>
-        )}
+        <button 
+          onClick={handleFavoriteClick} 
+          aria-label="Ajouter aux favoris"
+          className={`h-10 w-10 cursor-pointer rounded-full bg-black/30 hover:bg-black/45 backdrop-blur-md flex items-center justify-center border border-white/20 shadow-sm hover:scale-105 active:scale-90 transition-all ${isFavorite ? 'text-brand-red' : 'text-white'}`}
+        >
+          <Heart className={`h-5 w-5 transition-transform duration-300 ${isFavorite ? 'fill-brand-red scale-110 drop-shadow-[0_2px_6px_rgba(236,28,36,0.5)]' : ''}`} />
+        </button>
       </div>
     </div>
   );
+
+  const renderMobileGallery = () => {
+    // Compute a clean sliding window of up to 5 indicator dots when there are many photos
+    const maxVisibleDots = 5;
+    let dotStart = 0;
+    if (images.length > maxVisibleDots) {
+      dotStart = Math.max(
+        0,
+        Math.min(
+          currentMobileImageIndex - Math.floor(maxVisibleDots / 2),
+          images.length - maxVisibleDots
+        )
+      );
+    }
+    const visibleDotIndices = images
+      .slice(dotStart, dotStart + maxVisibleDots)
+      .map((_: string, offset: number) => dotStart + offset);
+
+    return (
+      <div 
+        data-detail-hero-image={property?._id}
+        className="lg:hidden sticky top-0 z-10 w-full h-[calc(450px+var(--ios-safe-top))] sm:h-[calc(520px+var(--ios-safe-top))] overflow-hidden bg-zinc-950"
+      >
+        <div 
+          ref={mobileGalleryRef}
+          className="flex overflow-x-auto snap-x snap-mandatory h-full w-full" 
+          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+          onScroll={handleMobileScroll}
+          onTouchStart={() => setIsCarouselPaused(true)}
+          onTouchEnd={() => setIsCarouselPaused(false)}
+          onTouchCancel={() => setIsCarouselPaused(false)}
+        >
+          {images.map((img: string, idx: number) => (
+            <div 
+              key={idx} 
+              className="w-full flex-shrink-0 h-full relative snap-center cursor-pointer" 
+              onClick={() => openLightbox(idx)}
+              style={{ opacity: (idx === 0 && isTransitioning) ? 0 : 1 }}
+            >
+              <Image src={img} fill className="object-cover" alt={`Photo ${idx+1}`} priority={idx === 0} />
+            </div>
+          ))}
+        </div>
+
+        {/* Subtle bottom gradient scrim so dots & translucent controls stay readable */}
+        <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-black/50 via-black/15 to-transparent pointer-events-none z-10" />
+
+        {/* Left Counter Badge (translucent glass) */}
+        {images.length > 1 && (
+          <div className="absolute bottom-10 left-4 z-20 pointer-events-none bg-black/30 backdrop-blur-md text-white/95 px-3 py-1.5 rounded-full text-xs font-semibold tracking-wider border border-white/20 shadow-sm tabular-nums">
+            {currentMobileImageIndex + 1} / {images.length}
+          </div>
+        )}
+
+        {/* Exact Horizontal Center Animated Carousel Dots */}
+        {images.length > 1 && (
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="absolute bottom-12 left-1/2 -translate-x-1/2 z-20 pointer-events-auto flex items-center gap-1.5 drop-shadow-[0_1px_4px_rgba(0,0,0,0.65)]"
+          >
+            {visibleDotIndices.map((dotIdx: number) => {
+              const isActiveDot = dotIdx === currentMobileImageIndex;
+              return (
+                <button
+                  key={dotIdx}
+                  type="button"
+                  onClick={() => scrollMobileGalleryToIndex(dotIdx)}
+                  aria-label={`Afficher la photo ${dotIdx + 1}`}
+                  className={`relative rounded-full transition-all duration-300 cursor-pointer overflow-hidden ${
+                    isActiveDot
+                      ? 'w-5 h-1.5 bg-white/35'
+                      : 'w-1.5 h-1.5 bg-white/60 hover:bg-white/90'
+                  }`}
+                >
+                  {isActiveDot && (
+                    <span
+                      key={`progress-${currentMobileImageIndex}`}
+                      className="block h-full w-full rounded-full bg-white animate-carousel-progress"
+                      style={{
+                        animationPlayState:
+                          isCarouselPaused || lightboxIndex !== null ? 'paused' : 'running',
+                      }}
+                    />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Right Fullscreen CTA Button (translucent glass) */}
+        {images.length > 0 && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              openLightbox(currentMobileImageIndex);
+            }}
+            aria-label="Voir en plein écran"
+            className="absolute bottom-10 right-4 z-20 pointer-events-auto inline-flex items-center gap-1.5 h-9 px-3.5 rounded-full bg-black/35 hover:bg-black/50 text-white backdrop-blur-md border border-white/25 shadow-sm text-xs font-semibold tracking-wide active:scale-95 transition-all cursor-pointer"
+          >
+            <Expand className="h-3.5 w-3.5 text-white shrink-0 stroke-[2.25]" />
+            <span>Plein écran</span>
+          </button>
+        )}
+      </div>
+    );
+  };
 
   const renderDesktopGallery = () => {
     if (!images || images.length === 0) return null;
@@ -454,12 +603,24 @@ function PropertyDetailsContent({
       return (
         <div 
           data-detail-hero-image={property?._id}
-          className="hidden lg:block w-full min-w-[340px] xl:min-w-[420px] min-h-[360px] xl:min-h-[420px] max-h-[80vh] aspect-[16/10] relative rounded-2xl lg:rounded-3xl overflow-hidden cursor-pointer group shadow-xs mb-6" 
+          className="hidden lg:block w-full min-w-[340px] xl:min-w-[420px] min-h-[400px] xl:min-h-[460px] max-h-[80vh] aspect-[16/10] relative rounded-2xl lg:rounded-3xl overflow-hidden cursor-pointer group shadow-xs mb-6" 
           onClick={() => openLightbox(0)}
           style={{ opacity: isTransitioning ? 0 : 1 }}
         >
           <Image src={images[0]} fill className="object-cover group-hover:scale-105 transition-transform duration-700" alt="Principale" priority />
           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-500" />
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              openLightbox(0);
+            }}
+            aria-label="Voir en plein écran"
+            className="absolute bottom-4 right-4 z-10 inline-flex items-center gap-2 h-10 px-4 rounded-full bg-black/35 hover:bg-black/55 text-white backdrop-blur-md border border-white/25 shadow-sm text-xs font-semibold tracking-wide hover:scale-105 active:scale-95 transition-all cursor-pointer"
+          >
+            <Expand className="h-4 w-4 text-white shrink-0 stroke-[2.25]" />
+            <span>Plein écran</span>
+          </button>
         </div>
       );
     }
@@ -533,23 +694,32 @@ function PropertyDetailsContent({
     }
 
     return (
-      <div className="hidden lg:flex flex-col gap-[3px] w-full min-w-[340px] xl:min-w-[420px] min-h-[360px] xl:min-h-[420px] max-h-[80vh] rounded-2xl lg:rounded-3xl overflow-hidden shadow-xs border border-zinc-200/60 dark:border-white/10">
+      <div className="hidden lg:flex relative flex-col gap-[3px] w-full min-w-[340px] xl:min-w-[420px] min-h-[400px] xl:min-h-[460px] max-h-[80vh] rounded-2xl lg:rounded-3xl overflow-hidden shadow-xs border border-zinc-200/60 dark:border-white/10">
         {rows}
+        <button
+          type="button"
+          onClick={() => openLightbox(0)}
+          aria-label="Voir les photos en plein écran"
+          className="absolute bottom-4 right-4 z-10 inline-flex items-center gap-2 h-10 px-4 rounded-full bg-black/35 hover:bg-black/55 text-white backdrop-blur-md border border-white/25 shadow-sm text-xs font-semibold tracking-wide hover:scale-105 active:scale-95 transition-all cursor-pointer"
+        >
+          <Expand className="h-4 w-4 text-white shrink-0 stroke-[2.25]" />
+          <span>Plein écran ({images.length})</span>
+        </button>
       </div>
     );
   };
 
   const renderIdentityAndStats = (isMobile: boolean) => (
-    <div className={isMobile ? "lg:hidden px-4" : "hidden lg:block"}>
+    <div className={isMobile ? "lg:hidden" : "hidden lg:block"}>
       <div className="flex flex-wrap items-center gap-2.5 mb-4">
-        <span className={`px-3 py-1.5 rounded-full text-[10px] font-extrabold uppercase tracking-widest shadow-sm ${
+        <span className={`px-3.5 py-1.5 rounded-full text-xs font-extrabold uppercase tracking-wider shadow-sm ${
           property.type === 'rent'
             ? 'bg-brand-green text-white'
             : 'bg-zinc-950 text-white dark:bg-white dark:text-zinc-950'
         }`}>
           {property.type === 'rent' ? 'En location' : 'En vente'}
         </span>
-        <span className="px-3 py-1.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200/80 dark:border-zinc-700/80">
+        <span className="px-3.5 py-1.5 rounded-full text-xs font-extrabold uppercase tracking-wider bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200/80 dark:border-zinc-700/80">
           {categoryLabel}
         </span>
         <span className="text-xs font-bold text-zinc-400 uppercase tracking-widest">
@@ -561,17 +731,29 @@ function PropertyDetailsContent({
         {property.title}
       </h1>
       
-      <div className="flex items-start gap-2 text-zinc-600 dark:text-zinc-300 mb-5 lg:mb-6">
+      <div className="flex items-start gap-2 text-zinc-600 dark:text-zinc-300 mb-3 lg:mb-6">
         <MapPin className="h-4.5 w-4.5 text-brand-green shrink-0 mt-0.5" />
         <span className="font-semibold text-sm sm:text-base">
           {property.city?.fokontany} {property.city?.commune} {property.city?.district}
         </span>
       </div>
 
-      <div className="mb-5 lg:mb-6">
-        <div className="flex items-center gap-2 mb-1">
-          <div className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-widest">
+      <div className="mb-4 lg:mb-6">
+        <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+          <span className="text-[11px] font-extrabold text-zinc-400 uppercase tracking-widest shrink-0">
             {property.type === 'rent' ? 'Loyer Mensuel' : 'Prix de Vente'}
+          </span>
+          <div className="flex items-baseline gap-1 text-brand-green">
+            <span className="text-xl sm:text-2xl lg:text-3xl font-black tracking-tight">
+              {displayPrice
+                ? `${isEstimatedDisplay ? '~' : ''}${displayPrice.toLocaleString('en-US')}`
+                : 'Sur demande'}
+            </span>
+            {displayPrice && (
+              <span className="text-xs sm:text-sm lg:text-base font-bold">
+                AR{property.type === 'rent' ? '/mois' : ''}
+              </span>
+            )}
           </div>
           {isEstimatedDisplay && (
             <span
@@ -579,18 +761,6 @@ function PropertyDetailsContent({
               className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-amber-600 dark:text-amber-400"
             >
               Estimation TranoGasy
-            </span>
-          )}
-        </div>
-        <div className="flex items-baseline gap-1 text-brand-green">
-          <span className="text-xl sm:text-2xl lg:text-3xl font-black tracking-tight">
-            {displayPrice
-              ? `${isEstimatedDisplay ? '~' : ''}${displayPrice.toLocaleString('en-US')}`
-              : 'Sur demande'}
-          </span>
-          {displayPrice && (
-            <span className="text-xs sm:text-sm lg:text-base font-bold ml-1">
-              AR{property.type === 'rent' ? '/mois' : ''}
             </span>
           )}
         </div>
@@ -611,23 +781,49 @@ function PropertyDetailsContent({
       <PropertyEntryFees
         property={property}
         displayPrice={displayPrice}
-        className="-mt-2 mb-4 lg:-mt-2.5 lg:mb-5"
+        className="-mt-1 mb-3.5 lg:-mt-2.5 lg:mb-5"
       />
 
-      {/* COMPACT STATS GRID */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3 gap-2 sm:gap-2.5 mb-6 lg:mb-8">
-        {stats.map((stat, idx) => (stat.value && stat.value !== '-' && stat.value !== 0) ? (
-          <div key={idx} className="flex items-center gap-2.5 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl p-2.5 sm:p-3 border border-zinc-100/80 dark:border-zinc-700/50 hover:border-zinc-200 dark:hover:border-zinc-600 transition-colors shadow-2xs">
-            <div className="h-8 w-8 rounded-full bg-white dark:bg-zinc-800 shadow-2xs flex items-center justify-center shrink-0 border border-black/[0.04] dark:border-white/5">
-               <stat.icon className="h-4 w-4 text-zinc-700 dark:text-zinc-300" />
+      {/* COMPACT STATS: Perfectly rounded pill chips (2-line max) on mobile only; full card grid on desktop */}
+      {isMobile ? (
+        <div className="flex flex-wrap gap-1.5 mb-5">
+          {stats.map((stat, idx) => {
+            if (!stat.value || stat.value === '-' || stat.value === 0) return null;
+            const isFloor = stat.label === 'Étage' || stat.label === 'Niveau';
+            const isSurface = stat.label === 'Surface (m²)';
+            return (
+              <div
+                key={idx}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-full bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200/80 dark:border-zinc-700/60 shadow-2xs"
+              >
+                <stat.icon className="h-4 w-4 text-zinc-700 dark:text-zinc-300 shrink-0" />
+                <span className="font-extrabold text-zinc-900 dark:text-white text-xs sm:text-sm leading-none">
+                  {stat.value}
+                </span>
+                {!isFloor && (
+                  <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 leading-none">
+                    {isSurface ? (stat.value === 'Non précisée' ? '' : 'm²') : stat.label}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3 gap-2 sm:gap-2.5 mb-6 lg:mb-8">
+          {stats.map((stat, idx) => (stat.value && stat.value !== '-' && stat.value !== 0) ? (
+            <div key={idx} className="flex items-center gap-2.5 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl p-2.5 sm:p-3 border border-zinc-100/80 dark:border-zinc-700/50 hover:border-zinc-200 dark:hover:border-zinc-600 transition-colors shadow-2xs">
+              <div className="h-8 w-8 rounded-full bg-white dark:bg-zinc-800 shadow-2xs flex items-center justify-center shrink-0 border border-black/[0.04] dark:border-white/5">
+                 <stat.icon className="h-4 w-4 text-zinc-700 dark:text-zinc-300" />
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className="font-black text-zinc-900 dark:text-white text-base leading-none truncate">{stat.value}</span>
+                <span className="text-[9px] sm:text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mt-1 truncate">{stat.label}</span>
+              </div>
             </div>
-            <div className="flex flex-col min-w-0">
-              <span className="font-black text-zinc-900 dark:text-white text-base leading-none truncate">{stat.value}</span>
-              <span className="text-[9px] sm:text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mt-1 truncate">{stat.label}</span>
-            </div>
-          </div>
-        ) : null)}
-      </div>
+          ) : null)}
+        </div>
+      )}
     </div>
   );
 
@@ -648,10 +844,19 @@ function PropertyDetailsContent({
         />
       </div>
 
-      {/* MOBILE GALLERY */}
+      {/* MOBILE TOP NAVIGATION (stays pinned above both sticky hero & scrolling sheet) */}
+      {renderMobileTopActions()}
+
+      {/* MOBILE GALLERY (sticky fixed background while details sheet glides over it) */}
       {renderMobileGallery()}
 
-      <div className="relative z-10 max-w-[1680px] mx-auto px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 2xl:px-20 lg:pt-4 pb-[calc(7.5rem+env(safe-area-inset-bottom))] lg:pb-14">
+      <div
+        className={`relative z-20 max-w-[1680px] mx-auto -mt-7 rounded-t-[2rem] min-h-[65dvh] bg-gradient-to-b from-[#f4fafc] via-white to-white dark:from-[#0c121e] dark:via-zinc-950 dark:to-zinc-950 pt-6 shadow-[0_-10px_28px_rgba(0,0,0,0.1)] dark:shadow-[0_-10px_28px_rgba(0,0,0,0.45)] lg:mt-0 lg:min-h-0 lg:rounded-none lg:bg-none lg:bg-transparent lg:dark:bg-transparent lg:shadow-none px-4 sm:px-5 md:px-8 lg:px-12 xl:px-16 2xl:px-20 lg:pt-4 ${
+          APP_PLATFORM === 'ios'
+            ? 'pb-28'
+            : 'pb-[calc(7.5rem+env(safe-area-inset-bottom))]'
+        } lg:pb-14`}
+      >
         
         {/* DESKTOP NAVIGATION (STICKY ON SCROLL) */}
         <div className="hidden lg:flex items-center justify-between mb-4 lg:mb-5 sticky top-5 z-50 pointer-events-none">
@@ -693,7 +898,7 @@ function PropertyDetailsContent({
             {renderDesktopGallery()}
 
             {/* CONTENT UNDER GALLERY */}
-            <div className="px-4 lg:px-0 mt-6 lg:mt-8 space-y-6 lg:space-y-8">
+            <div className="mt-6 lg:mt-8 space-y-6 lg:space-y-8">
               
               {/* Features */}
               {activeFeatures.length > 0 && (
@@ -702,7 +907,7 @@ function PropertyDetailsContent({
                      Équipements et atouts
                      <div className="h-px bg-zinc-100 dark:bg-zinc-800 flex-1"></div>
                   </h3>
-                  <div className="flex flex-wrap gap-2 lg:gap-2.5">
+                  <div className="flex flex-wrap gap-2.5">
                     {activeFeatures.map(key => {
                        const feature = FEATURE_ICONS[key];
                        if (!feature) return null;
@@ -711,14 +916,14 @@ function PropertyDetailsContent({
                        return (
                         <div
                           key={key}
-                          className={`flex items-center gap-2 px-3 py-1.5 rounded-full border shadow-[0_2px_8px_-4px_rgba(0,0,0,0.05)] hover:-translate-y-0.5 transition-all cursor-default ${
+                          className={`inline-flex items-center gap-2 min-h-[40px] px-4 py-2 rounded-full border shadow-[0_2px_8px_-4px_rgba(0,0,0,0.06)] hover:-translate-y-0.5 transition-all cursor-default ${
                             isExternalWater
                               ? 'border-amber-200 dark:border-amber-800/80 bg-amber-50 dark:bg-amber-950/40'
                               : 'border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800/80 hover:border-zinc-300 dark:hover:border-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-700'
                           }`}
                         >
-                          <Icon className={`h-3.5 w-3.5 ${isExternalWater ? 'text-amber-600 dark:text-amber-400' : 'text-zinc-700 dark:text-zinc-300'}`} />
-                          <span className={`text-xs sm:text-sm font-semibold ${isExternalWater ? 'text-amber-800 dark:text-amber-200' : 'text-zinc-700 dark:text-zinc-200'}`}>{feature.label}</span>
+                          <Icon className={`h-4.5 w-4.5 shrink-0 ${isExternalWater ? 'text-amber-600 dark:text-amber-400' : 'text-zinc-700 dark:text-zinc-300'}`} />
+                          <span className={`text-sm font-semibold ${isExternalWater ? 'text-amber-800 dark:text-amber-200' : 'text-zinc-800 dark:text-zinc-100'}`}>{feature.label}</span>
                         </div>
                        )
                     })}
@@ -732,16 +937,20 @@ function PropertyDetailsContent({
                    À propos de ce bien
                    <div className="h-px bg-zinc-100 dark:bg-zinc-800 flex-1"></div>
                 </h3>
-                <div className={`text-zinc-600 dark:text-zinc-300 text-sm sm:text-base leading-relaxed whitespace-pre-wrap font-medium ${!isDescriptionExpanded ? 'line-clamp-6 md:line-clamp-none' : ''}`}>
+                <div
+                  ref={descriptionRef}
+                  className={`px-3 sm:px-4 text-zinc-600 dark:text-zinc-300 text-sm sm:text-base leading-relaxed whitespace-pre-wrap font-medium ${!isDescriptionExpanded ? 'line-clamp-[50]' : ''}`}
+                >
                   {property.description}
                 </div>
-                {property.description && property.description.length > 300 && (
+                {(isDescriptionTruncated || isDescriptionExpanded) && (
                   <button 
+                    type="button"
                     onClick={() => setIsDescriptionExpanded(!isDescriptionExpanded)}
-                    className="mt-3 font-bold text-brand-green hover:text-green-700 text-xs sm:text-sm flex items-center gap-1 md:hidden"
+                    className="mt-3 px-3 sm:px-4 font-bold text-brand-green hover:text-green-700 text-sm flex items-center gap-1 cursor-pointer"
                   >
                     {isDescriptionExpanded ? 'Voir moins' : 'Lire la suite'}
-                    <ChevronRight className={`h-3.5 w-3.5 transition-transform ${isDescriptionExpanded ? '-rotate-90' : 'rotate-90'}`} />
+                    <ChevronRight className={`h-4 w-4 transition-transform ${isDescriptionExpanded ? '-rotate-90' : 'rotate-90'}`} />
                   </button>
                 )}
               </div>
@@ -760,14 +969,14 @@ function PropertyDetailsContent({
           </div>
 
           {/* RIGHT COLUMN: Desktop Identity & Sticky Contact Card */}
-          <div className="w-full lg:w-[45%] xl:w-[35%] shrink-0 px-4 lg:px-0">
+          <div className="w-full lg:w-[45%] xl:w-[35%] shrink-0">
             <div className="lg:sticky lg:top-20 space-y-4 lg:space-y-5">
               
               {/* Desktop Identity */}
               {renderIdentityAndStats(false)}
 
               {/* Contact Action Area */}
-              <div className="bg-white dark:bg-zinc-800 rounded-2xl lg:rounded-3xl border border-zinc-100 dark:border-zinc-700 p-4 sm:p-5 lg:p-6 shadow-xl shadow-black/[0.03] relative overflow-hidden">
+              <div className="bg-white dark:bg-zinc-800 rounded-2xl lg:rounded-3xl border border-zinc-100 dark:border-zinc-700 p-0 lg:p-6 shadow-xl shadow-black/[0.03] relative overflow-hidden">
                  {/* Subtle background accent */}
                  <div className="absolute top-0 right-0 w-28 h-28 bg-brand-green/5 rounded-bl-full pointer-events-none"></div>
                  
@@ -778,7 +987,7 @@ function PropertyDetailsContent({
                    onKeyDown={(e) => {
                      if (e.key === 'Enter' || e.key === ' ') handleOpenOwnerProfile();
                    }}
-                   className="flex items-center justify-between gap-3.5 mb-5 relative z-10 bg-zinc-50/70 dark:bg-zinc-700/50 hover:bg-zinc-100/90 dark:hover:bg-zinc-700/80 p-3 sm:p-3.5 rounded-2xl border border-zinc-100/60 dark:border-zinc-600/50 hover:border-brand-green/40 transition-all cursor-pointer group"
+                   className="flex items-center justify-between gap-3.5 mb-0 lg:mb-5 relative z-10 bg-zinc-50/70 dark:bg-zinc-700/50 hover:bg-zinc-100/90 dark:hover:bg-zinc-700/80 p-3 sm:p-3.5 rounded-2xl border border-zinc-100/60 dark:border-zinc-600/50 hover:border-brand-green/40 transition-all cursor-pointer group"
                  >
                    <div className="flex items-center gap-3.5 min-w-0">
                      <div className="h-11 w-11 rounded-full overflow-hidden bg-white dark:bg-zinc-700 border border-zinc-200 dark:border-zinc-600 shrink-0 shadow-2xs group-hover:scale-105 transition-transform">
@@ -854,7 +1063,11 @@ function PropertyDetailsContent({
       </div>
       {/* MOBILE FIXED BOTTOM BAR */}
       <div 
-        className="lg:hidden fixed left-0 right-0 bottom-0 z-40 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border-t border-zinc-200/80 dark:border-white/10 px-4 py-3 pb-[calc(0.85rem+env(safe-area-inset-bottom))] shadow-[0_-4px_20px_rgba(0,0,0,0.06)] dark:shadow-[0_-4px_20px_rgba(0,0,0,0.4)] flex items-center justify-between gap-3"
+        className={`lg:hidden fixed left-0 right-0 bottom-0 z-40 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border-t border-zinc-200/80 dark:border-white/10 px-4 py-3 ${
+          APP_PLATFORM === 'ios'
+            ? 'pb-3.5'
+            : 'pb-[calc(0.85rem+env(safe-area-inset-bottom))]'
+        } shadow-[0_-4px_20px_rgba(0,0,0,0.06)] dark:shadow-[0_-4px_20px_rgba(0,0,0,0.4)] flex items-center justify-between gap-3`}
       >
         {/* Left: Price Section */}
         <div className="flex flex-col min-w-0 pr-1">

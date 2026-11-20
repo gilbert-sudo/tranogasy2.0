@@ -246,11 +246,13 @@ export default function TikTokCommentsDrawer({
           </span>
         </div>
         <button
+          type="button"
           onClick={onClose}
-          className="w-8 h-8 rounded-full bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 flex items-center justify-center text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors cursor-pointer"
+          aria-label="Fermer"
+          className="w-10 h-10 rounded-full bg-zinc-100/90 dark:bg-zinc-800/90 border border-zinc-300/90 dark:border-zinc-600/80 shadow-xs hover:bg-zinc-200 dark:hover:bg-zinc-700 hover:border-zinc-400 dark:hover:border-zinc-500 flex items-center justify-center text-zinc-800 dark:text-zinc-100 transition-all active:scale-90 cursor-pointer shrink-0"
           title="Fermer"
         >
-          <X className="w-4 h-4" />
+          <X className="w-5 h-5 stroke-[2.25]" />
         </button>
       </div>
 

@@ -338,9 +338,9 @@ export default function NotificationMenu() {
               type="button"
               onClick={handleClose}
               aria-label="Fermer"
-              className="hidden md:flex w-9 h-9 rounded-full bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-500 hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-white items-center justify-center transition-colors cursor-pointer"
+              className="hidden md:flex w-10 h-10 rounded-full bg-zinc-100/90 dark:bg-zinc-800/90 border border-zinc-300/90 dark:border-zinc-600/80 shadow-xs hover:bg-zinc-200 dark:hover:bg-zinc-700 hover:border-zinc-400 dark:hover:border-zinc-500 text-zinc-800 dark:text-zinc-100 items-center justify-center transition-all active:scale-90 cursor-pointer shrink-0"
             >
-              <X className="w-4 h-4" />
+              <X className="w-5 h-5 stroke-[2.25]" />
             </button>
           </div>
         </header>

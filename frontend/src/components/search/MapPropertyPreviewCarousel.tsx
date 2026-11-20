@@ -106,40 +106,40 @@ function MapPropertyPreviewCarouselComponent({
 
   return (
     <div className="w-full max-w-5xl mx-auto pointer-events-auto font-outfit animate-glass-island">
-      {/* Desktop Navigation Arrows & Counter Header */}
-      <div className="flex items-center justify-between px-4 mb-2">
-        <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-zinc-950/90 dark:bg-white/95 text-white dark:text-zinc-950 text-[11px] font-light tracking-wider shadow-md">
+      {/* Navigation Arrows & Counter Header */}
+      <div className="flex items-center justify-between px-4 mb-2.5">
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-zinc-950/90 dark:bg-white/95 text-white dark:text-zinc-950 text-xs font-medium tracking-wide shadow-md">
           <span>
             Bien {currentIdx >= 0 ? currentIdx + 1 : 1} sur {carouselSlice.length}
           </span>
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={() => handleStep(-1)}
             disabled={currentIdx <= 0}
-            className="w-8 h-8 rounded-full bg-white/95 dark:bg-zinc-900/95 border border-white/80 dark:border-white/15 flex items-center justify-center text-zinc-800 dark:text-zinc-100 disabled:opacity-35 shadow-md cursor-pointer transition-transform active:scale-90"
+            className="w-10 h-10 rounded-full bg-white/95 dark:bg-zinc-900/95 border border-zinc-300/90 dark:border-zinc-600/80 flex items-center justify-center text-zinc-800 dark:text-zinc-100 disabled:opacity-35 shadow-md cursor-pointer transition-transform active:scale-90"
             aria-label="Propriété précédente"
           >
-            <ChevronLeft className="w-4 h-4" />
+            <ChevronLeft className="w-5 h-5 stroke-[2.25]" />
           </button>
           <button
             type="button"
             onClick={() => handleStep(1)}
             disabled={currentIdx >= carouselSlice.length - 1}
-            className="w-8 h-8 rounded-full bg-white/95 dark:bg-zinc-900/95 border border-white/80 dark:border-white/15 flex items-center justify-center text-zinc-800 dark:text-zinc-100 disabled:opacity-35 shadow-md cursor-pointer transition-transform active:scale-90"
+            className="w-10 h-10 rounded-full bg-white/95 dark:bg-zinc-900/95 border border-zinc-300/90 dark:border-zinc-600/80 flex items-center justify-center text-zinc-800 dark:text-zinc-100 disabled:opacity-35 shadow-md cursor-pointer transition-transform active:scale-90"
             aria-label="Propriété suivante"
           >
-            <ChevronRight className="w-4 h-4" />
+            <ChevronRight className="w-5 h-5 stroke-[2.25]" />
           </button>
           <button
             type="button"
             onClick={() => onSelectProperty(null)}
-            className="w-8 h-8 rounded-full bg-zinc-950/90 dark:bg-white/95 text-white dark:text-zinc-950 flex items-center justify-center shadow-md cursor-pointer transition-transform active:scale-90 ml-1"
+            className="w-10 h-10 rounded-full bg-zinc-950/95 dark:bg-white/95 border border-white/30 dark:border-zinc-300 text-white dark:text-zinc-950 flex items-center justify-center shadow-md cursor-pointer transition-transform active:scale-90 ml-0.5"
             aria-label="Fermer l'aperçu"
           >
-            <X className="w-4 h-4" />
+            <X className="w-5 h-5 stroke-[2.25]" />
           </button>
         </div>
       </div>
@@ -224,11 +224,11 @@ function MapPropertyPreviewCarouselComponent({
                 <button
                   type="button"
                   onClick={(e) => handleFavorite(property, e)}
-                  className="absolute bottom-2 right-2 w-8 h-8 rounded-full bg-black/45 backdrop-blur-md flex items-center justify-center text-white hover:scale-110 active:scale-90 transition-transform cursor-pointer"
+                  className="absolute bottom-2 right-2 w-9.5 h-9.5 rounded-full bg-black/55 border border-white/25 backdrop-blur-md flex items-center justify-center text-white hover:scale-110 active:scale-90 transition-transform cursor-pointer"
                   aria-label="Favoris"
                 >
                   <Heart
-                    className={`w-4 h-4 ${
+                    className={`w-4.5 h-4.5 ${
                       isFav ? 'fill-brand-red text-brand-red' : 'text-white'
                     }`}
                   />
@@ -313,9 +313,9 @@ function MapPropertyPreviewCarouselComponent({
                     ) : null}
                   </div>
 
-                  <span className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-full bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 text-[11px] font-light tracking-wider">
+                  <span className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 text-xs font-semibold tracking-wide">
                     <span>Voir</span>
-                    <ArrowUpRight className="w-3 h-3" />
+                    <ArrowUpRight className="w-3.5 h-3.5" />
                   </span>
                 </div>
               </div>

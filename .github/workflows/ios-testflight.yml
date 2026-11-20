@@ -6,9 +6,14 @@ on:
     branches:
       - main
     paths:
+      - 'frontend/src/**'
+      - 'frontend/public/**'
       - 'frontend/ios/**'
       - 'frontend/scripts/build-mobile.mjs'
       - 'frontend/capacitor.config.ts'
+      - 'frontend/next.config.ts'
+      - 'frontend/package.json'
+      - 'frontend/package-lock.json'
       - '.github/workflows/ios-testflight.yml'
 
 jobs:

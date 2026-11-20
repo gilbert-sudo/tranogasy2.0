@@ -699,9 +699,10 @@ export default function PricingExperience() {
                 type="button"
                 disabled={isLoading}
                 onClick={() => setCheckoutModalOpen(false)}
-                className="w-8 h-8 rounded-full bg-[#F5F5F7] dark:bg-zinc-800 text-zinc-500 flex items-center justify-center active:scale-90 transition-all cursor-pointer"
+                aria-label="Fermer"
+                className="w-10 h-10 rounded-full bg-zinc-100/90 dark:bg-zinc-800/90 border border-zinc-300/90 dark:border-zinc-600/80 shadow-xs text-zinc-800 dark:text-zinc-100 hover:bg-zinc-200 dark:hover:bg-zinc-700 hover:border-zinc-400 dark:hover:border-zinc-500 flex items-center justify-center active:scale-90 transition-all cursor-pointer shrink-0"
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5 stroke-[2.25]" />
               </button>
             </div>
 

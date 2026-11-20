@@ -86,8 +86,10 @@ function buildApiUrl(
   return `${apiUrl}/properties/search?${params.toString()}`;
 }
 
+const EMPTY_PROPERTIES: never[] = [];
+
 export default function PropertyFeed({
-  initialProperties = [],
+  initialProperties = EMPTY_PROPERTIES,
   filterType = 'location',
   houseTypeFilter = 'all',
   sortBy = 'Trier par',

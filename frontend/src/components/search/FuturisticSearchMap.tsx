@@ -355,7 +355,7 @@ const PropertyBadgeMarker = memo(function PropertyBadgeMarker({
       >
         {/* High-Contrast Ultra-Rounded Price Pill */}
         <div
-          className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all duration-200 ${
+          className={`relative flex items-center gap-1.5 px-3.5 py-2 rounded-full transition-all duration-200 ${
             isHighlighted
               ? 'bg-brand-green text-white border-2 border-white ring-4 ring-brand-green/40 shadow-[0_12px_28px_rgba(0,0,0,0.45),0_4px_10px_rgba(124,189,30,0.45)]'
               : isSale
@@ -364,14 +364,14 @@ const PropertyBadgeMarker = memo(function PropertyBadgeMarker({
           }`}
         >
           {property.topProperty && (
-            <Sparkles className="w-3 h-3 text-amber-400 shrink-0" />
+            <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
           )}
 
           {/* Crisp Bold Price Text */}
-          <span className="text-xs sm:text-[13px] font-semibold tracking-tight whitespace-nowrap leading-none">
+          <span className="text-[13px] font-bold tracking-tight whitespace-nowrap leading-none">
             {formattedPrice}{' '}
             <span
-              className={`text-[10px] font-normal ${
+              className={`text-[11px] font-medium ${
                 isHighlighted ? 'text-white/90' : 'text-zinc-300'
               }`}
             >
@@ -382,7 +382,7 @@ const PropertyBadgeMarker = memo(function PropertyBadgeMarker({
           {/* High-Contrast Room Count Tag */}
           {property.rooms > 0 && (
             <span
-              className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full leading-none ${
+              className={`text-[11px] font-bold px-2 py-0.5 rounded-full leading-none ${
                 isHighlighted
                   ? 'bg-zinc-950 text-white'
                   : isSale
@@ -443,32 +443,32 @@ const PropertyClusterMarker = memo(function PropertyClusterMarker({
       >
         {/* High-Contrast Cluster Capsule */}
         <div
-          className={`flex items-center gap-1.5 rounded-full bg-white text-zinc-950 border-2 border-brand-green ring-3 ring-brand-green/25 shadow-[0_10px_24px_rgba(0,0,0,0.34),0_2px_6px_rgba(0,0,0,0.2)] transition-all group-hover:bg-zinc-950 group-hover:text-white ${
+          className={`flex items-center gap-2 rounded-full bg-white text-zinc-950 border-2 border-brand-green ring-3 ring-brand-green/25 shadow-[0_10px_24px_rgba(0,0,0,0.34),0_2px_6px_rgba(0,0,0,0.2)] transition-all group-hover:bg-zinc-950 group-hover:text-white ${
             isLarge
-              ? 'p-1.5 pr-3.5'
+              ? 'p-1.5 pr-4'
               : isMedium
-              ? 'p-1 pr-3'
-              : 'p-1 pr-2.5'
+              ? 'p-1.5 pr-3.5'
+              : 'p-1.5 pr-3'
           }`}
         >
           {/* Count Badge */}
           <span
             className={`flex items-center justify-center rounded-full bg-brand-green text-white font-bold leading-none shrink-0 shadow-xs ${
               isLarge
-                ? 'h-7 min-w-7 px-2 text-xs'
+                ? 'h-7.5 min-w-7.5 px-2 text-xs'
                 : isMedium
-                ? 'h-6 min-w-6 px-1.5 text-xs'
-                : 'h-5.5 min-w-5.5 px-1.5 text-[11px]'
+                ? 'h-7 min-w-7 px-2 text-xs'
+                : 'h-6.5 min-w-6.5 px-1.5 text-xs'
             }`}
           >
             {cluster.count}
           </span>
 
           {/* Min Price or Label */}
-          <span className="text-[11px] sm:text-xs font-medium tracking-tight whitespace-nowrap leading-none">
+          <span className="text-xs sm:text-[13px] font-semibold tracking-tight whitespace-nowrap leading-none">
             {formattedMinPrice ? (
               <>
-                <span className="font-normal opacity-70">dès </span>
+                <span className="font-medium opacity-75">dès </span>
                 <strong className="font-bold">{formattedMinPrice}</strong>
               </>
             ) : (
@@ -935,7 +935,7 @@ function FuturisticSearchMapComponent({
       )}
 
       {/* ── Floating Right-Side Futuristic Map Control Capsule ── */}
-      <div className="absolute right-3 sm:right-5 top-1/2 -translate-y-1/2 z-20 flex flex-col gap-2.5 pointer-events-auto">
+      <div className="absolute right-3 sm:right-5 top-1/2 -translate-y-1/2 z-20 flex flex-col gap-3 pointer-events-auto">
         {/* 0. Quick Card Preview Toggle (Aperçu des Cartes) */}
         {properties.length > 0 && (
           <button
@@ -952,15 +952,15 @@ function FuturisticSearchMapComponent({
                 ? "Masquer l'aperçu des cartes"
                 : `Aperçu des cartes (${properties.length})`
             }
-            className={`group relative flex h-12 w-12 sm:h-13 sm:w-13 items-center justify-center rounded-full backdrop-blur-2xl border transition-all duration-300 active:scale-90 cursor-pointer shadow-[0_8px_28px_rgba(0,0,0,0.14)] ${
+            className={`group relative flex h-13 w-13 items-center justify-center rounded-full backdrop-blur-2xl border transition-all duration-300 active:scale-90 cursor-pointer shadow-[0_8px_28px_rgba(0,0,0,0.16)] ${
               selectedPropertyId
                 ? 'bg-brand-green text-white border-white/40 shadow-[0_8px_28px_rgba(124,189,30,0.45)]'
-                : 'bg-white/85 dark:bg-zinc-900/85 text-zinc-800 dark:text-zinc-100 border-white/80 dark:border-white/10 hover:bg-white dark:hover:bg-zinc-800'
+                : 'bg-white/90 dark:bg-zinc-900/90 text-zinc-800 dark:text-zinc-100 border-white/85 dark:border-white/15 hover:bg-white dark:hover:bg-zinc-800'
             }`}
           >
-            <Eye className="w-5 h-5 group-hover:scale-110 transition-transform" />
+            <Eye className="w-5.5 h-5.5 group-hover:scale-110 transition-transform" />
             <span
-              className={`absolute -top-1 -right-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold leading-none shadow-xs ${
+              className={`absolute -top-1 -right-1 px-1.5 py-0.5 rounded-full text-[11px] font-bold leading-none shadow-xs ${
                 selectedPropertyId
                   ? 'bg-zinc-950 text-white'
                   : 'bg-brand-green text-white'
@@ -976,13 +976,13 @@ function FuturisticSearchMapComponent({
           type="button"
           onClick={() => onSetRadarClickMode(!isRadarClickMode)}
           title="Cibler une zone radar sur la carte"
-          className={`group flex h-12 w-12 sm:h-13 sm:w-13 items-center justify-center rounded-full backdrop-blur-2xl border transition-all duration-300 active:scale-90 cursor-pointer shadow-[0_8px_28px_rgba(0,0,0,0.14)] ${
+          className={`group flex h-13 w-13 items-center justify-center rounded-full backdrop-blur-2xl border transition-all duration-300 active:scale-90 cursor-pointer shadow-[0_8px_28px_rgba(0,0,0,0.16)] ${
             isRadarClickMode || (searchCoords && searchRadius > 0)
               ? 'bg-brand-green text-white border-white/40 shadow-[0_8px_28px_rgba(124,189,30,0.45)]'
-              : 'bg-white/85 dark:bg-zinc-900/85 text-zinc-800 dark:text-zinc-100 border-white/80 dark:border-white/10 hover:bg-white dark:hover:bg-zinc-800'
+              : 'bg-white/90 dark:bg-zinc-900/90 text-zinc-800 dark:text-zinc-100 border-white/85 dark:border-white/15 hover:bg-white dark:hover:bg-zinc-800'
           }`}
         >
-          <Radar className={`w-5 h-5 ${isRadarClickMode ? 'animate-spin' : 'group-hover:scale-110 transition-transform'}`} />
+          <Radar className={`w-5.5 h-5.5 ${isRadarClickMode ? 'animate-spin' : 'group-hover:scale-110 transition-transform'}`} />
         </button>
 
         {/* 2. My GPS Position */}
@@ -991,14 +991,14 @@ function FuturisticSearchMapComponent({
           onClick={() => onLocateUser(true)}
           disabled={isLocatingUser}
           title="Rechercher autour de ma position GPS"
-          className={`group flex h-12 w-12 sm:h-13 sm:w-13 items-center justify-center rounded-full backdrop-blur-2xl border transition-all duration-300 active:scale-90 cursor-pointer shadow-[0_8px_28px_rgba(0,0,0,0.14)] ${
+          className={`group flex h-13 w-13 items-center justify-center rounded-full backdrop-blur-2xl border transition-all duration-300 active:scale-90 cursor-pointer shadow-[0_8px_28px_rgba(0,0,0,0.16)] ${
             userLocation
               ? 'bg-blue-600 text-white border-white/40'
-              : 'bg-white/85 dark:bg-zinc-900/85 text-zinc-800 dark:text-zinc-100 border-white/80 dark:border-white/10 hover:bg-white dark:hover:bg-zinc-800'
+              : 'bg-white/90 dark:bg-zinc-900/90 text-zinc-800 dark:text-zinc-100 border-white/85 dark:border-white/15 hover:bg-white dark:hover:bg-zinc-800'
           }`}
         >
           <Crosshair
-            className={`w-5 h-5 ${
+            className={`w-5.5 h-5.5 ${
               isLocatingUser ? 'animate-spin text-brand-green' : 'group-hover:scale-110 transition-transform'
             }`}
           />
@@ -1009,13 +1009,13 @@ function FuturisticSearchMapComponent({
           type="button"
           onClick={onToggleMapType}
           title={mapTypeId === 'roadmap' ? 'Passer en vue Satellite' : 'Passer en vue Plan'}
-          className={`group flex h-12 w-12 sm:h-13 sm:w-13 items-center justify-center rounded-full backdrop-blur-2xl border transition-all duration-300 active:scale-90 cursor-pointer shadow-[0_8px_28px_rgba(0,0,0,0.14)] ${
+          className={`group flex h-13 w-13 items-center justify-center rounded-full backdrop-blur-2xl border transition-all duration-300 active:scale-90 cursor-pointer shadow-[0_8px_28px_rgba(0,0,0,0.16)] ${
             mapTypeId === 'hybrid'
               ? 'bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 border-white/30'
-              : 'bg-white/85 dark:bg-zinc-900/85 text-zinc-800 dark:text-zinc-100 border-white/80 dark:border-white/10 hover:bg-white dark:hover:bg-zinc-800'
+              : 'bg-white/90 dark:bg-zinc-900/90 text-zinc-800 dark:text-zinc-100 border-white/85 dark:border-white/15 hover:bg-white dark:hover:bg-zinc-800'
           }`}
         >
-          <Layers className="w-5 h-5 group-hover:scale-110 transition-transform" />
+          <Layers className="w-5.5 h-5.5 group-hover:scale-110 transition-transform" />
         </button>
 
         {/* 4. Fit Bounds to All Results */}
@@ -1023,9 +1023,9 @@ function FuturisticSearchMapComponent({
           type="button"
           onClick={handleFitBounds}
           title="Recadrer sur les résultats"
-          className="group flex h-12 w-12 sm:h-13 sm:w-13 items-center justify-center rounded-full bg-white/85 dark:bg-zinc-900/85 text-zinc-800 dark:text-zinc-100 backdrop-blur-2xl border border-white/80 dark:border-white/10 hover:bg-white dark:hover:bg-zinc-800 transition-all duration-300 active:scale-90 cursor-pointer shadow-[0_8px_28px_rgba(0,0,0,0.14)]"
+          className="group flex h-13 w-13 items-center justify-center rounded-full bg-white/90 dark:bg-zinc-900/90 text-zinc-800 dark:text-zinc-100 backdrop-blur-2xl border border-white/85 dark:border-white/15 hover:bg-white dark:hover:bg-zinc-800 transition-all duration-300 active:scale-90 cursor-pointer shadow-[0_8px_28px_rgba(0,0,0,0.16)]"
         >
-          <Maximize2 className="w-4.5 h-4.5 group-hover:scale-110 transition-transform" />
+          <Maximize2 className="w-5 h-5 group-hover:scale-110 transition-transform" />
         </button>
 
         {/* 5. Zoom In / Out Capsule (Desktop & Tablet) */}

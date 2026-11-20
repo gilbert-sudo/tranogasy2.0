@@ -348,7 +348,7 @@ export default function SearchEngineShell() {
                             Math.min(10000, filters.searchRadius + 1500)
                           )
                         }
-                        className="px-6 py-3.5 rounded-full bg-brand-green text-white font-outfit font-light text-xs sm:text-sm tracking-wide shadow-[0_8px_24px_rgba(114,193,70,0.35)] hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                        className="min-h-[44px] px-6 py-3 rounded-full bg-brand-green text-white font-outfit font-medium text-sm tracking-wide shadow-[0_8px_24px_rgba(114,193,70,0.35)] hover:scale-105 active:scale-95 transition-all cursor-pointer"
                       >
                         Élargir à{' '}
                         {(
@@ -360,7 +360,7 @@ export default function SearchEngineShell() {
                     <button
                       type="button"
                       onClick={resetFilters}
-                      className="px-6 py-3.5 rounded-full bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 font-outfit font-light text-xs sm:text-sm tracking-wide hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                      className="min-h-[44px] px-6 py-3 rounded-full bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 font-outfit font-medium text-sm tracking-wide hover:scale-105 active:scale-95 transition-all cursor-pointer"
                     >
                       Tout réinitialiser
                     </button>
@@ -375,7 +375,7 @@ export default function SearchEngineShell() {
             MODE 2: HYBRID SPLIT MODE ('split' — Bento Grid + Live Map)
         ══════════════════════════════════════════════════════════════════ */}
         {viewMode === 'split' && (
-          <div className="w-full h-[100dvh] overflow-hidden flex flex-col pt-[106px] sm:pt-[130px] bg-zinc-50 dark:bg-zinc-950">
+          <div className="w-full h-[100dvh] overflow-hidden flex flex-col pt-[calc(132px+var(--ios-safe-top))] sm:pt-[calc(138px+var(--ios-safe-top))] bg-zinc-50 dark:bg-zinc-950">
             <div className="flex-1 flex overflow-hidden w-full max-w-[2000px] mx-auto">
               {/* Left Scrollable Bento Results Pane */}
               <div className="w-full lg:w-[54%] xl:w-[52%] h-full overflow-y-auto px-4 sm:px-6 lg:px-8 pb-36 scrollbar-hide">
@@ -540,12 +540,12 @@ export default function SearchEngineShell() {
             MODE 3: FULL BENTO LIST MODE ('list')
         ══════════════════════════════════════════════════════════════════ */}
         {viewMode === 'list' && (
-          <div className="w-full min-h-[100dvh] pt-[106px] sm:pt-[130px] pb-24 sm:pb-32 px-4 sm:px-6 md:px-8 lg:px-28 xl:px-32 2xl:px-36 max-w-[2000px] mx-auto">
+          <div className="w-full min-h-[100dvh] pt-[calc(132px+var(--ios-safe-top))] sm:pt-[calc(138px+var(--ios-safe-top))] pb-24 sm:pb-32 px-4 sm:px-6 md:px-8 lg:px-28 xl:px-32 2xl:px-36 max-w-[2000px] mx-auto">
             {/* List Header & Sort Bar - Space Optimized & Compact */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4 pb-2.5 sm:pb-4 mb-3.5 sm:mb-6 border-b border-zinc-200/70 dark:border-white/10">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-4 pb-3 sm:pb-4 mb-4 sm:mb-6 border-b border-zinc-200/70 dark:border-white/10">
               <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="font-outfit font-medium text-base sm:text-xl text-zinc-900 dark:text-white tracking-tight">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="font-outfit font-medium text-lg sm:text-xl text-zinc-900 dark:text-white tracking-tight">
                     {filteredProperties.length}{' '}
                     <span className="font-light text-zinc-500 dark:text-zinc-400">
                       {filteredProperties.length > 1
@@ -557,9 +557,9 @@ export default function SearchEngineShell() {
                     <button
                       type="button"
                       onClick={resetFilters}
-                      className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-zinc-200/70 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-outfit font-light text-[11px] sm:text-xs hover:bg-zinc-300/70 dark:hover:bg-zinc-700 transition-all cursor-pointer"
+                      className="flex items-center gap-1.5 min-h-[36px] px-3.5 py-1.5 rounded-full bg-zinc-200/70 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 font-outfit font-medium text-xs sm:text-sm hover:bg-zinc-300/70 dark:hover:bg-zinc-700 transition-all cursor-pointer"
                     >
-                      <RotateCcw className="w-3 h-3" />
+                      <RotateCcw className="w-3.5 h-3.5" />
                       <span>Réinitialiser ({activeFiltersCount})</span>
                     </button>
                   )}
@@ -580,7 +580,7 @@ export default function SearchEngineShell() {
               </div>
 
               {/* Sort Selector Pills */}
-              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
                 <div className="hidden sm:flex items-center gap-1 text-xs font-outfit font-light text-zinc-400 mr-1 shrink-0">
                   <ArrowUpDown className="w-3.5 h-3.5" />
                   <span>Trier :</span>
@@ -592,10 +592,10 @@ export default function SearchEngineShell() {
                       key={opt.id}
                       type="button"
                       onClick={() => setFilter('sortBy', opt.id)}
-                      className={`px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-full font-outfit text-xs sm:text-sm transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                      className={`min-h-[42px] px-4.5 py-2.5 rounded-full font-outfit text-sm transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                         active
-                          ? 'bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 font-normal shadow-xs'
-                          : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 font-light border border-zinc-200/80 dark:border-white/10 hover:border-zinc-300'
+                          ? 'bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 font-semibold shadow-xs'
+                          : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 font-medium border border-zinc-200/80 dark:border-white/10 hover:border-zinc-300'
                       }`}
                     >
                       {opt.label}
@@ -678,7 +678,7 @@ export default function SearchEngineShell() {
                           Math.min(filteredProperties.length, prev + CARDS_BATCH_SIZE)
                         )
                       }
-                      className="px-8 py-3.5 rounded-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-200 font-outfit font-light text-xs sm:text-sm tracking-wider shadow-xs hover:border-brand-green transition-all cursor-pointer"
+                      className="min-h-[46px] px-8 py-3.5 rounded-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-200 font-outfit font-medium text-sm tracking-wide shadow-xs hover:border-brand-green transition-all cursor-pointer"
                     >
                       Afficher plus de biens ({filteredProperties.length - visibleCount} restants)
                     </button>

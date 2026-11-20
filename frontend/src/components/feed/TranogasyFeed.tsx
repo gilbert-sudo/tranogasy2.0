@@ -19,8 +19,10 @@ interface TranogasyFeedProps {
   embeddedInSearch?: boolean;
 }
 
+const EMPTY_PROPERTIES: FeedProperty[] = [];
+
 export default function TranogasyFeed({
-  initialProperties = [],
+  initialProperties = EMPTY_PROPERTIES,
   embeddedInSearch = false,
 }: TranogasyFeedProps) {
   const [properties, setProperties] = useState<FeedProperty[]>(initialProperties);
@@ -56,8 +58,18 @@ export default function TranogasyFeed({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Fetch initial properties with retry on cold start
+  const hasInitialProperties = initialProperties.length > 0;
+
+  // Seed global property store when initialProperties are provided (e.g. search feed mode)
   useEffect(() => {
+    if (!hasInitialProperties) return;
+    addProperties(initialProperties);
+  }, [hasInitialProperties, initialProperties, addProperties]);
+
+  // Fetch initial properties once on mount when no initialProperties are supplied
+  useEffect(() => {
+    if (hasInitialProperties) return;
+
     let retryTimer: NodeJS.Timeout | null = null;
     let isCancelled = false;
     const controller = new AbortController();
@@ -96,18 +108,14 @@ export default function TranogasyFeed({
       }
     };
 
-    if (initialProperties.length === 0) {
-      fetchInitial();
-    } else {
-      addProperties(initialProperties);
-    }
+    fetchInitial();
 
     return () => {
       isCancelled = true;
       controller.abort();
       if (retryTimer) clearTimeout(retryTimer);
     };
-  }, [initialProperties, addProperties]);
+  }, [hasInitialProperties, addProperties]);
 
   // Load more properties when approaching end of list
   const loadMoreProperties = useCallback(async () => {
