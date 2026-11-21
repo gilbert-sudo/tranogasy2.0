@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
   Headset,
@@ -11,6 +11,7 @@ import {
   Phone,
   CheckCircle2,
   ArrowLeft,
+  ArrowRight,
   Copy,
   Check,
   ShieldCheck,
@@ -61,6 +62,19 @@ function resolvePlanDurationLabel(tx: AssistanceReceiptTransaction): string {
   return 'Assistance Tranogasy';
 }
 
+function formatRemainingLabel(expiresAt: string | null | undefined, nowMs: number | null): string | null {
+  if (!expiresAt || nowMs === null) return null;
+  const diffMs = new Date(expiresAt).getTime() - nowMs;
+  if (!Number.isFinite(diffMs) || diffMs <= 0) return null;
+  const totalMinutes = Math.floor(diffMs / 60000);
+  const days = Math.floor(totalMinutes / (60 * 24));
+  const hours = Math.floor((totalMinutes % (60 * 24)) / 60);
+  const mins = totalMinutes % 60;
+  if (days > 0) return hours > 0 ? `${days}j ${hours}h restants` : `${days}j restant${days > 1 ? 's' : ''}`;
+  if (hours > 0) return mins > 0 ? `${hours}h ${mins}min restantes` : `${hours}h restantes`;
+  return `${Math.max(1, mins)} min restantes`;
+}
+
 export function useAccountCommerce() {
   const {
     receipts,
@@ -76,6 +90,8 @@ export function useAccountCommerce() {
   return {
     balance: hasActiveAssistance ? 1 : 0,
     transactions: confirmedReceipts,
+    planLabel: assistancePlanLabel,
+    expiresAt: assistanceExpiresAt,
     hasActiveAssistance,
     assistancePlanLabel,
     assistanceExpiresAt,
@@ -104,13 +120,43 @@ export function AccountHeaderBadge({ balance }: { balance: number }) {
 export function AccountWalletSection({
   balance,
   transactions,
+  planLabel,
+  expiresAt,
   onOpenHistory,
 }: {
   balance: number;
   transactions: AssistanceReceiptTransaction[];
+  planLabel?: string | null;
+  expiresAt?: string | null;
   onOpenHistory: () => void;
 }) {
   const isActive = balance > 0;
+  const latestConfirmed = transactions[0];
+  const resolvedExpiresAt =
+    expiresAt ||
+    latestConfirmed?.assistanceExpiresAt ||
+    latestConfirmed?.subscriptionExpiresAt ||
+    null;
+
+  const [nowMs, setNowMs] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!isActive || !resolvedExpiresAt) return;
+    const syncNow = () => setNowMs(Date.now());
+    const initTimer = setTimeout(syncNow, 0);
+    const interval = setInterval(syncNow, 60000);
+    return () => {
+      clearTimeout(initTimer);
+      clearInterval(interval);
+    };
+  }, [isActive, resolvedExpiresAt]);
+
+  const activeOfferTitle =
+    planLabel?.trim() ||
+    (latestConfirmed
+      ? `Assistance • ${resolvePlanDurationLabel(latestConfirmed)}`
+      : 'Assistance active');
+  const remainingLabel = isActive ? formatRemainingLabel(resolvedExpiresAt, nowMs) : null;
 
   return (
     <section>
@@ -130,43 +176,67 @@ export function AccountWalletSection({
         )}
       </div>
 
-      <div className="bg-white dark:bg-zinc-900 rounded-[2rem] sm:rounded-[2.25rem] px-4 py-3.5 sm:px-6 sm:py-4 shadow-[0_12px_40px_rgba(0,0,0,0.04)] dark:shadow-[0_12px_40px_rgba(0,0,0,0.35)] flex flex-row items-center justify-between gap-3 sm:gap-4">
+      {/* Minimalistic Premium Gradient Card */}
+      <Link
+        href="/pricing"
+        onClick={() => usePropertyDetailModalStore.getState().clearUnlockReturnContext()}
+        className={`group relative block overflow-hidden rounded-[2rem] sm:rounded-[2.25rem] p-5 sm:p-6 text-white ring-1 transition-all duration-300 active:scale-[0.99] ${
+          isActive
+            ? 'bg-gradient-to-br from-[#0b2618] via-[#144a28] to-[#3f821c] ring-white/15 shadow-[0_16px_40px_-14px_rgba(20,74,40,0.45)]'
+            : 'bg-gradient-to-br from-[#13161c] via-[#1b2420] to-[#233d20] ring-white/12 shadow-[0_16px_40px_-14px_rgba(15,20,24,0.4)]'
+        }`}
+      >
+        {/* Subtle Single Ambient Sheen */}
         <div
-          onClick={transactions.length > 0 ? onOpenHistory : undefined}
-          className={`flex items-center gap-3 sm:gap-3.5 min-w-0 ${
-            transactions.length > 0 ? 'cursor-pointer' : ''
-          }`}
-        >
-          <div className="w-11 h-11 rounded-2xl bg-brand-green/12 text-brand-green flex items-center justify-center shrink-0">
-            <Headset className="w-5 h-5" />
-          </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5 leading-none">
-              <span className="text-sm sm:text-base font-extrabold text-zinc-900 dark:text-white truncate">
-                {isActive ? 'Assistance en cours' : 'Service client TranoGasy'}
-              </span>
-              {isActive && (
-                <CheckCircle2 className="w-4 h-4 text-brand-green shrink-0" />
+          aria-hidden="true"
+          className="pointer-events-none absolute -top-24 -right-20 w-60 h-60 rounded-full blur-3xl opacity-60"
+          style={{
+            background: isActive
+              ? 'radial-gradient(circle, rgba(163,230,53,0.35) 0%, transparent 70%)'
+              : 'radial-gradient(circle, rgba(124,189,30,0.32) 0%, transparent 70%)',
+          }}
+        />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/25 to-transparent"
+        />
+
+        <div className="relative z-10 flex items-center justify-between gap-4">
+          <div className="min-w-0 space-y-1.5">
+            <div className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-white/65">
+              {isActive ? (
+                <>
+                  <span className="w-1.5 h-1.5 rounded-full bg-brand-green animate-pulse" />
+                  <span className="text-[#d4ff91]">Offre active</span>
+                </>
+              ) : (
+                <>
+                  <Headset className="w-3.5 h-3.5 text-brand-green" />
+                  <span>Service TranoGasy</span>
+                </>
               )}
             </div>
-            <p className="text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400 font-medium mt-1 truncate">
+
+            <div className="text-lg sm:text-xl font-extrabold tracking-tight text-white leading-tight truncate">
+              {isActive ? activeOfferTitle : 'Nos offres'}
+            </div>
+
+            <p className="text-xs sm:text-sm text-white/70 font-medium truncate">
               {isActive
-                ? 'Offre active • Consultez vos reçus pour la mise en relation'
-                : 'Accès direct aux annonces et mise en relation'}
+                ? remainingLabel ||
+                  (resolvedExpiresAt
+                    ? `Valable jusqu’au ${formatReceiptDate(resolvedExpiresAt)}`
+                    : 'Accompagnement en cours')
+                : 'Aucune offre active'}
             </p>
           </div>
-        </div>
 
-        <div className="flex items-center gap-2 shrink-0">
-          <Link
-            href="/pricing"
-            onClick={() => usePropertyDetailModalStore.getState().clearUnlockReturnContext()}
-            className="h-10 sm:h-11 px-4 sm:px-5 rounded-full bg-brand-green hover:bg-[#6da819] text-white font-bold text-xs sm:text-sm inline-flex items-center justify-center shadow-[0_6px_20px_rgba(124,189,30,0.28)] hover:scale-[1.02] active:scale-95 transition-all whitespace-nowrap"
-          >
-            <span>Offres</span>
-          </Link>
+          <span className="h-10 sm:h-11 px-4 sm:px-5 rounded-full bg-white text-zinc-950 font-bold text-xs sm:text-sm inline-flex items-center justify-center gap-1.5 shadow-[0_8px_24px_rgba(0,0,0,0.2)] group-hover:bg-zinc-100 group-hover:translate-x-0.5 transition-all whitespace-nowrap shrink-0">
+            <span>{isActive ? 'Voir' : 'Voir les offres'}</span>
+            <ArrowRight className="w-4 h-4 stroke-[2.25]" />
+          </span>
         </div>
-      </div>
+      </Link>
     </section>
   );
 }

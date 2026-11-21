@@ -107,6 +107,8 @@ export default function AccountPage() {
   const {
     balance,
     transactions,
+    planLabel,
+    expiresAt,
     refreshCommerce,
     showHistory,
     setShowHistory,
@@ -336,6 +338,8 @@ export default function AccountPage() {
             <AccountWalletSection
               balance={balance}
               transactions={transactions}
+              planLabel={planLabel}
+              expiresAt={expiresAt}
               onOpenHistory={() => setShowHistory(true)}
             />
 

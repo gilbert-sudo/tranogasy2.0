@@ -31,6 +31,7 @@ import { getStoredSessionAuth } from '@/services/api';
 import type { CheckoutPaymentMethod } from '@/services/payment.service';
 import { useAuth } from '@/hooks/useAuth';
 import { usePayment } from '@/hooks/usePayment';
+import { useHorizontalSwipeCarousel } from '@/hooks/useHorizontalSwipeCarousel';
 import { TIME_SUBSCRIPTION_PLANS, TimeSubscriptionPlan } from '@/lib/platform';
 import {
   PAYMENT_PROVIDERS,
@@ -119,6 +120,22 @@ export default function PricingExperience() {
 
   // Checkout Modal State
   const [checkoutModalOpen, setCheckoutModalOpen] = useState<boolean>(false);
+
+  const {
+    bindViewport: bindPlanViewport,
+    bindTrack: bindPlanTrack,
+    shouldSuppressClick: shouldSuppressPlanClick,
+  } = useHorizontalSwipeCarousel({
+    itemCount: TIME_SUBSCRIPTION_PLANS.length,
+    currentIndex: activePlanIndex,
+    onIndexChange: setActivePlanIndex,
+    horizontalBias: 0.75,
+    decisionSlopPx: 6,
+    respectEdgeBack: true,
+    enableMouseDrag: true,
+    transitionDurationMs: 320,
+    disabled: checkoutModalOpen,
+  });
   const [checkoutStep, setCheckoutStep] = useState<CheckoutStep>('options');
   const [selectedPaymentMethod, setSelectedPaymentMethod] =
     useState<CheckoutPaymentMethod>('MVOLA');
@@ -847,17 +864,156 @@ export default function PricingExperience() {
           ))}
         </div>
 
-        <div className="w-full grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-5 lg:gap-6 items-stretch max-h-[calc(100dvh-165px)]">
-          {TIME_SUBSCRIPTION_PLANS.map((plan, idx) => {
+        {/* Mobile Swipeable Carousel */}
+        <div
+          ref={bindPlanViewport}
+          data-horizontal-carousel="true"
+          onClickCapture={(e) => {
+            if (shouldSuppressPlanClick()) {
+              e.preventDefault();
+              e.stopPropagation();
+            }
+          }}
+          className="md:hidden w-[calc(100%+1.75rem)] sm:w-[calc(100%+2.5rem)] -mx-3.5 sm:-mx-5 overflow-x-clip max-h-[calc(100dvh-165px)] cursor-grab active:cursor-grabbing"
+          style={{ touchAction: 'pan-y' }}
+        >
+          <div
+            ref={bindPlanTrack}
+            className="flex w-full items-stretch will-change-transform"
+            style={{ transform: `translate3d(-${activePlanIndex * 100}%, 0, 0)` }}
+          >
+            {TIME_SUBSCRIPTION_PLANS.map((plan) => {
+              const isFeatured = Boolean(plan.isFeatured);
+
+              return (
+                <div
+                  key={plan.id}
+                  className="w-full min-w-0 shrink-0 px-3.5 sm:px-5 flex flex-col"
+                >
+                  <div
+                    className={`flex-1 rounded-[2.25rem] p-5 sm:p-6 lg:p-7 flex flex-col justify-between transition-all duration-300 select-none ${
+                      isFeatured
+                        ? 'bg-zinc-950 text-white dark:bg-zinc-900 shadow-xl md:scale-[1.03] z-10 ring-1 ring-white/10'
+                        : 'bg-white text-zinc-900 dark:bg-zinc-900/90 dark:text-white shadow-sm border border-zinc-200/60 dark:border-zinc-800'
+                    }`}
+                  >
+                    <div className="space-y-3.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span
+                          className={`text-sm sm:text-base font-extrabold tracking-tight ${
+                            isFeatured ? 'text-white' : 'text-zinc-900 dark:text-white'
+                          }`}
+                        >
+                          {plan.name}
+                        </span>
+
+                        <span
+                          className={`px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
+                            isFeatured
+                              ? 'bg-amber-400 text-zinc-950'
+                              : 'bg-[#F5F5F7] dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300'
+                          }`}
+                        >
+                          {plan.badge}
+                        </span>
+                      </div>
+
+                      <div>
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-3xl sm:text-4xl lg:text-[42px] font-extrabold tracking-tight leading-none">
+                            {plan.amount.toLocaleString('fr-FR')}
+                          </span>
+                          <span
+                            className={`text-xs sm:text-sm font-bold uppercase tracking-wider ${
+                              isFeatured ? 'text-zinc-300' : 'text-zinc-500 dark:text-zinc-400'
+                            }`}
+                          >
+                            Ar
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-1.5">
+                          <Clock
+                            className={`w-4 h-4 ${
+                              isFeatured ? 'text-amber-400' : 'text-brand-green'
+                            }`}
+                          />
+                          <span
+                            className={`text-xs font-bold ${
+                              isFeatured ? 'text-amber-400' : 'text-brand-green'
+                            }`}
+                          >
+                            Accès illimité • {plan.durationLabel}
+                          </span>
+                        </div>
+                      </div>
+
+                      <p
+                        className={`text-[12px] leading-relaxed line-clamp-2 ${
+                          isFeatured
+                            ? 'text-zinc-300 dark:text-zinc-400'
+                            : 'text-zinc-500 dark:text-zinc-400'
+                        }`}
+                      >
+                        {plan.tagline}
+                      </p>
+
+                      <div className="space-y-2 pt-2 border-t border-zinc-200/40 dark:border-zinc-800/60">
+                        {plan.features.map((feat, fIdx) => (
+                          <div
+                            key={fIdx}
+                            className="flex items-center gap-2.5 text-xs font-medium"
+                          >
+                            <span className="w-4 h-4 rounded-full bg-brand-green/20 text-brand-green flex items-center justify-center shrink-0">
+                              <Check className="w-2.5 h-2.5" strokeWidth={3} />
+                            </span>
+                            <span
+                              className={`truncate ${
+                                isFeatured
+                                  ? 'text-zinc-200'
+                                  : 'text-zinc-700 dark:text-zinc-300'
+                              }`}
+                            >
+                              {feat}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="pt-4 sm:pt-5">
+                      <button
+                        type="button"
+                        onClick={() => openCheckoutForPlan(plan)}
+                        className={`w-full h-13 sm:h-14 px-6 rounded-full font-extrabold text-xs sm:text-sm shadow-md active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                          isFeatured
+                            ? 'bg-white text-zinc-950 hover:bg-zinc-100'
+                            : 'bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 hover:bg-zinc-800 dark:hover:bg-zinc-100'
+                        }`}
+                      >
+                        <Crown
+                          className={`w-4 h-4 ${
+                            isFeatured ? 'text-amber-500' : 'text-amber-400'
+                          }`}
+                        />
+                        <span>Choisir {plan.durationLabel}</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Desktop 3-Column Grid */}
+        <div className="hidden md:grid w-full md:grid-cols-3 gap-4 sm:gap-5 lg:gap-6 items-stretch max-h-[calc(100dvh-165px)]">
+          {TIME_SUBSCRIPTION_PLANS.map((plan) => {
             const isFeatured = Boolean(plan.isFeatured);
-            const isMobileActive = activePlanIndex === idx;
 
             return (
               <div
                 key={plan.id}
                 className={`rounded-[2.25rem] p-5 sm:p-6 lg:p-7 flex flex-col justify-between transition-all duration-300 select-none ${
-                  isMobileActive ? 'flex' : 'hidden md:flex'
-                } ${
                   isFeatured
                     ? 'bg-zinc-950 text-white dark:bg-zinc-900 shadow-xl md:scale-[1.03] z-10 ring-1 ring-white/10'
                     : 'bg-white text-zinc-900 dark:bg-zinc-900/90 dark:text-white shadow-sm border border-zinc-200/60 dark:border-zinc-800'

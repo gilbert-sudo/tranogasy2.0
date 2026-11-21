@@ -19,6 +19,10 @@ export interface UseHorizontalSwipeCarouselOptions {
   decisionSlopPx?: number;
   /** Ignore touches starting near left/right screen edges so OS swipe-back still works */
   respectEdgeBack?: boolean;
+  /** Allow horizontal mouse drag in addition to touch gestures (default false) */
+  enableMouseDrag?: boolean;
+  /** Transition duration in milliseconds for snapping between slides (default 280) */
+  transitionDurationMs?: number;
   /** Disable swipe interception entirely */
   disabled?: boolean;
   /** Optional callback fired when a touch begins inside the carousel */
@@ -36,10 +40,12 @@ export interface UseHorizontalSwipeCarouselResult {
 
 type AxisLock = 'idle' | 'undecided' | 'horizontal' | 'vertical';
 
-const TRANSITION_STYLE = 'transform 280ms cubic-bezier(0.22, 1, 0.36, 1)';
+const DEFAULT_TRANSITION_DURATION_MS = 280;
+const TRANSITION_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
 const EDGE_BACK_MARGIN_PX = 18;
 const CLICK_SUPPRESS_MS = 320;
 const EDGE_RESISTANCE = 0.26;
+const MOUSE_AFTER_TOUCH_GUARD_MS = 500;
 
 /**
  * High-precision horizontal swipe carousel hook designed for nested photo sliders
@@ -57,6 +63,8 @@ export function useHorizontalSwipeCarousel({
   horizontalBias = 0.82,
   decisionSlopPx = 6,
   respectEdgeBack = false,
+  enableMouseDrag = false,
+  transitionDurationMs = DEFAULT_TRANSITION_DURATION_MS,
   disabled = false,
   onTouchInteractionStart,
   onTouchInteractionEnd,
@@ -72,6 +80,8 @@ export function useHorizontalSwipeCarousel({
     horizontalBias,
     decisionSlopPx,
     respectEdgeBack,
+    enableMouseDrag,
+    transitionDurationMs,
     disabled,
     onTouchInteractionStart,
     onTouchInteractionEnd,
@@ -85,6 +95,8 @@ export function useHorizontalSwipeCarousel({
       horizontalBias,
       decisionSlopPx,
       respectEdgeBack,
+      enableMouseDrag,
+      transitionDurationMs,
       disabled,
       onTouchInteractionStart,
       onTouchInteractionEnd,
@@ -96,12 +108,15 @@ export function useHorizontalSwipeCarousel({
     horizontalBias,
     decisionSlopPx,
     respectEdgeBack,
+    enableMouseDrag,
+    transitionDurationMs,
     disabled,
     onTouchInteractionStart,
     onTouchInteractionEnd,
   ]);
 
   const lastSwipeTimestampRef = useRef(0);
+  const lastTouchTimestampRef = useRef(0);
   const isDraggingHorizontalRef = useRef(false);
 
   const bindViewport = useCallback((node: HTMLDivElement | null) => {
@@ -116,9 +131,9 @@ export function useHorizontalSwipeCarousel({
   useEffect(() => {
     const track = trackNodeRef.current;
     if (!track || isDraggingHorizontalRef.current) return;
-    track.style.transition = TRANSITION_STYLE;
+    track.style.transition = `transform ${transitionDurationMs}ms ${TRANSITION_EASING}`;
     track.style.transform = `translate3d(-${currentIndex * 100}%, 0, 0)`;
-  }, [currentIndex]);
+  }, [currentIndex, viewportNode, transitionDurationMs]);
 
   useEffect(() => {
     const viewport = viewportNode;
@@ -133,11 +148,15 @@ export function useHorizontalSwipeCarousel({
     let prevTime = 0;
     let appliedDx = 0;
     let didMoveHorizontally = false;
+    let mouseDragging = false;
+
+    const getTransitionStyle = () =>
+      `transform ${optionsRef.current.transitionDurationMs}ms ${TRANSITION_EASING}`;
 
     const settleTrack = (targetIndex: number, animate = true) => {
       const track = trackNodeRef.current;
       if (!track) return;
-      track.style.transition = animate ? TRANSITION_STYLE : 'none';
+      track.style.transition = animate ? getTransitionStyle() : 'none';
       track.style.transform = `translate3d(-${targetIndex * 100}%, 0, 0)`;
     };
 
@@ -152,7 +171,39 @@ export function useHorizontalSwipeCarousel({
       }
     };
 
+    const resolveTargetIndex = (
+      finalX: number,
+      idx: number,
+      count: number,
+      isCancel: boolean
+    ) => {
+      if (isCancel) return idx;
+      const totalDx = finalX - startX;
+      const now = performance.now();
+      const dt = Math.max(1, now - prevTime);
+      const velocityX = (finalX - prevX) / dt; // px/ms
+
+      const width = viewport.clientWidth || 320;
+      const distanceThreshold = Math.min(width * 0.2, 85);
+      const passedDistance = Math.abs(totalDx) > distanceThreshold;
+      const passedFlick =
+        Math.abs(totalDx) > 18 &&
+        Math.abs(velocityX) > 0.28 &&
+        Math.sign(velocityX) === Math.sign(totalDx);
+
+      if (passedDistance || passedFlick) {
+        if (totalDx < 0 && idx < count - 1) {
+          return idx + 1;
+        }
+        if (totalDx > 0 && idx > 0) {
+          return idx - 1;
+        }
+      }
+      return idx;
+    };
+
     const handleTouchStart = (e: TouchEvent) => {
+      lastTouchTimestampRef.current = performance.now();
       const opts = optionsRef.current;
       if (opts.disabled || opts.itemCount <= 1) {
         resetState(false);
@@ -272,6 +323,7 @@ export function useHorizontalSwipeCarousel({
     };
 
     const handleTouchEndOrCancel = (e: TouchEvent) => {
+      lastTouchTimestampRef.current = performance.now();
       if (axis === 'idle') return;
 
       const opts = optionsRef.current;
@@ -291,29 +343,7 @@ export function useHorizontalSwipeCarousel({
       const isCancel = e.type === 'touchcancel';
       const changedTouch = e.changedTouches[0];
       const finalX = changedTouch ? changedTouch.clientX : lastX;
-      const totalDx = finalX - startX;
-      const now = performance.now();
-      const dt = Math.max(1, now - prevTime);
-      const velocityX = (finalX - prevX) / dt; // px/ms
-
-      let nextIndex = idx;
-      if (!isCancel) {
-        const width = viewport.clientWidth || 320;
-        const distanceThreshold = Math.min(width * 0.2, 85);
-        const passedDistance = Math.abs(totalDx) > distanceThreshold;
-        const passedFlick =
-          Math.abs(totalDx) > 18 &&
-          Math.abs(velocityX) > 0.28 &&
-          Math.sign(velocityX) === Math.sign(totalDx);
-
-        if (passedDistance || passedFlick) {
-          if (totalDx < 0 && idx < count - 1) {
-            nextIndex = idx + 1;
-          } else if (totalDx > 0 && idx > 0) {
-            nextIndex = idx - 1;
-          }
-        }
-      }
+      const nextIndex = resolveTargetIndex(finalX, idx, count, isCancel);
 
       isDraggingHorizontalRef.current = false;
       settleTrack(nextIndex, true);
@@ -325,16 +355,137 @@ export function useHorizontalSwipeCarousel({
       resetState(true);
     };
 
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!mouseDragging || axis === 'idle' || axis === 'vertical') return;
+
+      const opts = optionsRef.current;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      const absX = Math.abs(dx);
+      const absY = Math.abs(dy);
+
+      if (axis === 'undecided') {
+        if (Math.max(absX, absY) < opts.decisionSlopPx) {
+          return;
+        }
+        if (absX >= absY * opts.horizontalBias) {
+          axis = 'horizontal';
+          isDraggingHorizontalRef.current = true;
+          didMoveHorizontally = true;
+          const track = trackNodeRef.current;
+          if (track) {
+            track.style.transition = 'none';
+          }
+        } else {
+          axis = 'vertical';
+          return;
+        }
+      }
+
+      e.preventDefault();
+
+      const now = performance.now();
+      if (now - lastTime > 12) {
+        prevX = lastX;
+        prevTime = lastTime;
+        lastX = e.clientX;
+        lastTime = now;
+      }
+
+      const idx = opts.currentIndex;
+      const count = opts.itemCount;
+      const isPullingPastStart = idx === 0 && dx > 0;
+      const isPullingPastEnd = idx >= count - 1 && dx < 0;
+
+      appliedDx = isPullingPastStart || isPullingPastEnd ? dx * EDGE_RESISTANCE : dx;
+
+      const track = trackNodeRef.current;
+      if (track) {
+        track.style.transform = `translate3d(calc(${-idx * 100}% + ${appliedDx}px), 0, 0)`;
+      }
+    };
+
+    const handleMouseUp = (e: MouseEvent) => {
+      if (!mouseDragging) return;
+      mouseDragging = false;
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+
+      if (axis === 'idle') return;
+
+      const opts = optionsRef.current;
+      const wasHorizontal = axis === 'horizontal';
+      const idx = opts.currentIndex;
+      const count = opts.itemCount;
+
+      if (!wasHorizontal) {
+        resetState(true);
+        return;
+      }
+
+      if (didMoveHorizontally) {
+        lastSwipeTimestampRef.current = performance.now();
+      }
+
+      const nextIndex = resolveTargetIndex(e.clientX, idx, count, false);
+
+      isDraggingHorizontalRef.current = false;
+      settleTrack(nextIndex, true);
+
+      if (nextIndex !== idx) {
+        opts.onIndexChange(nextIndex);
+      }
+
+      resetState(true);
+    };
+
+    const handleMouseDown = (e: MouseEvent) => {
+      const opts = optionsRef.current;
+      if (!opts.enableMouseDrag || opts.disabled || opts.itemCount <= 1) {
+        return;
+      }
+      if (e.button !== 0) return;
+      if (performance.now() - lastTouchTimestampRef.current < MOUSE_AFTER_TOUCH_GUARD_MS) {
+        return;
+      }
+
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('[data-carousel-gesture-ignore="true"]')) {
+        return;
+      }
+
+      const now = performance.now();
+      mouseDragging = true;
+      startX = e.clientX;
+      startY = e.clientY;
+      lastX = startX;
+      lastTime = now;
+      prevX = startX;
+      prevTime = now;
+      appliedDx = 0;
+      didMoveHorizontally = false;
+      axis = 'undecided';
+      isDraggingHorizontalRef.current = false;
+
+      opts.onTouchInteractionStart?.();
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    };
+
     viewport.addEventListener('touchstart', handleTouchStart, { passive: true });
     viewport.addEventListener('touchmove', handleTouchMove, { passive: false });
     viewport.addEventListener('touchend', handleTouchEndOrCancel, { passive: true });
     viewport.addEventListener('touchcancel', handleTouchEndOrCancel, { passive: true });
+    viewport.addEventListener('mousedown', handleMouseDown);
 
     return () => {
       viewport.removeEventListener('touchstart', handleTouchStart);
       viewport.removeEventListener('touchmove', handleTouchMove);
       viewport.removeEventListener('touchend', handleTouchEndOrCancel);
       viewport.removeEventListener('touchcancel', handleTouchEndOrCancel);
+      viewport.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
     };
   }, [viewportNode]);
 
