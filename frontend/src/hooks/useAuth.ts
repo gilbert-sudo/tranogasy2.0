@@ -5,6 +5,7 @@ import {
   type ClaimableListingPreview,
   type SuggestedFbProfile,
 } from '../services/auth.service';
+import { getStoredSessionAuth } from '../services/api';
 import { userService } from '../services/user.service';
 import { propertyService } from '../services/property.service';
 import { useUserStore } from '../store/userStore';
@@ -145,10 +146,14 @@ export function useAuth() {
           isDummy;
 
         if (isOutdated) {
+          const preservedToken =
+            latestSession?.authToken ||
+            latestUser?.authToken ||
+            getStoredSessionAuth().authToken;
           const syncedSession = {
             message: 'Session synchronisée',
             user: checkRes.user,
-            ...(latestSession?.authToken ? { authToken: latestSession.authToken } : {}),
+            ...(preservedToken ? { authToken: preservedToken } : {}),
           };
           setUser(syncedSession);
           if (typeof window !== 'undefined') {
@@ -437,10 +442,14 @@ export function useAuth() {
           saveLocalAccountToRegistry(phoneKey, updatedUserObj);
         }
 
+        const preservedToken =
+          currentUserSession?.authToken ||
+          activeUser?.authToken ||
+          getStoredSessionAuth().authToken;
         const updatedSession = {
           message: 'Profil mis à jour',
           user: updatedUserObj,
-          ...(currentUserSession?.authToken ? { authToken: currentUserSession.authToken } : {}),
+          ...(preservedToken ? { authToken: preservedToken } : {}),
         };
 
         setUser(updatedSession);

@@ -15,6 +15,16 @@ import { NotificationsService } from '../notifications/notifications.service';
 
 export type SubscriptionPlanId = 'plan_24h' | 'plan_3d' | 'plan_7d';
 export type AssistancePlanId = 'assistance_24h' | 'assistance_3d' | 'assistance_7d';
+export type PapiDirectMobileMethod = 'MVOLA' | 'ORANGE_MONEY' | 'AIRTEL_MONEY';
+export type CheckoutPaymentMethod =
+  | PapiDirectMobileMethod
+  | 'CARD'
+  | 'PAPI_LINK'
+  | 'mvola'
+  | 'orange'
+  | 'airtel'
+  | 'card'
+  | 'papi';
 
 export interface DurationPlanConfig {
   id: string;
@@ -128,6 +138,92 @@ export class PaymentsService {
     );
   }
 
+  private resolveCheckoutMethod(method?: string): {
+    mode: 'direct' | 'link';
+    papiMethod?: PapiDirectMobileMethod;
+    operator: string;
+  } {
+    if (!method) {
+      return { mode: 'link', operator: 'papi' };
+    }
+    const normalized = String(method).trim().toUpperCase();
+    if (normalized === 'CARD' || normalized === 'CB' || normalized === 'VISA') {
+      return { mode: 'link', operator: 'card' };
+    }
+    if (normalized === 'PAPI' || normalized === 'PAPI_LINK' || normalized === 'LINK') {
+      return { mode: 'link', operator: 'papi' };
+    }
+    if (normalized === 'MVOLA') {
+      return { mode: 'direct', papiMethod: 'MVOLA', operator: 'mvola' };
+    }
+    if (normalized === 'ORANGE_MONEY' || normalized === 'ORANGE') {
+      return { mode: 'direct', papiMethod: 'ORANGE_MONEY', operator: 'orange' };
+    }
+    if (normalized === 'AIRTEL_MONEY' || normalized === 'AIRTEL') {
+      return { mode: 'direct', papiMethod: 'AIRTEL_MONEY', operator: 'airtel' };
+    }
+    throw new BadRequestException(`Mode de paiement non pris en charge : ${method}`);
+  }
+
+  private validateMadagascarMobileMoneyPhone(
+    rawPhone: string | undefined,
+    papiMethod: PapiDirectMobileMethod,
+  ): string {
+    const normalized = this.normalizeMadagascarPhone(rawPhone || '');
+    if (!/^03[23478]\d{7}$/.test(normalized)) {
+      throw new BadRequestException(
+        'Veuillez saisir un numéro Mobile Money malgache valide à 10 chiffres (ex: 034 00 000 00).',
+      );
+    }
+
+    if (
+      papiMethod === 'MVOLA' &&
+      !normalized.startsWith('034') &&
+      !normalized.startsWith('038')
+    ) {
+      throw new BadRequestException(
+        'Le numéro MVola doit commencer par 034 ou 038.',
+      );
+    }
+
+    if (
+      papiMethod === 'ORANGE_MONEY' &&
+      !normalized.startsWith('032') &&
+      !normalized.startsWith('037')
+    ) {
+      throw new BadRequestException(
+        'Le numéro Orange Money doit commencer par 032 ou 037.',
+      );
+    }
+
+    if (papiMethod === 'AIRTEL_MONEY' && !normalized.startsWith('033')) {
+      throw new BadRequestException(
+        'Le numéro Airtel Money doit commencer par 033.',
+      );
+    }
+
+    return normalized;
+  }
+
+  private extractPapiErrorMessage(errorText: string, fallback: string): string {
+    if (!errorText) return fallback;
+    try {
+      const parsed = JSON.parse(errorText);
+      const candidate =
+        parsed?.message ||
+        parsed?.error?.message ||
+        parsed?.data?.message ||
+        parsed?.failureReason ||
+        parsed?.error;
+      if (typeof candidate === 'string' && candidate.trim()) {
+        return candidate.trim();
+      }
+    } catch {
+      // Not JSON, fall back to raw string if reasonable length
+    }
+    return errorText.length < 220 ? errorText : fallback;
+  }
+
   private async resolveUserForPayment(
     userId?: string,
     userPhone?: string,
@@ -231,6 +327,9 @@ export class PaymentsService {
 
       return {
         success: true,
+        mode: 'link' as const,
+        status: payment.status,
+        operator: payment.operator,
         paymentLink: linkInfo.paymentLink,
         ref,
         amount: payment.amount,
@@ -256,12 +355,178 @@ export class PaymentsService {
   }
 
   /**
-   * Creates a Papi payment link for Web/Android time-based subscriptions (24h, 3d, 1w).
+   * Initiates a direct in-app Mobile Money payment (USSD push / temporaryCode) via POST /v1/payments
+   */
+  private async dispatchPapiDirectPayment(params: {
+    payment: PaymentDocument;
+    user: UserDocument;
+    papiMethod: PapiDirectMobileMethod;
+    operator: string;
+    description: string;
+    clientName?: string;
+    payerEmail?: string;
+    payerPhone?: string;
+    temporaryCode?: string;
+  }) {
+    const { payment, user, papiMethod, operator } = params;
+    const ref = payment.ref;
+    const clientName = params.clientName || user.username || 'Client TranoGasy';
+    const payerEmail = params.payerEmail || user.email || undefined;
+    const rawPhone = params.payerPhone || user.phone || '';
+    const phoneNumber = this.validateMadagascarMobileMoneyPhone(
+      rawPhone,
+      papiMethod,
+    );
+    const temporaryCode = params.temporaryCode?.trim();
+
+    if (papiMethod === 'ORANGE_MONEY' && !temporaryCode) {
+      throw new BadRequestException(
+        'Veuillez saisir le code temporaire Orange Money obtenu en composant le #144*3*3#.',
+      );
+    }
+
+    const notificationUrl = `${this.apiPublicUrl}/api/payments/papi/webhook`;
+
+    payment.operator = operator;
+    payment.papiPaymentMethod = papiMethod;
+    payment.phoneNumber = phoneNumber;
+    await payment.save();
+
+    try {
+      this.logger.log(
+        `Initiating direct Papi Mobile Money payment (${papiMethod}) for ${ref} (${payment.amount} MGA, phone=${phoneNumber})`,
+      );
+
+      const requestBody: Record<string, any> = {
+        paymentMethod: papiMethod,
+        amount: payment.amount,
+        currency: 'MGA',
+        reference: ref,
+        description: params.description,
+        clientName,
+        phoneNumber,
+        notificationUrl,
+      };
+
+      if (payerEmail) {
+        requestBody.payerEmail = payerEmail;
+      }
+      if (papiMethod === 'ORANGE_MONEY' && temporaryCode) {
+        requestBody.temporaryCode = temporaryCode;
+      }
+
+      const papiRes = await fetch(`${this.papiBaseUrl}/v1/payments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Token: this.papiKey,
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!papiRes.ok) {
+        const errorText = await papiRes.text();
+        this.logger.error(
+          `Papi direct payment error (${papiRes.status}) for ${ref}: ${errorText}`,
+        );
+        const friendlyMsg = this.extractPapiErrorMessage(
+          errorText,
+          'Impossible d’initier le paiement Mobile Money auprès de l’opérateur.',
+        );
+        payment.status = 'failed';
+        payment.failureReason = friendlyMsg;
+        await payment.save();
+        throw new BadRequestException(friendlyMsg);
+      }
+
+      const papiData = await papiRes.json();
+      const pObj =
+        papiData?.data?.payment ||
+        papiData?.payment ||
+        papiData?.data ||
+        papiData;
+      const rawStatus = String(
+        pObj?.paymentStatus ||
+          papiData?.data?.status ||
+          papiData?.status ||
+          'PENDING',
+      ).toUpperCase();
+
+      payment.papiRawStatus = rawStatus;
+      if (pObj?.notificationToken) {
+        payment.papiNotificationToken = pObj.notificationToken;
+      }
+      this.applyPaymentMethodToRecord(
+        payment,
+        pObj?.paymentMethod || papiMethod,
+      );
+
+      if (rawStatus === 'SUCCESS' || rawStatus === 'PAID') {
+        const updatedUser = await this.applyConfirmedPayment(payment);
+        return {
+          success: true,
+          mode: 'direct' as const,
+          ...this.buildPaymentStatusPayload(payment, updatedUser),
+          paymentMethod: papiMethod,
+        };
+      }
+
+      if (this.isPapiFailureStatus(rawStatus)) {
+        const reason =
+          pObj?.failureReason ||
+          pObj?.message ||
+          'La transaction Mobile Money a été refusée ou annulée.';
+        payment.status = 'failed';
+        payment.failureReason = reason;
+        await payment.save();
+        throw new BadRequestException(reason);
+      }
+
+      await payment.save();
+
+      return {
+        success: true,
+        mode: 'direct' as const,
+        status: 'pending' as const,
+        paymentMethod: papiMethod,
+        operator: payment.operator,
+        ref,
+        amount: payment.amount,
+        phoneNumber,
+        category: payment.category,
+        subscriptionPlanId: payment.subscriptionPlanId,
+        subscriptionDurationHours: payment.subscriptionDurationHours,
+        assistancePlanId: payment.assistancePlanId,
+        assistanceDurationHours: payment.assistanceDurationHours,
+        notificationToken: payment.papiNotificationToken,
+      };
+    } catch (err: any) {
+      if (
+        err instanceof BadRequestException ||
+        err instanceof NotFoundException
+      ) {
+        throw err;
+      }
+      this.logger.error(
+        `Error connecting to Papi Direct API: ${err.message}`,
+        err.stack,
+      );
+      throw new BadRequestException(
+        `Erreur lors de la communication avec Papi : ${err.message}`,
+      );
+    }
+  }
+
+  /**
+   * Creates or initiates a Papi payment for Web/Android time-based subscriptions (24h, 3d, 1w).
+   * Supports Direct Mobile Money (MVOLA, ORANGE_MONEY, AIRTEL_MONEY) and Hosted Payment Link for Card (CARD).
    */
   async createSubscriptionPaymentLink(dto: {
     userId?: string;
     userPhone?: string;
     planId: SubscriptionPlanId;
+    paymentMethod?: CheckoutPaymentMethod;
+    temporaryCode?: string;
     clientName?: string;
     payerEmail?: string;
     payerPhone?: string;
@@ -273,6 +538,7 @@ export class PaymentsService {
       throw new BadRequestException("Forfait d'abonnement invalide.");
     }
 
+    const resolvedMethod = this.resolveCheckoutMethod(dto.paymentMethod);
     const user = await this.resolveUserForPayment(dto.userId, dto.userPhone);
     const ref = `TG-SUB-${Date.now().toString(36).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
     const payerPhone = dto.payerPhone
@@ -281,10 +547,26 @@ export class PaymentsService {
         ? this.normalizeMadagascarPhone(user.phone)
         : '';
 
+    if (resolvedMethod.mode === 'direct' && resolvedMethod.papiMethod) {
+      this.validateMadagascarMobileMoneyPhone(
+        payerPhone,
+        resolvedMethod.papiMethod,
+      );
+      if (
+        resolvedMethod.papiMethod === 'ORANGE_MONEY' &&
+        !dto.temporaryCode?.trim()
+      ) {
+        throw new BadRequestException(
+          'Veuillez saisir le code temporaire Orange Money obtenu en composant le #144*3*3#.',
+        );
+      }
+    }
+
     const payment = new this.paymentModel({
       user: user._id,
       type: 'Abonnement TranoGasy',
-      operator: 'papi',
+      operator: resolvedMethod.operator,
+      papiPaymentMethod: resolvedMethod.papiMethod || (resolvedMethod.operator === 'card' ? 'CARD' : null),
       category: 'time_subscription',
       subscriptionPlanId: plan.id,
       subscriptionDurationHours: plan.durationHours,
@@ -297,6 +579,20 @@ export class PaymentsService {
       created_at: new Date(),
     });
     await payment.save();
+
+    if (resolvedMethod.mode === 'direct' && resolvedMethod.papiMethod) {
+      return this.dispatchPapiDirectPayment({
+        payment,
+        user,
+        papiMethod: resolvedMethod.papiMethod,
+        operator: resolvedMethod.operator,
+        description: `Abonnement ${plan.label} — TranoGasy`,
+        clientName: dto.clientName,
+        payerEmail: dto.payerEmail,
+        payerPhone: payerPhone,
+        temporaryCode: dto.temporaryCode,
+      });
+    }
 
     return this.dispatchPapiPaymentLink({
       payment,
@@ -311,12 +607,15 @@ export class PaymentsService {
   }
 
   /**
-   * Creates a Papi payment link for iOS real-world Agency Assistance services.
+   * Creates or initiates a Papi payment for iOS real-world Agency Assistance services.
+   * Supports Direct Mobile Money (MVOLA, ORANGE_MONEY, AIRTEL_MONEY) and Hosted Payment Link for Card (CARD).
    */
   async createAssistancePaymentLink(dto: {
     userId?: string;
     userPhone?: string;
     planId: AssistancePlanId;
+    paymentMethod?: CheckoutPaymentMethod;
+    temporaryCode?: string;
     clientName?: string;
     payerEmail?: string;
     payerPhone?: string;
@@ -328,6 +627,7 @@ export class PaymentsService {
       throw new BadRequestException("Forfait d'assistance invalide.");
     }
 
+    const resolvedMethod = this.resolveCheckoutMethod(dto.paymentMethod);
     const user = await this.resolveUserForPayment(dto.userId, dto.userPhone);
     const ref = `TG-AST-${Date.now().toString(36).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
     const payerPhone = dto.payerPhone
@@ -336,10 +636,26 @@ export class PaymentsService {
         ? this.normalizeMadagascarPhone(user.phone)
         : '';
 
+    if (resolvedMethod.mode === 'direct' && resolvedMethod.papiMethod) {
+      this.validateMadagascarMobileMoneyPhone(
+        payerPhone,
+        resolvedMethod.papiMethod,
+      );
+      if (
+        resolvedMethod.papiMethod === 'ORANGE_MONEY' &&
+        !dto.temporaryCode?.trim()
+      ) {
+        throw new BadRequestException(
+          'Veuillez saisir le code temporaire Orange Money obtenu en composant le #144*3*3#.',
+        );
+      }
+    }
+
     const payment = new this.paymentModel({
       user: user._id,
       type: 'Assistance Tranogasy',
-      operator: 'papi',
+      operator: resolvedMethod.operator,
+      papiPaymentMethod: resolvedMethod.papiMethod || (resolvedMethod.operator === 'card' ? 'CARD' : null),
       category: 'agency_assistance',
       assistancePlanId: plan.id,
       assistanceDurationHours: plan.durationHours,
@@ -352,6 +668,20 @@ export class PaymentsService {
       created_at: new Date(),
     });
     await payment.save();
+
+    if (resolvedMethod.mode === 'direct' && resolvedMethod.papiMethod) {
+      return this.dispatchPapiDirectPayment({
+        payment,
+        user,
+        papiMethod: resolvedMethod.papiMethod,
+        operator: resolvedMethod.operator,
+        description: `Assistance Tranogasy ${plan.label} — TranoGasy`,
+        clientName: dto.clientName,
+        payerEmail: dto.payerEmail,
+        payerPhone: payerPhone,
+        temporaryCode: dto.temporaryCode,
+      });
+    }
 
     return this.dispatchPapiPaymentLink({
       payment,
@@ -520,6 +850,8 @@ export class PaymentsService {
       ref: payment.ref,
       amount: payment.amount,
       operator: payment.operator,
+      paymentMethod: payment.papiPaymentMethod || undefined,
+      failureReason: payment.failureReason || undefined,
       category: payment.category || 'time_subscription',
       subscriptionPlanId: payment.subscriptionPlanId || undefined,
       subscriptionDurationHours: payment.subscriptionDurationHours || undefined,
@@ -662,7 +994,7 @@ export class PaymentsService {
         },
       );
 
-      if (!papiRes.ok && papiRes.status === 404) {
+      if (!papiRes.ok && (papiRes.status === 404 || !payment.papiPaymentLink)) {
         papiRes = await fetch(
           `${this.papiBaseUrl}/v1/payments/${encodeURIComponent(ref)}`,
           {

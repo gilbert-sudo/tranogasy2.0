@@ -3,7 +3,9 @@ import {
   assistanceService,
   AssistanceReceiptTransaction,
   AssistanceStatusResponse,
+  CheckoutPaymentMethod,
 } from '@/services/assistance.service';
+import { ApiError, getStoredSessionAuth } from '@/services/api';
 import type { AssistancePlanId } from '@/lib/platform';
 import { useUserStore } from '@/store/userStore';
 
@@ -77,36 +79,42 @@ export function useAssistance() {
 
     const localKey = activeUser?.phone || activeUser?._id;
     const isSyntheticId = String(activeUser?._id || '').startsWith('tg_');
+    const { authToken } = getStoredSessionAuth();
 
-    try {
-      const targetParam = !isSyntheticId && activeUser?._id ? activeUser._id : activeUser?.phone;
-      if (targetParam) {
-        const res = await assistanceService.getUserAssistanceHistory(targetParam);
-        const { user: latestSession, sessionEpoch: latestEpoch } = useUserStore.getState();
-        if (latestEpoch !== startEpoch || !latestSession) {
-          return;
-        }
-
-        const expiresAt = res?.assistanceExpiresAt;
-        const planLabel = res?.assistancePlanLabel;
-        if (expiresAt !== undefined) {
-          syncExpirationStatus(expiresAt || null, planLabel ?? null);
-        } else if (planLabel !== undefined) {
-          setAssistancePlanLabel(planLabel || null);
-        }
-        if (Array.isArray(res?.payments)) {
-          const onlyConfirmed = res.payments.filter(
-            (tx) => tx.status === 'confirmed'
-          );
-          setReceipts(onlyConfirmed);
-          if (localKey) {
-            saveLocalReceipts(localKey, onlyConfirmed);
+    if (authToken) {
+      try {
+        const targetParam = !isSyntheticId && activeUser?._id ? activeUser._id : activeUser?.phone;
+        if (targetParam) {
+          const res = await assistanceService.getUserAssistanceHistory(targetParam);
+          const { user: latestSession, sessionEpoch: latestEpoch } = useUserStore.getState();
+          if (latestEpoch !== startEpoch || !latestSession) {
+            return;
           }
-          return;
+
+          const expiresAt = res?.assistanceExpiresAt;
+          const planLabel = res?.assistancePlanLabel;
+          if (expiresAt !== undefined) {
+            syncExpirationStatus(expiresAt || null, planLabel ?? null);
+          } else if (planLabel !== undefined) {
+            setAssistancePlanLabel(planLabel || null);
+          }
+          if (Array.isArray(res?.payments)) {
+            const onlyConfirmed = res.payments.filter(
+              (tx) => tx.status === 'confirmed'
+            );
+            setReceipts(onlyConfirmed);
+            if (localKey) {
+              saveLocalReceipts(localKey, onlyConfirmed);
+            }
+            return;
+          }
         }
+      } catch (err: unknown) {
+        if (err instanceof ApiError && err.status === 401) {
+          useUserStore.getState().clearAuthToken();
+        }
+        // Fallback to local cache when backend is unreachable or session expired
       }
-    } catch {
-      // Fallback to local cache when backend is unreachable
     }
 
     const { user: latestSession, sessionEpoch: latestEpoch } = useUserStore.getState();
@@ -126,6 +134,8 @@ export function useAssistance() {
     async (
       planId: AssistancePlanId,
       options?: {
+        paymentMethod?: CheckoutPaymentMethod;
+        temporaryCode?: string;
         payerEmail?: string;
         payerPhone?: string;
         successUrl?: string;
@@ -133,17 +143,31 @@ export function useAssistance() {
       }
     ): Promise<{
       success: boolean;
+      mode?: 'direct' | 'link';
+      status?: 'pending' | 'confirmed' | 'failed' | 'refused';
+      paymentMethod?: CheckoutPaymentMethod | string;
+      operator?: string;
       paymentLink?: string;
       ref?: string;
       amount?: number;
+      assistanceExpiresAt?: string | null;
+      assistancePlanLabel?: string | null;
       error?: string;
+      requiresReauth?: boolean;
     }> => {
       setError(null);
       const activeUser = useUserStore.getState().user?.user || useUserStore.getState().user;
       if (!activeUser) {
         const msg = 'Veuillez vous connecter pour continuer.';
         setError(msg);
-        return { success: false, error: msg };
+        return { success: false, error: msg, requiresReauth: true };
+      }
+
+      const { authToken } = getStoredSessionAuth();
+      if (!authToken) {
+        const msg = 'Votre session a expiré. Veuillez vous reconnecter.';
+        setError(msg);
+        return { success: false, error: msg, requiresReauth: true };
       }
 
       setIsLoading(true);
@@ -153,6 +177,8 @@ export function useAssistance() {
           userId: !isSyntheticId ? activeUser._id : undefined,
           userPhone: activeUser.phone,
           planId,
+          paymentMethod: options?.paymentMethod,
+          temporaryCode: options?.temporaryCode,
           clientName: activeUser.username || undefined,
           payerEmail: options?.payerEmail || activeUser.email || undefined,
           payerPhone: options?.payerPhone || activeUser.phone || undefined,
@@ -160,24 +186,44 @@ export function useAssistance() {
           failureUrl: options?.failureUrl,
         });
 
+        if (res.status === 'confirmed') {
+          if (res.assistanceExpiresAt) {
+            syncExpirationStatus(
+              res.assistanceExpiresAt,
+              res.assistancePlanLabel ?? null
+            );
+          }
+          fetchAssistanceHistory();
+        }
+
         return {
           success: true,
+          mode: res.mode,
+          status: res.status || 'pending',
+          paymentMethod: res.paymentMethod,
+          operator: res.operator,
           paymentLink: res.paymentLink,
           ref: res.ref,
           amount: res.amount,
+          assistanceExpiresAt: res.assistanceExpiresAt,
+          assistancePlanLabel: res.assistancePlanLabel,
         };
       } catch (err: unknown) {
+        const isUnauthorized = err instanceof ApiError && err.status === 401;
+        if (isUnauthorized) {
+          useUserStore.getState().clearAuthToken();
+        }
         const msg =
           err instanceof Error
             ? err.message
-            : 'Erreur lors de la création du lien de paiement.';
+            : 'Erreur lors de l’initiation du paiement.';
         setError(msg);
-        return { success: false, error: msg };
+        return { success: false, error: msg, requiresReauth: isUnauthorized };
       } finally {
         setIsLoading(false);
       }
     },
-    []
+    [fetchAssistanceHistory, syncExpirationStatus]
   );
 
   const checkAssistancePaymentStatus = useCallback(

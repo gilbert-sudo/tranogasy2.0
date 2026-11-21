@@ -16,6 +16,7 @@ import {
   Building2,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
+import { useUserStore } from '@/store/userStore';
 import { useProfileStore } from '@/store/profileStore';
 import { usePropertyStore } from '@/store/propertyStore';
 import { usePropertyDetailModalStore } from '@/store/propertyDetailModalStore';
@@ -36,6 +37,15 @@ export default function PhoneAuthFlow({
 }: PhoneAuthFlowProps) {
   const router = useRouter();
   const setIsEditModalOpen = useProfileStore((state) => state.setIsEditModalOpen);
+  const storedSession = useUserStore((state) => state.user);
+  const existingUser = storedSession?.user || storedSession;
+  const existingPhone = existingUser?.phone
+    ? String(existingUser.phone).replace(/\D/g, '').slice(0, 12)
+    : '';
+  const isSessionReauth =
+    mode === 'modal' &&
+    Boolean(existingUser) &&
+    !(storedSession?.authToken || existingUser?.authToken);
 
   const {
     requestSmsVerification,
@@ -50,7 +60,9 @@ export default function PhoneAuthFlow({
   } = useAuth();
 
   const [step, setStep] = useState<AuthStep>('phone');
-  const [phoneNumber, setPhoneNumber] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState(() =>
+    mode === 'modal' && existingPhone ? existingPhone : ''
+  );
   const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '', '']);
   const [username, setUsername] = useState('');
   const [resendFeedback, setResendFeedback] = useState(false);
@@ -428,7 +440,9 @@ export default function PhoneAuthFlow({
               {/* Passwordless & Automatic Account Creation Info */}
               <div className="pt-2 md:pt-1 text-center">
                 <p className="text-[13px] md:text-[11.5px] leading-relaxed font-medium text-zinc-500 dark:text-zinc-400 max-w-[315px] md:max-w-[275px] mx-auto">
-                  Aucun mot de passe requis. Un code SMS vérifiera votre numéro.
+                  {isSessionReauth
+                    ? 'Votre session a expiré. Confirmez votre numéro par SMS pour continuer.'
+                    : 'Aucun mot de passe requis. Un code SMS vérifiera votre numéro.'}
                 </p>
               </div>
             </form>

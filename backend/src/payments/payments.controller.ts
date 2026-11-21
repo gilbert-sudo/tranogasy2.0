@@ -18,6 +18,7 @@ import {
 import { PaymentsService } from './payments.service';
 import type {
   AssistancePlanId,
+  CheckoutPaymentMethod,
   SubscriptionPlanId,
 } from './payments.service';
 
@@ -29,7 +30,8 @@ export class PaymentsController {
   ) {}
 
   /**
-   * Generates a Papi hosted payment link for Web/Android time-based subscriptions
+   * Initiates a Direct Mobile Money payment (USSD push) or generates a Papi hosted payment link (for Card iframe)
+   * for Web/Android time-based subscriptions
    */
   @Post('create-subscription-link')
   async createSubscriptionLink(
@@ -38,6 +40,8 @@ export class PaymentsController {
       userId?: string;
       userPhone?: string;
       planId: SubscriptionPlanId;
+      paymentMethod?: CheckoutPaymentMethod;
+      temporaryCode?: string;
       clientName?: string;
       payerEmail?: string;
       payerPhone?: string;
@@ -60,7 +64,8 @@ export class PaymentsController {
   }
 
   /**
-   * Generates a Papi hosted payment link for iOS real-world Agency Assistance services
+   * Initiates a Direct Mobile Money payment (USSD push) or generates a Papi hosted payment link (for Card iframe)
+   * for iOS real-world Agency Assistance services
    */
   @Post('create-assistance-link')
   async createAssistanceLink(
@@ -69,6 +74,8 @@ export class PaymentsController {
       userId?: string;
       userPhone?: string;
       planId: AssistancePlanId;
+      paymentMethod?: CheckoutPaymentMethod;
+      temporaryCode?: string;
       clientName?: string;
       payerEmail?: string;
       payerPhone?: string;

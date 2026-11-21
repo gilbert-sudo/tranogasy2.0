@@ -2,6 +2,7 @@ import { apiFetch } from './api';
 import type { SubscriptionPlanId } from '@/lib/platform';
 
 export type MobileMoneyOperatorId = 'mvola' | 'airtel' | 'orange' | 'card' | 'papi';
+export type CheckoutPaymentMethod = 'MVOLA' | 'ORANGE_MONEY' | 'AIRTEL_MONEY' | 'CARD';
 
 export interface PaymentTransaction {
   _id: string;
@@ -29,6 +30,8 @@ export interface CreateSubscriptionLinkPayload {
   userId?: string;
   userPhone?: string;
   planId: SubscriptionPlanId;
+  paymentMethod?: CheckoutPaymentMethod;
+  temporaryCode?: string;
   clientName?: string;
   payerEmail?: string;
   payerPhone?: string;
@@ -38,12 +41,20 @@ export interface CreateSubscriptionLinkPayload {
 
 export interface CreateSubscriptionLinkResponse {
   success: boolean;
-  paymentLink: string;
+  mode?: 'direct' | 'link';
+  status?: 'pending' | 'confirmed' | 'failed' | 'refused';
+  paymentMethod?: CheckoutPaymentMethod | string;
+  operator?: string;
+  paymentLink?: string;
   ref: string;
   amount: number;
-  subscriptionPlanId: SubscriptionPlanId;
-  subscriptionDurationHours: number;
+  phoneNumber?: string;
+  subscriptionPlanId?: SubscriptionPlanId;
+  subscriptionDurationHours?: number;
+  subscriptionExpiresAt?: string | null;
+  subscriptionPlanLabel?: string | null;
   notificationToken?: string;
+  failureReason?: string;
 }
 
 export interface PaymentStatusResponse {

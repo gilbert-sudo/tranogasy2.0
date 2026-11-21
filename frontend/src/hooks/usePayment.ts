@@ -3,7 +3,9 @@ import {
   paymentService,
   PaymentTransaction,
   PaymentStatusResponse,
+  CheckoutPaymentMethod,
 } from '@/services/payment.service';
+import { ApiError, getStoredSessionAuth } from '@/services/api';
 import type { SubscriptionPlanId } from '@/lib/platform';
 import { useUserStore } from '@/store/userStore';
 import { usePaymentStore } from '@/store/paymentStore';
@@ -84,35 +86,41 @@ export function usePayment() {
 
     const localKey = activeUser?.phone || activeUser?._id;
     const isSyntheticId = String(activeUser?._id || '').startsWith('tg_');
+    const { authToken } = getStoredSessionAuth();
 
-    try {
-      const targetParam = !isSyntheticId && activeUser?._id ? activeUser._id : activeUser?.phone;
-      if (targetParam) {
-        const res = await paymentService.getUserWallet(targetParam);
-        const { user: latestSession, sessionEpoch: latestEpoch } = useUserStore.getState();
-        if (latestEpoch !== startEpoch || !latestSession) {
-          return;
-        }
-
-        if (res?.subscriptionExpiresAt !== undefined) {
-          syncSubscriptionState(
-            res.subscriptionExpiresAt || null,
-            res.subscriptionPlanLabel ?? null
-          );
-        }
-        if (Array.isArray(res?.payments)) {
-          const confirmedSubs = res.payments.filter(
-            (tx) => tx.status === 'confirmed'
-          );
-          setTransactions(confirmedSubs, identifier);
-          if (localKey) {
-            saveLocalTransactions(localKey, confirmedSubs);
+    if (authToken) {
+      try {
+        const targetParam = !isSyntheticId && activeUser?._id ? activeUser._id : activeUser?.phone;
+        if (targetParam) {
+          const res = await paymentService.getUserWallet(targetParam);
+          const { user: latestSession, sessionEpoch: latestEpoch } = useUserStore.getState();
+          if (latestEpoch !== startEpoch || !latestSession) {
+            return;
           }
-          return;
+
+          if (res?.subscriptionExpiresAt !== undefined) {
+            syncSubscriptionState(
+              res.subscriptionExpiresAt || null,
+              res.subscriptionPlanLabel ?? null
+            );
+          }
+          if (Array.isArray(res?.payments)) {
+            const confirmedSubs = res.payments.filter(
+              (tx) => tx.status === 'confirmed'
+            );
+            setTransactions(confirmedSubs, identifier);
+            if (localKey) {
+              saveLocalTransactions(localKey, confirmedSubs);
+            }
+            return;
+          }
         }
+      } catch (err: unknown) {
+        if (err instanceof ApiError && err.status === 401) {
+          useUserStore.getState().clearAuthToken();
+        }
+        // Fallback to local cache when backend is unreachable or session expired
       }
-    } catch {
-      // Fallback to local cache when backend is unreachable
     }
 
     const { user: latestSession, sessionEpoch: latestEpoch } = useUserStore.getState();
@@ -132,6 +140,8 @@ export function usePayment() {
     async (
       planId: SubscriptionPlanId,
       options?: {
+        paymentMethod?: CheckoutPaymentMethod;
+        temporaryCode?: string;
         payerEmail?: string;
         payerPhone?: string;
         successUrl?: string;
@@ -139,17 +149,31 @@ export function usePayment() {
       }
     ): Promise<{
       success: boolean;
+      mode?: 'direct' | 'link';
+      status?: 'pending' | 'confirmed' | 'failed' | 'refused';
+      paymentMethod?: CheckoutPaymentMethod | string;
+      operator?: string;
       paymentLink?: string;
       ref?: string;
       amount?: number;
+      subscriptionExpiresAt?: string | null;
+      subscriptionPlanLabel?: string | null;
       error?: string;
+      requiresReauth?: boolean;
     }> => {
       setError(null);
       const activeUser = useUserStore.getState().user?.user || useUserStore.getState().user;
       if (!activeUser) {
         const msg = 'Veuillez vous connecter pour souscrire à un abonnement.';
         setError(msg);
-        return { success: false, error: msg };
+        return { success: false, error: msg, requiresReauth: true };
+      }
+
+      const { authToken } = getStoredSessionAuth();
+      if (!authToken) {
+        const msg = 'Votre session a expiré. Veuillez vous reconnecter.';
+        setError(msg);
+        return { success: false, error: msg, requiresReauth: true };
       }
 
       setIsLoading(true);
@@ -159,6 +183,8 @@ export function usePayment() {
           userId: !isSyntheticId ? activeUser._id : undefined,
           userPhone: activeUser.phone,
           planId,
+          paymentMethod: options?.paymentMethod,
+          temporaryCode: options?.temporaryCode,
           clientName: activeUser.username || undefined,
           payerEmail: options?.payerEmail || activeUser.email || undefined,
           payerPhone: options?.payerPhone || activeUser.phone || undefined,
@@ -166,24 +192,44 @@ export function usePayment() {
           failureUrl: options?.failureUrl,
         });
 
+        if (res.status === 'confirmed') {
+          if (res.subscriptionExpiresAt) {
+            syncSubscriptionState(
+              res.subscriptionExpiresAt,
+              res.subscriptionPlanLabel ?? null
+            );
+          }
+          fetchWallet();
+        }
+
         return {
           success: true,
+          mode: res.mode,
+          status: res.status || 'pending',
+          paymentMethod: res.paymentMethod,
+          operator: res.operator,
           paymentLink: res.paymentLink,
           ref: res.ref,
           amount: res.amount,
+          subscriptionExpiresAt: res.subscriptionExpiresAt,
+          subscriptionPlanLabel: res.subscriptionPlanLabel,
         };
       } catch (err: unknown) {
+        const isUnauthorized = err instanceof ApiError && err.status === 401;
+        if (isUnauthorized) {
+          useUserStore.getState().clearAuthToken();
+        }
         const msg =
           err instanceof Error
             ? err.message
-            : 'Erreur lors de la création du lien de paiement.';
+            : 'Erreur lors de l’initiation du paiement.';
         setError(msg);
-        return { success: false, error: msg };
+        return { success: false, error: msg, requiresReauth: isUnauthorized };
       } finally {
         setIsLoading(false);
       }
     },
-    []
+    [fetchWallet, syncSubscriptionState]
   );
 
   const checkPaymentStatus = useCallback(

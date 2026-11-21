@@ -632,6 +632,7 @@ function ListingLocationPickerContent({
           onClick={handleMapClick}
           gestureHandling="cooperative"
           disableDefaultUI={false}
+          streetViewControl={false}
         >
           {activePosition && (
             <>

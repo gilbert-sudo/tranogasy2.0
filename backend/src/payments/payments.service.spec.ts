@@ -1,5 +1,5 @@
 import * as crypto from 'crypto';
-import { UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PaymentsService } from './payments.service';
 
@@ -173,5 +173,79 @@ describe('PaymentsService security & iOS separation', () => {
     expect(wallet.subscriptionPlanLabel).toBe('3 jours');
     expect(wallet.assistanceExpiresAt).toBeNull();
     expect(wallet.assistancePlanLabel).toBeNull();
+  });
+
+  it('initiates Direct Mobile Money USSD Push via POST /v1/payments and validates Orange temporaryCode', async () => {
+    const savedDocs: any[] = [];
+    const MockPaymentModel: any = jest.fn().mockImplementation((doc) => {
+      const instance = {
+        ...doc,
+        _id: 'pay-direct-1',
+        save: jest.fn().mockResolvedValue(undefined),
+      };
+      savedDocs.push(instance);
+      return instance;
+    });
+
+    const userModel = {
+      findById: jest.fn().mockReturnValue({
+        exec: jest.fn().mockResolvedValue({
+          _id: '507f1f77bcf86cd799439011',
+          username: 'Jean Rakoto',
+          phone: '0341234567',
+        }),
+      }),
+    };
+
+    const { service } = createService({
+      paymentModel: MockPaymentModel,
+      userModel,
+    });
+
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: {
+          payment: {
+            paymentStatus: 'PENDING',
+            paymentMethod: 'MVOLA',
+            notificationToken: 'tok-mvola-1',
+          },
+        },
+      }),
+    }) as any;
+
+    try {
+      const res = await service.createSubscriptionPaymentLink({
+        userId: '507f1f77bcf86cd799439011',
+        planId: 'plan_3d',
+        paymentMethod: 'MVOLA',
+        payerPhone: '034 12 345 67',
+      });
+
+      expect(res.success).toBe(true);
+      expect(res.mode).toBe('direct');
+      expect(res.status).toBe('pending');
+      expect(res.operator).toBe('mvola');
+      expect(global.fetch).toHaveBeenCalledWith(
+        'https://app.papi.mg/engine/api/v1/payments',
+        expect.objectContaining({
+          method: 'POST',
+        }),
+      );
+
+      // Orange Money without temporaryCode must throw BadRequestException
+      await expect(
+        service.createSubscriptionPaymentLink({
+          userId: '507f1f77bcf86cd799439011',
+          planId: 'plan_3d',
+          paymentMethod: 'ORANGE_MONEY',
+          payerPhone: '0321234567',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    } finally {
+      global.fetch = originalFetch;
+    }
   });
 });

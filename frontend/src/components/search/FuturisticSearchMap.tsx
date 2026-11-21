@@ -794,6 +794,7 @@ function FuturisticSearchMapComponent({
         mapTypeId={mapTypeId}
         gestureHandling="greedy"
         disableDefaultUI={true}
+        streetViewControl={false}
         clickableIcons={false}
         onClick={handleMapClick}
         className="w-full h-full"

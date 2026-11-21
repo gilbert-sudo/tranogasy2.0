@@ -177,11 +177,7 @@ export default function FavoritesPage() {
   }, [favoriteEntries, activeCategory, searchQuery, sortBy, isRentProp, isSaleProp]);
 
   return (
-    <div className={`font-sans flex flex-col ${
-      isPopulated 
-        ? 'min-h-screen bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white' 
-        : 'min-h-[calc(100dvh-4rem)] md:min-h-[calc(100vh-6rem)] lg:min-h-[calc(100vh-2rem)] bg-[#F5F5F3] md:bg-[#ECEBE6] dark:bg-zinc-900 dark:md:bg-zinc-950 text-zinc-900 dark:text-white'
-    }`}>
+    <div className="font-sans flex flex-col min-h-[100dvh] -mb-16 md:-mb-24 lg:-mb-8 pb-16 md:pb-24 lg:pb-8 bg-[#F5F5F7] dark:bg-zinc-950 text-zinc-900 dark:text-white selection:bg-brand-green/20">
       
       {/* INJECT RESPONSIVE CSS VARIABLES FOR ROLLING HEADER */}
       <style>{`
@@ -210,7 +206,7 @@ export default function FavoritesPage() {
       {isPopulated && (
         <>
           <header
-            className="fixed inset-x-0 top-0 z-40 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border-b border-zinc-200/80 dark:border-zinc-800 shadow-xs overflow-hidden transition-[height,box-shadow] duration-400 ease-[cubic-bezier(0.4,0,0.2,1)]"
+            className="fixed inset-x-0 top-0 z-40 bg-[#F5F5F7]/90 dark:bg-zinc-950/90 backdrop-blur-xl border-b border-zinc-200/70 dark:border-zinc-800/80 shadow-xs overflow-hidden transition-[height,box-shadow] duration-400 ease-[cubic-bezier(0.4,0,0.2,1)]"
             style={{
               height: isScrolled
                 ? 'var(--fav-compact-h, 154px)'
@@ -314,7 +310,7 @@ export default function FavoritesPage() {
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       placeholder="Filtrer..."
-                      className="w-full pl-7 pr-6 py-1 text-xs rounded-full bg-zinc-100 dark:bg-zinc-800 border border-zinc-200/80 dark:border-zinc-700 focus:outline-none focus:ring-1.5 focus:ring-brand-green text-zinc-900 dark:text-white"
+                      className="w-full pl-7 pr-6 py-1 text-xs rounded-full bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-700 focus:outline-none focus:ring-1.5 focus:ring-brand-green text-zinc-900 dark:text-white"
                     />
                     {searchQuery && (
                       <button
@@ -330,7 +326,7 @@ export default function FavoritesPage() {
                   <select
                     value={sortBy}
                     onChange={(e) => setSortBy(e.target.value as SortOption)}
-                    className="px-2 py-1 text-xs rounded-full bg-zinc-100 dark:bg-zinc-800 border border-zinc-200/80 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 focus:outline-none focus:ring-1.5 focus:ring-brand-green cursor-pointer shrink-0"
+                    className="px-2 py-1 text-xs rounded-full bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 focus:outline-none focus:ring-1.5 focus:ring-brand-green cursor-pointer shrink-0"
                   >
                     <option value="newest">Récents</option>
                     <option value="price-asc">Prix ↑</option>
@@ -380,7 +376,7 @@ export default function FavoritesPage() {
                     <div className="flex items-center gap-2 w-full sm:w-auto">
                       {/* Live matching count badge (occupies the space on the left) */}
                       <div 
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-zinc-100 dark:bg-zinc-800 border border-zinc-200/80 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-semibold shrink-0 shadow-2xs"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-semibold shrink-0 shadow-2xs"
                         title={`${filteredProperties.length} ${filteredProperties.length > 1 ? 'biens correspondent' : 'bien correspond'} aux critères`}
                       >
                         <span className="text-brand-green font-extrabold">{filteredProperties.length}</span>
@@ -397,7 +393,7 @@ export default function FavoritesPage() {
                           value={searchQuery}
                           onChange={(e) => setSearchQuery(e.target.value)}
                           placeholder="Filtrer par ville..."
-                          className="w-full pl-8 pr-7 py-1.5 text-xs rounded-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200/80 dark:border-zinc-700 focus:outline-none focus:ring-1.5 focus:ring-brand-green text-zinc-900 dark:text-white"
+                          className="w-full pl-8 pr-7 py-1.5 text-xs rounded-full bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-700 focus:outline-none focus:ring-1.5 focus:ring-brand-green text-zinc-900 dark:text-white"
                         />
                         {searchQuery && (
                           <button
@@ -414,7 +410,7 @@ export default function FavoritesPage() {
                       <select
                         value={sortBy}
                         onChange={(e) => setSortBy(e.target.value as SortOption)}
-                        className="px-2.5 sm:px-3 py-1.5 text-xs rounded-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200/80 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 focus:outline-none focus:ring-1.5 focus:ring-brand-green cursor-pointer shrink-0"
+                        className="px-2.5 sm:px-3 py-1.5 text-xs rounded-full bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 focus:outline-none focus:ring-1.5 focus:ring-brand-green cursor-pointer shrink-0"
                       >
                         <option value="newest">Plus récents</option>
                         <option value="price-asc">Prix croissant</option>
@@ -515,7 +511,7 @@ export default function FavoritesPage() {
           /* Fullscreen on mobile, centered modal-like box on desktop  */
           /* ========================================================= */
           <div className="w-full flex-1 flex flex-col md:items-center md:justify-center p-0 md:p-6 lg:p-8 animate-in fade-in zoom-in-95 duration-300">
-            <div className="w-full flex-1 md:flex-initial md:max-w-[540px] lg:max-w-[580px] rounded-none md:rounded-[2.8rem] shadow-none md:shadow-[0_24px_60px_rgba(0,0,0,0.12)] dark:md:shadow-[0_24px_60px_rgba(0,0,0,0.5)] border-0 md:border md:border-black/5 dark:md:border-white/10 overflow-hidden relative bg-[#F5F5F3] dark:bg-zinc-900 select-none transition-all duration-300 flex flex-col">
+            <div className="w-full flex-1 md:flex-initial md:max-w-[540px] lg:max-w-[580px] rounded-none md:rounded-[2.8rem] shadow-none md:shadow-[0_12px_40px_rgba(0,0,0,0.04)] dark:md:shadow-[0_12px_40px_rgba(0,0,0,0.35)] border-0 md:border md:border-black/5 dark:md:border-white/10 overflow-hidden relative bg-[#F5F5F7] md:bg-white dark:bg-zinc-950 dark:md:bg-zinc-900 select-none transition-all duration-300 flex flex-col">
               
               {/* Decorative Corner Blobs matching PhoneAuthFlow / Login Modal */}
               <div
@@ -552,7 +548,7 @@ export default function FavoritesPage() {
               <div className="relative z-10 flex-1 flex flex-col items-center justify-center gap-3 sm:gap-3.5 md:gap-5 px-5 sm:px-8 md:px-8 pt-1 pb-5 md:pb-8 overflow-y-auto no-scrollbar">
                 
                 {/* Vector Illustration — Substantially larger on mobile and desktop for clear visibility */}
-                <div className="relative w-full max-w-[350px] min-[390px]:max-w-[380px] min-[420px]:max-w-[400px] sm:max-w-[440px] md:max-w-[480px] lg:max-w-[520px] h-[260px] min-[390px]:h-[290px] min-[420px]:h-[310px] sm:h-[330px] md:h-[320px] lg:h-[350px] mx-auto flex items-center justify-center rounded-2xl sm:rounded-3xl overflow-hidden bg-white/70 dark:bg-zinc-800/50 p-1 sm:p-2 shadow-2xs shrink-0">
+                <div className="relative w-full max-w-[350px] min-[390px]:max-w-[380px] min-[420px]:max-w-[400px] sm:max-w-[440px] md:max-w-[480px] lg:max-w-[520px] h-[260px] min-[390px]:h-[290px] min-[420px]:h-[310px] sm:h-[330px] md:h-[320px] lg:h-[350px] mx-auto flex items-center justify-center rounded-2xl sm:rounded-3xl overflow-hidden bg-white/70 md:bg-[#F5F5F7]/70 dark:bg-zinc-800/50 p-1 sm:p-2 shadow-2xs shrink-0">
                   <Image
                     src={NO_FAVORITE_IMG}
                     alt={currentUser ? "Aucun coup de cœur" : "Vos favoris TranoGasy"}

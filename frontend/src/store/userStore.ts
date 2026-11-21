@@ -7,6 +7,7 @@ interface UserStore {
   user: any | null;
   sessionEpoch: number;
   setUser: (user: any) => void;
+  clearAuthToken: () => void;
   updateSubscription: (expiresAt: string | null, planLabel?: string | null) => void;
   updateAssistance: (expiresAt: string | null, planLabel?: string | null) => void;
   logout: () => void;
@@ -17,15 +18,47 @@ export const useUserStore = create<UserStore>((set, get) => ({
   user: null,
   sessionEpoch: 0,
   setUser: (user) => {
+    const resolvedToken = user?.authToken || user?.user?.authToken;
+    const normalizedUser =
+      user && resolvedToken && !user.authToken
+        ? { ...user, authToken: String(resolvedToken) }
+        : user;
     set((state) => ({
-      user,
-      sessionEpoch: user ? state.sessionEpoch : state.sessionEpoch + 1,
+      user: normalizedUser,
+      sessionEpoch: normalizedUser ? state.sessionEpoch : state.sessionEpoch + 1,
     }));
-    if (typeof window !== 'undefined' && user?.authToken) {
+    if (typeof window !== 'undefined' && resolvedToken) {
       try {
-        localStorage.setItem('authToken', String(user.authToken));
+        localStorage.setItem('authToken', String(resolvedToken));
       } catch {
         // Ignore storage quota errors
+      }
+    }
+  },
+  clearAuthToken: () => {
+    const current = get().user;
+    if (current) {
+      const cleaned = { ...current };
+      delete cleaned.authToken;
+      if (cleaned.user && typeof cleaned.user === 'object') {
+        const cleanedNested = { ...cleaned.user };
+        delete cleanedNested.authToken;
+        cleaned.user = cleanedNested;
+      }
+      set({ user: cleaned });
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('user', JSON.stringify(cleaned));
+        } catch {
+          // Ignore storage quota errors
+        }
+      }
+    }
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('authToken');
+      } catch {
+        // Ignore storage errors
       }
     }
   },
@@ -87,7 +120,17 @@ export const useUserStore = create<UserStore>((set, get) => ({
       const savedUser = localStorage.getItem('user');
       if (savedUser) {
         try {
-          set({ user: JSON.parse(savedUser) });
+          const parsed = JSON.parse(savedUser);
+          const storedToken =
+            parsed?.authToken ||
+            parsed?.user?.authToken ||
+            localStorage.getItem('authToken') ||
+            undefined;
+          const hydrated =
+            storedToken && parsed && typeof parsed === 'object' && !parsed.authToken
+              ? { ...parsed, authToken: String(storedToken) }
+              : parsed;
+          set({ user: hydrated });
         } catch (e) {
           console.error('Failed to parse user from local storage', e);
         }

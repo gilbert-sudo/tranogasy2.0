@@ -1,5 +1,8 @@
 import { apiFetch } from './api';
 import type { AssistancePlanId } from '@/lib/platform';
+import type { CheckoutPaymentMethod } from './payment.service';
+
+export type { CheckoutPaymentMethod };
 
 export interface AssistanceReceiptTransaction {
   _id: string;
@@ -25,6 +28,8 @@ export interface CreateAssistanceLinkPayload {
   userId?: string;
   userPhone?: string;
   planId: AssistancePlanId;
+  paymentMethod?: CheckoutPaymentMethod;
+  temporaryCode?: string;
   clientName?: string;
   payerEmail?: string;
   payerPhone?: string;
@@ -34,12 +39,20 @@ export interface CreateAssistanceLinkPayload {
 
 export interface CreateAssistanceLinkResponse {
   success: boolean;
-  paymentLink: string;
+  mode?: 'direct' | 'link';
+  status?: 'pending' | 'confirmed' | 'failed' | 'refused';
+  paymentMethod?: CheckoutPaymentMethod | string;
+  operator?: string;
+  paymentLink?: string;
   ref: string;
   amount: number;
-  assistancePlanId: AssistancePlanId;
-  assistanceDurationHours: number;
+  phoneNumber?: string;
+  assistancePlanId?: AssistancePlanId;
+  assistanceDurationHours?: number;
+  assistanceExpiresAt?: string | null;
+  assistancePlanLabel?: string | null;
   notificationToken?: string;
+  failureReason?: string;
 }
 
 export interface AssistanceStatusResponse {
