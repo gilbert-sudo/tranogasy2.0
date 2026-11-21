@@ -226,6 +226,8 @@ export default function TikTokContactModal({
 
   return (
     <div
+      data-swipe-dismiss-ignore="true"
+      data-modal-overlay-active="true"
       className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-200"
       onClick={onClose}
     >

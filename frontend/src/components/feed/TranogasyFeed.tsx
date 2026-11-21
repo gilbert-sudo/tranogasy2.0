@@ -375,7 +375,7 @@ export default function TranogasyFeed({
           <div
             ref={containerRef}
             onScroll={handleScroll}
-            className="w-full h-full overflow-y-scroll snap-y snap-mandatory no-scrollbar"
+            className="w-full h-full overflow-y-scroll snap-y snap-mandatory overscroll-y-contain no-scrollbar"
             style={{
               scrollBehavior: 'smooth',
               WebkitOverflowScrolling: 'touch',

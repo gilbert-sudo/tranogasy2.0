@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, memo } from 'react';
+import { useState, useEffect, useCallback, memo } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -21,6 +21,7 @@ import { TfiLayoutSidebarLeft } from "react-icons/tfi";
 import { usePropertyStore } from '@/store/propertyStore';
 import { useFavoriteStore } from '@/store/favoriteStore';
 import { useFavorite } from '@/hooks/useFavorite';
+import { useHorizontalSwipeCarousel } from '@/hooks/useHorizontalSwipeCarousel';
 import { useUserStore } from '@/store/userStore';
 import { useModalStore } from '@/store/modalStore';
 import { usePropertyDetailModalStore } from '@/store/propertyDetailModalStore';
@@ -169,39 +170,41 @@ function PropertyCardComponent({ property }: PropertyProps) {
     : ['/icon-logo.png'];
 
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [touchStart, setTouchStart] = useState<number | null>(null);
-  const [touchEnd, setTouchEnd] = useState<number | null>(null);
-
   const [loadedIndices, setLoadedIndices] = useState<number[]>([0]);
 
-  const updateCurrentIndex = (newIndex: number) => {
-    setCurrentIndex(newIndex);
-    setLoadedIndices(prev => (prev.includes(newIndex) ? prev : [...prev, newIndex]));
-  };
+  const preloadAdjacentIndices = useCallback(
+    (centerIdx: number) => {
+      setLoadedIndices((prev) => {
+        const nextSet = new Set(prev);
+        nextSet.add(centerIdx);
+        if (centerIdx + 1 < images.length) nextSet.add(centerIdx + 1);
+        if (centerIdx - 1 >= 0) nextSet.add(centerIdx - 1);
+        return nextSet.size === prev.length ? prev : Array.from(nextSet);
+      });
+    },
+    [images.length]
+  );
 
-  const minSwipeDistance = 50; 
+  const updateCurrentIndex = useCallback(
+    (newIndex: number) => {
+      setCurrentIndex(newIndex);
+      preloadAdjacentIndices(newIndex);
+    },
+    [preloadAdjacentIndices]
+  );
 
-  const onTouchStart = (e: React.TouchEvent) => {
-    setTouchEnd(null);
-    setTouchStart(e.targetTouches[0].clientX);
-  };
-
-  const onTouchMove = (e: React.TouchEvent) => {
-    setTouchEnd(e.targetTouches[0].clientX);
-  };
-
-  const onTouchEnd = () => {
-    if (!touchStart || !touchEnd) return;
-    const distance = touchStart - touchEnd;
-    const isLeftSwipe = distance > minSwipeDistance;
-    const isRightSwipe = distance < -minSwipeDistance;
-    if (isLeftSwipe && currentIndex < images.length - 1) {
-      updateCurrentIndex(currentIndex + 1);
-    }
-    if (isRightSwipe && currentIndex > 0) {
-      updateCurrentIndex(currentIndex - 1);
-    }
-  };
+  const {
+    bindViewport: bindCardViewport,
+    bindTrack: bindCardTrack,
+    shouldSuppressClick: shouldSuppressCardClick,
+  } = useHorizontalSwipeCarousel({
+    itemCount: images.length,
+    currentIndex,
+    onIndexChange: updateCurrentIndex,
+    horizontalBias: 0.82,
+    decisionSlopPx: 6,
+    onTouchInteractionStart: () => preloadAdjacentIndices(currentIndex),
+  });
 
   const nextImage = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -238,6 +241,11 @@ function PropertyCardComponent({ property }: PropertyProps) {
     : extractSurfaceFromText(property.description);
 
   const handleCardClick = (e: React.MouseEvent) => {
+    if (shouldSuppressCardClick()) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     // Let browser handle new tab actions (Ctrl+Click, Cmd+Click, middle click, etc.)
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) {
       return;
@@ -275,15 +283,16 @@ function PropertyCardComponent({ property }: PropertyProps) {
     >
       <div className="flex h-full flex-col overflow-hidden rounded-3xl bg-zinc-50 shadow-sm border border-zinc-200 transition-transform hover:-translate-y-1 hover:shadow-md dark:bg-zinc-800 dark:border-zinc-700 relative">
         <div 
+          ref={bindCardViewport}
           data-property-card-image={property._id}
-          className="relative h-48 w-full overflow-hidden rounded-t-3xl bg-zinc-200 dark:bg-zinc-700 group"
-          onTouchStart={onTouchStart}
-          onTouchMove={onTouchMove}
-          onTouchEnd={onTouchEnd}
+          data-horizontal-carousel="true"
+          className="relative h-48 w-full overflow-hidden rounded-t-3xl bg-zinc-200 dark:bg-zinc-700 group select-none"
+          style={{ touchAction: 'pan-y' }}
         >
           <div 
-            className="flex h-full w-full transition-transform duration-300 ease-in-out"
-            style={{ transform: `translateX(-${currentIndex * 100}%)` }}
+            ref={bindCardTrack}
+            className="flex h-full w-full will-change-transform"
+            style={{ transform: `translate3d(-${currentIndex * 100}%, 0, 0)` }}
           >
             {images.map((img, idx) => {
               const shouldRenderImage = loadedIndices.includes(idx);

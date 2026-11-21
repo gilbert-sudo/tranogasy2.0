@@ -26,7 +26,6 @@ export default function PropertyDetailsModal() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [activeProp, setActiveProp] = useState<any>(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
-  const [dragY, setDragY] = useState(0);
 
   // Transition overlay state
   const [overlayRect, setOverlayRect] = useState<OverlayRect | null>(null);
@@ -34,8 +33,9 @@ export default function PropertyDetailsModal() {
   const [isAnimatingOverlay, setIsAnimatingOverlay] = useState(false);
 
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
-  const touchStartY = useRef<number>(0);
-  const isDragging = useRef<boolean>(false);
+  const sheetRef = useRef<HTMLDivElement | null>(null);
+  const backdropRef = useRef<HTMLDivElement | null>(null);
+  const springResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previousUrlRef = useRef<string>('');
   const isClosingRef = useRef<boolean>(false);
   const originalOverflowRef = useRef<string>('');
@@ -45,6 +45,25 @@ export default function PropertyDetailsModal() {
   const closeTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastOpenedIdRef = useRef<string | null>(null);
   const wasOnOverlayRouteRef = useRef<boolean>(false);
+
+  const clearDragVisualStyles = useCallback(() => {
+    if (springResetTimerRef.current) {
+      clearTimeout(springResetTimerRef.current);
+      springResetTimerRef.current = null;
+    }
+    const sheet = sheetRef.current;
+    if (sheet) {
+      sheet.style.transform = '';
+      sheet.style.transition = '';
+      sheet.style.borderRadius = '';
+      sheet.style.willChange = '';
+    }
+    const backdrop = backdropRef.current;
+    if (backdrop) {
+      backdrop.style.opacity = '';
+      backdrop.style.transition = '';
+    }
+  }, []);
 
   // Synchronize active property state when store triggers open or updates initialProperty
   if (isOpen && propertyId && activeId !== propertyId) {
@@ -73,15 +92,15 @@ export default function PropertyDetailsModal() {
       clearTimeout(closeTimerRef.current);
       closeTimerRef.current = null;
     }
+    clearDragVisualStyles();
     setActiveId(null);
     setActiveProp(null);
     setOverlayRect(null);
     setIsAnimatingOverlay(false);
     setIsTransitioning(false);
-    setDragY(0);
     closePropertyDetail();
     isClosingRef.current = false;
-  }, [closePropertyDetail, setIsTransitioning]);
+  }, [clearDragVisualStyles, closePropertyDetail, setIsTransitioning]);
 
   // Smooth close with shared element reverse zoom
   const animateAndClose = useCallback((shouldPopHistory = true) => {
@@ -408,8 +427,11 @@ export default function PropertyDetailsModal() {
         if (typeof window !== 'undefined' && window.location.pathname.startsWith('/pricing')) {
           return;
         }
+        if (typeof document !== 'undefined' && document.fullscreenElement) {
+          return;
+        }
         const isHigherOverlayOpen = document.querySelector(
-          '[class*="z-[100]"], [class*="z-[120]"], [class*="z-[130]"], [class*="z-[150]"]'
+          '[data-modal-overlay-active="true"], [class*="z-[100]"], [class*="z-[120]"], [class*="z-[130]"], [class*="z-[140]"], [class*="z-[150]"]'
         );
         if (!isHigherOverlayOpen) {
           animateAndClose(true);
@@ -421,49 +443,247 @@ export default function PropertyDetailsModal() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [activeId, animateAndClose]);
 
-  // Touch swipe-down to dismiss handlers for mobile
-  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
-    // If the overlay is somehow still showing when user touches screen, dismiss it immediately!
-    finishOpenTransition();
+  // Precision native non-passive swipe-down-to-dismiss controller for mobile:
+  // - Strict directional axis locking & slop so horizontal/diagonal photo swipes NEVER pull the page down.
+  // - Complete isolation from nested overlays (Lightbox, Fullscreen/Inline Map, Comments, Contact).
+  // - Direct 60/120fps DOM transforms with zero React re-renders during drag + spring-back & touchcancel cleanup.
+  useEffect(() => {
+    if (!activeId) return;
+    const sheet = sheetRef.current;
+    if (!sheet) return;
 
-    if (!scrollContainerRef.current) return;
-    if (scrollContainerRef.current.scrollTop <= 0) {
-      touchStartY.current = e.touches[0].clientY;
-      isDragging.current = true;
-    } else {
-      isDragging.current = false;
-    }
-  };
+    type PullPhase = 'idle' | 'undecided' | 'dismiss' | 'scroll' | 'horizontal' | 'ignored';
 
-  const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (!isDragging.current || !scrollContainerRef.current) return;
+    let phase: PullPhase = 'idle';
+    let startX = 0;
+    let startY = 0;
+    let dragAnchorY = 0;
+    let currentDragY = 0;
+    let lastY = 0;
+    let lastTime = 0;
+    let prevY = 0;
+    let prevTime = 0;
+    let startedInCarousel = false;
 
-    if (scrollContainerRef.current.scrollTop > 0) {
-      isDragging.current = false;
-      setDragY(0);
-      return;
-    }
+    const springBack = () => {
+      const sheetEl = sheetRef.current;
+      const backdropEl = backdropRef.current;
+      if (sheetEl) {
+        sheetEl.style.transition =
+          'transform 250ms cubic-bezier(0.22, 1, 0.36, 1), border-radius 240ms ease';
+        sheetEl.style.transform = 'translate3d(0, 0, 0)';
+        sheetEl.style.borderRadius = '0px';
+      }
+      if (backdropEl) {
+        backdropEl.style.transition = 'opacity 220ms ease';
+        backdropEl.style.opacity = '';
+      }
+      if (springResetTimerRef.current) {
+        clearTimeout(springResetTimerRef.current);
+      }
+      springResetTimerRef.current = setTimeout(() => {
+        clearDragVisualStyles();
+      }, 260);
+    };
 
-    const currentY = e.touches[0].clientY;
-    const diff = currentY - touchStartY.current;
+    const handleTouchStart = (e: TouchEvent) => {
+      // If the open zoom overlay is somehow still visible when the user touches, dismiss it immediately
+      finishOpenTransition();
 
-    if (diff > 0) {
-      setDragY(diff);
-    } else {
-      setDragY(0);
-    }
-  };
+      if (isClosingRef.current || e.touches.length !== 1) {
+        phase = 'ignored';
+        return;
+      }
 
-  const handleTouchEnd = () => {
-    if (!isDragging.current) return;
-    isDragging.current = false;
+      // Never hijack touches while any fullscreen element or nested overlay/map is active
+      if (typeof document !== 'undefined' && document.fullscreenElement) {
+        phase = 'ignored';
+        return;
+      }
 
-    if (dragY > 80) {
-      animateAndClose(true);
-    } else {
-      setDragY(0);
-    }
-  };
+      const target = e.target as HTMLElement | null;
+      if (
+        target?.closest('[data-swipe-dismiss-ignore="true"]') ||
+        target?.closest('.gm-style') ||
+        target?.closest('input, textarea, select, [role="slider"]')
+      ) {
+        phase = 'ignored';
+        return;
+      }
+
+      if (document.querySelector('[data-modal-overlay-active="true"]')) {
+        phase = 'ignored';
+        return;
+      }
+
+      const scroller = scrollContainerRef.current;
+      if (!scroller || scroller.scrollTop > 1) {
+        phase = 'scroll';
+        return;
+      }
+
+      const touch = e.touches[0];
+      const now = performance.now();
+      startX = touch.clientX;
+      startY = touch.clientY;
+      dragAnchorY = startY;
+      currentDragY = 0;
+      lastY = startY;
+      lastTime = now;
+      prevY = startY;
+      prevTime = now;
+      startedInCarousel = Boolean(target?.closest('[data-horizontal-carousel="true"]'));
+      phase = 'undecided';
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (
+        phase === 'idle' ||
+        phase === 'ignored' ||
+        phase === 'scroll' ||
+        phase === 'horizontal' ||
+        isClosingRef.current
+      ) {
+        return;
+      }
+
+      if (e.touches.length !== 1) {
+        const wasDismissing = phase === 'dismiss';
+        phase = 'ignored';
+        if (wasDismissing) springBack();
+        return;
+      }
+
+      const scroller = scrollContainerRef.current;
+      if (!scroller) {
+        phase = 'ignored';
+        return;
+      }
+
+      const touch = e.touches[0];
+      const dx = touch.clientX - startX;
+      const dy = touch.clientY - startY;
+      const absX = Math.abs(dx);
+
+      if (phase === 'undecided') {
+        // Yield immediately if an inner horizontal carousel already claimed this touch
+        if (e.defaultPrevented) {
+          phase = 'horizontal';
+          return;
+        }
+
+        if (scroller.scrollTop > 1) {
+          phase = 'scroll';
+          return;
+        }
+
+        const slop = startedInCarousel ? 12 : 10;
+        if (Math.hypot(dx, dy) < slop) {
+          return;
+        }
+
+        // Upward swipe = user wants to read details -> normal vertical scroll
+        if (dy <= 0) {
+          phase = 'scroll';
+          return;
+        }
+
+        // Strict vertical downward cone:
+        // - On top photo gallery: must be nearly straight down (<= ~26.5 deg off vertical)
+        // - Elsewhere on the details sheet: <= ~33 deg off vertical
+        const requiredVerticalRatio = startedInCarousel ? 2.0 : 1.5;
+        if (dy > absX * requiredVerticalRatio && e.cancelable) {
+          phase = 'dismiss';
+          dragAnchorY = touch.clientY;
+          currentDragY = 0;
+          if (springResetTimerRef.current) {
+            clearTimeout(springResetTimerRef.current);
+            springResetTimerRef.current = null;
+          }
+          const sheetEl = sheetRef.current;
+          const backdropEl = backdropRef.current;
+          if (sheetEl) {
+            sheetEl.style.transition = 'none';
+            sheetEl.style.willChange = 'transform';
+          }
+          if (backdropEl) {
+            backdropEl.style.transition = 'none';
+          }
+        } else {
+          phase = 'horizontal';
+          return;
+        }
+      }
+
+      // phase === 'dismiss'
+      if (e.cancelable) {
+        e.preventDefault();
+      }
+
+      const now = performance.now();
+      if (now - lastTime > 12) {
+        prevY = lastY;
+        prevTime = lastTime;
+        lastY = touch.clientY;
+        lastTime = now;
+      }
+
+      const rawDelta = Math.max(0, touch.clientY - dragAnchorY);
+      // Smooth 1:1 follow up to 160px, gentle rubber-band damping beyond
+      currentDragY = rawDelta <= 160 ? rawDelta : 160 + (rawDelta - 160) * 0.55;
+
+      const sheetEl = sheetRef.current;
+      const backdropEl = backdropRef.current;
+      if (sheetEl) {
+        sheetEl.style.transform = `translate3d(0, ${currentDragY}px, 0)`;
+        sheetEl.style.borderRadius = `${Math.min(28, currentDragY * 0.22)}px`;
+      }
+      if (backdropEl) {
+        const nextOpacity = Math.max(0, 1 - currentDragY / 320);
+        backdropEl.style.opacity = String(nextOpacity);
+      }
+    };
+
+    const handleTouchEndOrCancel = (e: TouchEvent) => {
+      const wasDismissing = phase === 'dismiss';
+      phase = 'idle';
+
+      if (!wasDismissing || isClosingRef.current) {
+        return;
+      }
+
+      if (e.type === 'touchcancel') {
+        springBack();
+        return;
+      }
+
+      const touch = e.changedTouches[0];
+      const finalY = touch ? touch.clientY : lastY;
+      const vy = (finalY - prevY) / Math.max(1, performance.now() - prevTime);
+
+      if (currentDragY > 110 || (currentDragY > 55 && vy > 0.55)) {
+        animateAndClose(true);
+      } else {
+        springBack();
+      }
+    };
+
+    sheet.addEventListener('touchstart', handleTouchStart, { passive: true });
+    sheet.addEventListener('touchmove', handleTouchMove, { passive: false });
+    sheet.addEventListener('touchend', handleTouchEndOrCancel, { passive: true });
+    sheet.addEventListener('touchcancel', handleTouchEndOrCancel, { passive: true });
+
+    return () => {
+      sheet.removeEventListener('touchstart', handleTouchStart);
+      sheet.removeEventListener('touchmove', handleTouchMove);
+      sheet.removeEventListener('touchend', handleTouchEndOrCancel);
+      sheet.removeEventListener('touchcancel', handleTouchEndOrCancel);
+      if (springResetTimerRef.current) {
+        clearTimeout(springResetTimerRef.current);
+        springResetTimerRef.current = null;
+      }
+    };
+  }, [activeId, animateAndClose, clearDragVisualStyles, finishOpenTransition]);
 
   if (!activeId) {
     return null;
@@ -480,9 +700,10 @@ export default function PropertyDetailsModal() {
     >
       {/* ── Backdrop Overlay with Smooth Fade ── */}
       <div 
+        ref={backdropRef}
         onClick={() => animateAndClose(true)}
         className={`fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity duration-220 ease-out ${
-          isModalVisible && dragY === 0 && !isClosingRef.current
+          isModalVisible && !isClosingRef.current
             ? 'opacity-100 cursor-pointer pointer-events-auto' 
             : 'opacity-0 pointer-events-none'
         }`}
@@ -495,6 +716,7 @@ export default function PropertyDetailsModal() {
         onPointerDown={finishOpenTransition}
       >
         <div 
+          ref={sheetRef}
           className={`w-full h-full bg-white dark:bg-zinc-950 flex flex-col overflow-hidden transition-opacity ${
             (!isModalVisible || isClosingRef.current) 
               ? 'pointer-events-none opacity-0' 
@@ -504,16 +726,9 @@ export default function PropertyDetailsModal() {
               ? 'duration-180 ease-in' 
               : 'duration-220 ease-out'
           }`}
-          style={{
-            transform: dragY > 0 ? `translate3d(0, ${dragY}px, 0)` : undefined,
-            willChange: dragY > 0 ? 'transform' : 'opacity',
-          }}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
         >
           {/* Subtle Mobile Drag Pill Handle */}
-          <div className="lg:hidden absolute top-2 left-1/2 -translate-x-1/2 z-60 pointer-events-none">
+          <div className="lg:hidden absolute top-[calc(0.5rem+var(--ios-safe-top))] left-1/2 -translate-x-1/2 z-60 pointer-events-none">
             <div className="w-10 h-1.5 rounded-full bg-white/45 dark:bg-white/30 backdrop-blur-md shadow-xs" />
           </div>
 

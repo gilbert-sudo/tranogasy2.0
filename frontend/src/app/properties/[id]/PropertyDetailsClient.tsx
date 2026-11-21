@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { X, Share2, Phone, MapPin, Heart, ChevronLeft, BedDouble, Expand, Home, Utensils, Droplets, Grid2X2, ChevronRight, MessageCircle, Send, Layers, Check } from 'lucide-react';
+import { Share2, Phone, MapPin, Heart, ChevronLeft, BedDouble, Expand, Home, Utensils, Droplets, Grid2X2, ChevronRight, MessageCircle, Send, Layers, Check } from 'lucide-react';
 import { getHouseTypeLabel, isCommercialHouseType } from '@/lib/propertyTypes';
 import {
   FaCar, FaMotorcycle, FaWifi, FaParking, FaShieldAlt, FaSwimmingPool, FaHotTub, FaBed, FaShower
@@ -19,8 +19,10 @@ import { TbAirConditioning, TbBuildingCastle, TbWash } from "react-icons/tb";
 import { TfiLayoutSidebarLeft } from "react-icons/tfi";
 import PropertyLocationDisplayer from '@/components/map/PropertyLocationDisplayer';
 import PropertyEntryFees from '@/components/property/PropertyEntryFees';
+import PropertyPhotoLightbox from '@/components/property/PropertyPhotoLightbox';
 import TikTokCommentsDrawer from '@/components/feed/TikTokCommentsDrawer';
 import TikTokContactModal from '@/components/feed/TikTokContactModal';
+import { useHorizontalSwipeCarousel } from '@/hooks/useHorizontalSwipeCarousel';
 import { useUserStore } from '@/store/userStore';
 import { useModalStore } from '@/store/modalStore';
 import { usePropertyDetailModalStore } from '@/store/propertyDetailModalStore';
@@ -123,12 +125,7 @@ function PropertyDetailsContent({
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
   const [isDescriptionTruncated, setIsDescriptionTruncated] = useState(false);
   const [shareToast, setShareToast] = useState<string | null>(null);
-  const lightboxRef = useRef<HTMLDivElement | null>(null);
-  const initialLightboxIndexRef = useRef<number>(0);
   const descriptionRef = useRef<HTMLDivElement | null>(null);
-  const mobileGalleryRef = useRef<HTMLDivElement | null>(null);
-  const isProgrammaticGalleryScrollRef = useRef<boolean>(false);
-  const programmaticGalleryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const userStore = useUserStore(state => state.user);
   const openModal = useModalStore(state => state.openModal);
@@ -207,46 +204,8 @@ function PropertyDetailsContent({
   const openLightbox = (index: number) => {
     if (!images.length) return;
     const clampedIndex = Math.max(0, Math.min(index, images.length - 1));
-    initialLightboxIndexRef.current = clampedIndex;
     setLightboxIndex(clampedIndex);
   };
-
-  const scrollLightboxToIndex = useCallback((targetIndex: number) => {
-    if (!lightboxRef.current || images.length === 0) return;
-    const clampedIndex = Math.max(0, Math.min(targetIndex, images.length - 1));
-    lightboxRef.current.scrollTo({
-      left: lightboxRef.current.clientWidth * clampedIndex,
-      behavior: 'smooth',
-    });
-  }, [images.length]);
-
-  const setLightboxContainerRef = useCallback((el: HTMLDivElement | null) => {
-    lightboxRef.current = el;
-    if (el && !el.dataset.initialized) {
-      el.scrollTo({
-        left: el.clientWidth * initialLightboxIndexRef.current,
-        behavior: 'instant',
-      });
-      el.dataset.initialized = 'true';
-    }
-  }, []);
-
-  useEffect(() => {
-    if (lightboxIndex === null) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setLightboxIndex(null);
-      } else if (e.key === 'ArrowLeft' && lightboxIndex > 0) {
-        scrollLightboxToIndex(lightboxIndex - 1);
-      } else if (e.key === 'ArrowRight' && lightboxIndex < images.length - 1) {
-        scrollLightboxToIndex(lightboxIndex + 1);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [lightboxIndex, images.length, scrollLightboxToIndex]);
 
   const explicitPrice = property?.type === 'rent' ? property?.rent : property?.price;
   const fallbackEstimatedPrice =
@@ -404,27 +363,27 @@ function PropertyDetailsContent({
 
   const scrollMobileGalleryToIndex = useCallback(
     (targetIndex: number) => {
-      const container = mobileGalleryRef.current;
-      if (!container || images.length <= 1) return;
+      if (images.length <= 1) return;
       const clamped = ((targetIndex % images.length) + images.length) % images.length;
       setCurrentMobileImageIndex(clamped);
-      const width = container.clientWidth;
-      if (width > 0) {
-        isProgrammaticGalleryScrollRef.current = true;
-        if (programmaticGalleryTimerRef.current) {
-          clearTimeout(programmaticGalleryTimerRef.current);
-        }
-        container.scrollTo({
-          left: clamped * width,
-          behavior: 'smooth',
-        });
-        programmaticGalleryTimerRef.current = setTimeout(() => {
-          isProgrammaticGalleryScrollRef.current = false;
-        }, 500);
-      }
     },
     [images.length]
   );
+
+  const {
+    bindViewport: bindMobileGalleryViewport,
+    bindTrack: bindMobileGalleryTrack,
+    shouldSuppressClick: shouldSuppressGalleryClick,
+  } = useHorizontalSwipeCarousel({
+    itemCount: images.length,
+    currentIndex: currentMobileImageIndex,
+    onIndexChange: setCurrentMobileImageIndex,
+    horizontalBias: 0.82,
+    decisionSlopPx: 6,
+    respectEdgeBack: true,
+    onTouchInteractionStart: () => setIsCarouselPaused(true),
+    onTouchInteractionEnd: () => setIsCarouselPaused(false),
+  });
 
   // Auto-advance mobile hero carousel every 5 seconds unless paused or lightbox is open
   useEffect(() => {
@@ -440,25 +399,6 @@ function PropertyDetailsContent({
     currentMobileImageIndex,
     scrollMobileGalleryToIndex,
   ]);
-
-  useEffect(() => {
-    return () => {
-      if (programmaticGalleryTimerRef.current) {
-        clearTimeout(programmaticGalleryTimerRef.current);
-      }
-    };
-  }, []);
-
-  const handleMobileScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    if (isProgrammaticGalleryScrollRef.current) return;
-    const scrollPosition = e.currentTarget.scrollLeft;
-    const width = e.currentTarget.clientWidth;
-    if (width === 0) return;
-    const newIndex = Math.max(0, Math.min(images.length - 1, Math.round(scrollPosition / width)));
-    if (newIndex !== currentMobileImageIndex) {
-      setCurrentMobileImageIndex(newIndex);
-    }
-  };
 
   const renderMobileTopActions = () => (
     <div className="fixed top-0 left-0 right-0 z-50 pointer-events-none lg:hidden bg-gradient-to-b from-black/40 via-black/10 to-transparent pt-[calc(1rem+var(--ios-safe-top))] pb-10 px-4 flex justify-between items-start">
@@ -507,26 +447,30 @@ function PropertyDetailsContent({
 
     return (
       <div 
+        ref={bindMobileGalleryViewport}
         data-detail-hero-image={property?._id}
-        className="lg:hidden sticky top-0 z-10 w-full h-[calc(450px+var(--ios-safe-top))] sm:h-[calc(520px+var(--ios-safe-top))] overflow-hidden bg-zinc-950"
+        data-horizontal-carousel="true"
+        className="lg:hidden sticky top-0 z-10 w-full h-[calc(450px+var(--ios-safe-top))] sm:h-[calc(520px+var(--ios-safe-top))] overflow-hidden bg-zinc-950 select-none"
+        style={{ touchAction: 'pan-y' }}
       >
         <div 
-          ref={mobileGalleryRef}
-          className="flex overflow-x-auto snap-x snap-mandatory h-full w-full" 
-          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-          onScroll={handleMobileScroll}
-          onTouchStart={() => setIsCarouselPaused(true)}
-          onTouchEnd={() => setIsCarouselPaused(false)}
-          onTouchCancel={() => setIsCarouselPaused(false)}
+          ref={bindMobileGalleryTrack}
+          className="flex h-full w-full will-change-transform"
+          style={{
+            transform: `translate3d(-${currentMobileImageIndex * 100}%, 0, 0)`,
+          }}
         >
           {images.map((img: string, idx: number) => (
             <div 
               key={idx} 
-              className="w-full flex-shrink-0 h-full relative snap-center cursor-pointer" 
-              onClick={() => openLightbox(idx)}
+              className="w-full flex-shrink-0 h-full relative cursor-pointer" 
+              onClick={() => {
+                if (shouldSuppressGalleryClick()) return;
+                openLightbox(idx);
+              }}
               style={{ opacity: (idx === 0 && isTransitioning) ? 0 : 1 }}
             >
-              <Image src={img} fill className="object-cover" alt={`Photo ${idx+1}`} priority={idx === 0} />
+              <Image src={img} fill sizes="100vw" draggable={false} className="object-cover pointer-events-none select-none" alt={`Photo ${idx+1}`} priority={idx === 0} />
             </div>
           ))}
         </div>
@@ -1145,84 +1089,18 @@ function PropertyDetailsContent({
         />
       )}
 
-      {/* LIGHTBOX VIEWER */}
+      {/* LIGHTBOX VIEWER (Portaled & gesture-isolated from PropertyDetailsModal) */}
       {lightboxIndex !== null && (
-        <div
-          className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center backdrop-blur-xl transition-all duration-300"
-          onClick={() => setLightboxIndex(null)}
-        >
-          {/* Close button */}
-          <button
-            className="absolute top-6 right-6 z-20 h-12 w-12 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-colors border border-white/20"
-            onClick={() => setLightboxIndex(null)}
-          >
-            <X className="h-6 w-6" />
-          </button>
-
-          {/* Prev arrow */}
-          {lightboxIndex > 0 && (
-            <button
-              className="hidden md:flex absolute left-8 z-20 h-14 w-14 rounded-full bg-white/10 items-center justify-center text-white hover:bg-white/20 hover:scale-110 transition-all border border-white/20"
-              onClick={(e) => { 
-                e.stopPropagation(); 
-                scrollLightboxToIndex(lightboxIndex - 1);
-              }}
-            >
-              <ChevronLeft className="h-7 w-7" />
-            </button>
-          )}
-
-          {/* Next arrow */}
-          {lightboxIndex < images.length - 1 && (
-            <button
-              className="hidden md:flex absolute right-8 z-20 h-14 w-14 rounded-full bg-white/10 items-center justify-center text-white hover:bg-white/20 hover:scale-110 transition-all border border-white/20"
-              onClick={(e) => { 
-                e.stopPropagation(); 
-                scrollLightboxToIndex(lightboxIndex + 1);
-              }}
-            >
-              <ChevronRight className="h-7 w-7" />
-            </button>
-          )}
-
-          {/* Image Container with Scroll Snap */}
-          <div
-            ref={setLightboxContainerRef}
-            className="w-full h-full flex overflow-x-auto snap-x snap-mandatory"
-            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-            onClick={(e) => e.stopPropagation()}
-            onScroll={(e) => {
-               const target = e.currentTarget;
-               if (!target.clientWidth) return;
-               const index = Math.max(
-                 0,
-                 Math.min(Math.round(target.scrollLeft / target.clientWidth), images.length - 1)
-               );
-               if (index !== lightboxIndex) {
-                 setLightboxIndex(index);
-               }
-            }}
-          >
-            {images.map((src: string, idx: number) => (
-              <div key={idx} className="min-w-full h-full flex items-center justify-center snap-center snap-always relative px-4 md:px-24">
-                <div className="relative w-full max-w-6xl h-[85vh]">
-                  <Image
-                    src={src}
-                    alt={`Photo ${idx + 1}`}
-                    fill
-                    className={`object-contain transition-transform duration-700 ${idx === lightboxIndex ? 'scale-100 opacity-100' : 'scale-95 opacity-50'}`}
-                    priority={idx === lightboxIndex || idx === lightboxIndex + 1 || idx === lightboxIndex - 1}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Counter */}
-          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 text-white px-5 py-2.5 rounded-full bg-white/10 border border-white/20 text-sm font-bold tracking-widest backdrop-blur-md z-20">
-            {lightboxIndex + 1} / {images.length}
-          </div>
-        </div>
+        <PropertyPhotoLightbox
+          images={images}
+          initialIndex={lightboxIndex}
+          onClose={(finalIndex) => {
+            setLightboxIndex(null);
+            if (finalIndex >= 0 && finalIndex < images.length) {
+              setCurrentMobileImageIndex(finalIndex);
+            }
+          }}
+        />
       )}
 
       {shareToast && (

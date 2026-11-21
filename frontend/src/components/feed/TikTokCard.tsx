@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import {
   Heart,
@@ -29,6 +29,7 @@ import { TfiLayoutSidebarLeft } from "react-icons/tfi";
 
 import { FeedProperty } from './types';
 import { useFavorite } from '@/hooks/useFavorite';
+import { useHorizontalSwipeCarousel } from '@/hooks/useHorizontalSwipeCarousel';
 import { useUserStore } from '@/store/userStore';
 import { useModalStore } from '@/store/modalStore';
 import { resolveProfileHref } from '@/services/user.service';
@@ -98,7 +99,6 @@ export default function TikTokCard({
 }: TikTokCardProps) {
   const [imageIndex, setImageIndex] = useState(0);
   const [isLikedAnimation, setIsLikedAnimation] = useState(false);
-  const touchStartX = useRef<number>(0);
 
   const userStore = useUserStore((state) => state.user);
   const currentUser = userStore?.user || userStore;
@@ -165,21 +165,15 @@ export default function TikTokCard({
     [imageIndex]
   );
 
-  const handleTouchStart = (e: React.TouchEvent) => {
-    touchStartX.current = e.touches[0].clientX;
-  };
-
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    const touchEndX = e.changedTouches[0].clientX;
-    const diff = touchEndX - touchStartX.current;
-    if (Math.abs(diff) > 40) {
-      if (diff > 0) {
-        prevImage();
-      } else {
-        nextImage();
-      }
-    }
-  };
+  const { bindViewport: bindPhotoViewport, bindTrack: bindPhotoTrack } =
+    useHorizontalSwipeCarousel({
+      itemCount: images.length,
+      currentIndex: imageIndex,
+      onIndexChange: setImageIndex,
+      horizontalBias: 0.82,
+      decisionSlopPx: 6,
+      respectEdgeBack: true,
+    });
 
   // Keyboard navigation for carousel images (ArrowLeft, ArrowRight)
   useEffect(() => {
@@ -229,12 +223,13 @@ export default function TikTokCard({
 
   return (
     <div
+      ref={bindPhotoViewport}
+      data-horizontal-carousel="true"
       className="relative w-full h-full bg-black overflow-hidden select-none"
-      onTouchStart={handleTouchStart}
-      onTouchEnd={handleTouchEnd}
+      style={{ touchAction: 'pan-y' }}
     >
       {/* Photo Viewport */}
-      <div className="absolute inset-0 flex items-center justify-center bg-black overflow-hidden">
+      <div className="absolute inset-0 bg-black overflow-hidden">
         {images.length > 0 ? (
           <>
             {/* Ambient Blurred Backdrop for soft letterbox fill */}
@@ -242,16 +237,37 @@ export default function TikTokCard({
               className="absolute inset-0 bg-cover bg-center filter blur-3xl scale-110 opacity-35 pointer-events-none transition-all duration-500"
               style={{ backgroundImage: `url(${images[imageIndex]})` }}
             />
-            <img
-              src={images[imageIndex]}
-              alt={property.title}
-              className="relative z-[1] w-full h-full object-contain drop-shadow-md transition-opacity duration-300"
-              loading={isActive ? "eager" : "lazy"}
-              decoding="async"
-            />
+            <div
+              ref={bindPhotoTrack}
+              className="relative z-[1] flex w-full h-full will-change-transform"
+              style={{
+                transform: `translate3d(-${imageIndex * 100}%, 0, 0)`,
+              }}
+            >
+              {images.map((src, idx) => {
+                const shouldMount = Math.abs(idx - imageIndex) <= 1;
+                return (
+                  <div
+                    key={idx}
+                    className="w-full h-full shrink-0 flex items-center justify-center relative"
+                  >
+                    {shouldMount && (
+                      <img
+                        src={src}
+                        alt={property.title}
+                        draggable={false}
+                        className="w-full h-full object-contain drop-shadow-md pointer-events-none select-none"
+                        loading={isActive && idx === imageIndex ? "eager" : "lazy"}
+                        decoding="async"
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </>
         ) : (
-          <div className="flex flex-col items-center justify-center text-zinc-500 gap-2">
+          <div className="w-full h-full flex flex-col items-center justify-center text-zinc-500 gap-2">
             <Compass className="w-12 h-12" />
             <p className="text-sm">Pas d&apos;image disponible</p>
           </div>
@@ -314,6 +330,7 @@ export default function TikTokCard({
       {/* Horizontal Thumbnail Gallery at Top (Classic Tranogasy Feed feature!) */}
       {images.length > 1 && (
         <div
+          data-carousel-gesture-ignore="true"
           className={`absolute left-1/2 -translate-x-1/2 z-20 max-w-[92%] flex items-center gap-1.5 p-1.5 rounded-2xl bg-black/50 backdrop-blur-md border border-white/10 overflow-x-auto no-scrollbar ${
             embeddedInSearch
               ? 'top-[98px] sm:top-[112px] lg:top-14'
@@ -503,7 +520,10 @@ export default function TikTokCard({
             </button>
 
             {/* Dots Indicator (Separated Ultra-Thin Pill Background) */}
-            <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-black/40 backdrop-blur-md border border-white/15 shadow-md max-w-[140px] overflow-x-auto no-scrollbar">
+            <div
+              data-carousel-gesture-ignore="true"
+              className="flex items-center gap-1 px-2 py-1 rounded-full bg-black/40 backdrop-blur-md border border-white/15 shadow-md max-w-[140px] overflow-x-auto no-scrollbar"
+            >
               {images.map((_, idx) => {
                 const isActiveDot = imageIndex === idx;
                 return (

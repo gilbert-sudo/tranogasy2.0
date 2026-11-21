@@ -542,6 +542,8 @@ export default function TikTokCommentsDrawer({
     if (!isOpen) return null;
     return (
       <div
+        data-swipe-dismiss-ignore="true"
+        data-modal-overlay-active="true"
         className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-200"
         onClick={onClose}
       >
@@ -560,6 +562,8 @@ export default function TikTokCommentsDrawer({
     <>
       {/* Semi-transparent Backdrop */}
       <div
+        data-swipe-dismiss-ignore="true"
+        {...(isOpen ? { 'data-modal-overlay-active': 'true' } : {})}
         className={`fixed inset-0 z-[110] bg-black/60 backdrop-blur-xs transition-opacity duration-300 ${
           isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         }`}
@@ -568,6 +572,7 @@ export default function TikTokCommentsDrawer({
 
       {/* Slide-Up Sheet */}
       <div
+        data-swipe-dismiss-ignore="true"
         className={`fixed left-0 right-0 bottom-0 z-[120] bg-white dark:bg-zinc-900 rounded-t-[2.5rem] shadow-2xl border-t border-zinc-200 dark:border-zinc-800 max-h-[82dvh] h-[540px] transition-transform duration-300 ease-out flex flex-col overflow-hidden ${
           isOpen ? 'translate-y-0' : 'translate-y-full'
         }`}
