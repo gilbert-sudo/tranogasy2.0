@@ -32,6 +32,7 @@ import { useFavorite } from '@/hooks/useFavorite';
 import { useHorizontalSwipeCarousel } from '@/hooks/useHorizontalSwipeCarousel';
 import { useUserStore } from '@/store/userStore';
 import { useModalStore } from '@/store/modalStore';
+import { useProfileStore } from '@/store/profileStore';
 import { resolveProfileHref } from '@/services/user.service';
 import { getHouseTypeLabel } from '@/lib/propertyTypes';
 import { formatPublicationDateTime, formatExactPublicationDateTime } from '@/lib/dateFormat';
@@ -144,6 +145,17 @@ export default function TikTokCard({
       : property.owner?.username || 'Utilisateur';
 
   const profileHref = resolveProfileHref(property.owner, property.sources, ownerName);
+
+  const handleOpenPublisherProfile = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) {
+      return;
+    }
+    e.preventDefault();
+    useProfileStore
+      .getState()
+      .openProfileFromOwner(property.owner, property.sources, ownerName);
+  };
 
   const nextImage = useCallback(
     (e?: React.MouseEvent) => {
@@ -379,7 +391,7 @@ export default function TikTokCard({
         {/* Advertiser Avatar with Plus Badge */}
         <Link
           href={profileHref}
-          onClick={(e) => e.stopPropagation()}
+          onClick={handleOpenPublisherProfile}
           className="relative group cursor-pointer mb-0.5 block"
           title={`Voir le profil de ${ownerName}`}
         >
@@ -569,7 +581,7 @@ export default function TikTokCard({
           {/* Advertiser handle */}
           <Link
             href={profileHref}
-            onClick={(e) => e.stopPropagation()}
+            onClick={handleOpenPublisherProfile}
             className="text-sm font-black text-white hover:text-brand-green hover:underline cursor-pointer flex items-center gap-1 w-max transition-colors"
           >
             @{ownerName}

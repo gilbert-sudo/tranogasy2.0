@@ -6,6 +6,7 @@ import { X, MapPin, Phone, Share2, BedDouble, Home, Utensils, Droplets, Grid2X2,
 import { getHouseTypeLabel, isCommercialHouseType } from '@/lib/propertyTypes';
 import { formatPublicationDateTime, formatExactPublicationDateTime } from '@/lib/dateFormat';
 import { usePropertyDetailModalStore } from '@/store/propertyDetailModalStore';
+import { useProfileStore } from '@/store/profileStore';
 import {
   FaCar, FaMotorcycle, FaWifi, FaParking, FaShieldAlt, FaSwimmingPool, FaHotTub, FaBed
 } from "react-icons/fa";
@@ -427,7 +428,16 @@ export default function TikTokDetailsDrawer({
         {/* Clickable Advertiser Pill */}
         <Link
           href={resolveProfileHref(property.owner, property.sources)}
-          onClick={onClose}
+          onClick={(e) => {
+            if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) {
+              return;
+            }
+            e.preventDefault();
+            e.stopPropagation();
+            useProfileStore
+              .getState()
+              .openProfileFromOwner(property.owner, property.sources);
+          }}
           className="flex items-center justify-between gap-3 p-2.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800/70 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-200/70 dark:border-zinc-700/60 hover:border-brand-green/40 transition-all group mt-2"
         >
           <div className="flex items-center gap-3 min-w-0">

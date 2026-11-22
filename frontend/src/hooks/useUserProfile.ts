@@ -37,7 +37,11 @@ export const COVER_PRESETS = [
   },
 ];
 
-export function useUserProfile(identifier?: string | null, sourceName?: string | null) {
+export function useUserProfile(
+  identifier?: string | null,
+  sourceName?: string | null,
+  initialUser?: Partial<PublicProfileUser> | null
+) {
   const userStore = useUserStore((s) => s.user);
   const setUserInStore = useUserStore((s) => s.setUser);
   const initializeUser = useUserStore((s) => s.initialize);
@@ -128,8 +132,23 @@ export function useUserProfile(identifier?: string | null, sourceName?: string |
     ) {
       return currentUser;
     }
+    if (initialUser && (initialUser.username || initialUser._id)) {
+      return {
+        _id: String(initialUser._id || identifier || 'user'),
+        username: String(initialUser.username || identifier || 'Utilisateur'),
+        avatar: initialUser.avatar || null,
+        coverImage: initialUser.coverImage || null,
+        fallbackCoverImage: initialUser.fallbackCoverImage || null,
+        bio: initialUser.bio || null,
+        phone: initialUser.phone || null,
+        role: initialUser.role || 'user',
+        location: initialUser.location || null,
+        created_at: initialUser.created_at,
+        lastConnectedAt: initialUser.lastConnectedAt,
+      };
+    }
     return null;
-  }, [cachedEntry, currentUser, identifier]);
+  }, [cachedEntry, currentUser, identifier, initialUser]);
 
   const isOwnProfile = useMemo(() => {
     if (!currentUser || !profileUser) return false;

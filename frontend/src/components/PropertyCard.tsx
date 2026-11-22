@@ -25,7 +25,7 @@ import { useHorizontalSwipeCarousel } from '@/hooks/useHorizontalSwipeCarousel';
 import { useUserStore } from '@/store/userStore';
 import { useModalStore } from '@/store/modalStore';
 import { usePropertyDetailModalStore } from '@/store/propertyDetailModalStore';
-import { resolveProfileHref } from '@/services/user.service';
+import { useProfileStore } from '@/store/profileStore';
 import { formatPublicationDateTime, formatExactPublicationDateTime } from '@/lib/dateFormat';
 
 const FEATURE_ICONS: Record<string, React.ElementType> = {
@@ -465,7 +465,6 @@ function PropertyCardComponent({ property }: PropertyProps) {
             const fallbackAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(
               publisherName
             )}&background=7cbd1e&color=fff&size=64`;
-            const profileHref = resolveProfileHref(property.owner, property.sources);
 
             return (
               <div className="mt-1.5 flex items-center">
@@ -474,10 +473,16 @@ function PropertyCardComponent({ property }: PropertyProps) {
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    router.push(profileHref);
+                    useProfileStore
+                      .getState()
+                      .openProfileFromOwner(
+                        property.owner,
+                        property.sources,
+                        publisherName
+                      );
                   }}
                   title={`Voir le profil de ${publisherName}`}
-                  className="inline-flex items-center gap-1.5 max-w-full rounded-full pr-2 py-0.5 text-left hover:bg-zinc-200/70 dark:hover:bg-zinc-700/70 transition-colors group/pub"
+                  className="inline-flex items-center gap-1.5 max-w-full rounded-full pr-2 py-0.5 text-left hover:bg-zinc-200/70 dark:hover:bg-zinc-700/70 transition-colors group/pub cursor-pointer"
                 >
                   <img
                     src={publisherAvatar || fallbackAvatar}

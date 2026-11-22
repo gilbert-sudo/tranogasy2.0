@@ -26,9 +26,9 @@ import { useHorizontalSwipeCarousel } from '@/hooks/useHorizontalSwipeCarousel';
 import { useUserStore } from '@/store/userStore';
 import { useModalStore } from '@/store/modalStore';
 import { usePropertyDetailModalStore } from '@/store/propertyDetailModalStore';
+import { useProfileStore } from '@/store/profileStore';
 import { useProperty } from '@/hooks/useProperty';
 import { useFavorite } from '@/hooks/useFavorite';
-import { resolveProfileHref } from '@/services/user.service';
 import { resolvePublicPropertyShareUrl } from '@/services/property.service';
 import { formatPublicationDateTime, formatExactPublicationDateTime } from '@/lib/dateFormat';
 import { APP_PLATFORM } from '@/lib/platform';
@@ -130,7 +130,7 @@ function PropertyDetailsContent({
   const userStore = useUserStore(state => state.user);
   const openModal = useModalStore(state => state.openModal);
   const currentUser = userStore?.user || userStore;
-  const closePropertyDetail = usePropertyDetailModalStore(state => state.closePropertyDetail);
+  const openProfileFromOwner = useProfileStore(state => state.openProfileFromOwner);
   const autoOpenContactForPropertyId = usePropertyDetailModalStore(
     (state) => state.autoOpenContactForPropertyId
   );
@@ -140,7 +140,6 @@ function PropertyDetailsContent({
   const isTransitioning = usePropertyDetailModalStore(
     (state) => state.isTransitioning && state.propertyId === property?._id
   );
-  const profileHref = resolveProfileHref(property?.owner, property?.sources);
 
   useEffect(() => {
     if (!property?._id) return;
@@ -172,11 +171,7 @@ function PropertyDetailsContent({
   ]);
 
   const handleOpenOwnerProfile = () => {
-    if (typeof document !== 'undefined') {
-      document.body.style.overflow = '';
-    }
-    closePropertyDetail();
-    router.push(profileHref);
+    openProfileFromOwner(property?.owner, property?.sources);
   };
   const { favorites, checkFavorite, toggleFavorite } = useFavorite();
   const isFavorite = favorites[property?._id] || false;

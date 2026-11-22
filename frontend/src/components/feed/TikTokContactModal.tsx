@@ -21,6 +21,7 @@ import { useUserStore } from '@/store/userStore';
 import { useModalStore } from '@/store/modalStore';
 import { usePropertyStore } from '@/store/propertyStore';
 import { usePropertyDetailModalStore } from '@/store/propertyDetailModalStore';
+import { useProfileStore } from '@/store/profileStore';
 
 interface TikTokContactModalProps {
   property: FeedProperty | null;
@@ -251,7 +252,16 @@ export default function TikTokContactModal({
         {/* Advertiser info */}
         <Link
           href={profileHref}
-          onClick={onClose}
+          onClick={(e) => {
+            if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) {
+              return;
+            }
+            e.preventDefault();
+            e.stopPropagation();
+            useProfileStore
+              .getState()
+              .openProfileFromOwner(property.owner, property.sources);
+          }}
           className="flex items-center justify-between gap-3 p-3 bg-zinc-50 dark:bg-zinc-800/60 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-2xl transition-all group"
         >
           <div className="flex items-center gap-3 min-w-0 flex-1">

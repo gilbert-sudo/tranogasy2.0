@@ -26,12 +26,18 @@ import {
 } from 'lucide-react';
 import Header from '@/components/Header';
 import PropertyCard from '@/components/PropertyCard';
+import PropertyCardSkeleton from '@/components/PropertyCardSkeleton';
 import { useUserProfile, COVER_PRESETS } from '@/hooks/useUserProfile';
-import { ProfileListingTab } from '@/store/profileStore';
+import { ProfileListingTab, useProfileStore } from '@/store/profileStore';
+import { usePropertyDetailModalStore } from '@/store/propertyDetailModalStore';
+import { PublicProfileUser, resolveProfileHref } from '@/services/user.service';
 
 interface UserProfileViewProps {
   identifier?: string;
   sourceName?: string | null;
+  initialUser?: Partial<PublicProfileUser> | null;
+  onBack?: () => void;
+  isModal?: boolean;
 }
 
 function formatMemberSince(dateStr?: string): string {
@@ -58,8 +64,13 @@ function formatLastActive(dateStr?: string): string {
 export default function UserProfileView({
   identifier,
   sourceName,
+  initialUser,
+  onBack,
+  isModal = false,
 }: UserProfileViewProps) {
   const router = useRouter();
+  const closeProfileModal = useProfileStore((s) => s.closeProfileModal);
+  const closePropertyDetail = usePropertyDetailModalStore((s) => s.closePropertyDetail);
   const {
     profileUser,
     isOwnProfile,
@@ -81,7 +92,22 @@ export default function UserProfileView({
     saveProfileChanges,
     uploadAndSaveCover,
     uploadAndSaveAvatar,
-  } = useUserProfile(identifier, sourceName);
+  } = useUserProfile(identifier, sourceName, initialUser);
+
+  const handleBack = () => {
+    if (onBack) {
+      onBack();
+    } else {
+      router.back();
+    }
+  };
+
+  const handleCloseOverlaysBeforeRoute = () => {
+    if (isModal) {
+      closeProfileModal();
+      closePropertyDetail();
+    }
+  };
 
   const [copiedShare, setCopiedShare] = useState(false);
   const [copiedPhone, setCopiedPhone] = useState<string | null>(null);
@@ -171,7 +197,15 @@ export default function UserProfileView({
       : 'Antananarivo, Madagascar');
 
   const handleShareProfile = async () => {
-    const url = typeof window !== 'undefined' ? window.location.href : '';
+    const profilePath = resolveProfileHref(
+      profileUser?._id || identifier || null,
+      sourceName ? { username: sourceName } : null,
+      profileUser?.username || null
+    );
+    const url =
+      typeof window !== 'undefined'
+        ? `${window.location.origin}${profilePath}`
+        : '';
     try {
       if (navigator.share) {
         await navigator.share({
@@ -197,8 +231,20 @@ export default function UserProfileView({
 
   if (isLoading && !profileUser) {
     return (
-      <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 font-outfit">
-        <Header />
+      <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 font-outfit relative">
+        {!isModal && <Header />}
+        {isModal && (
+          <div className="sticky top-[calc(1rem+var(--ios-safe-top))] z-40 px-4 sm:px-7 pt-4 pointer-events-none">
+            <button
+              type="button"
+              onClick={handleBack}
+              className="pointer-events-auto inline-flex items-center gap-2.5 px-5 sm:px-6 py-3 sm:py-3.5 rounded-full bg-black/55 hover:bg-black/75 backdrop-blur-2xl border border-white/25 text-white font-light text-xs sm:text-sm tracking-wider shadow-[0_8px_28px_rgba(0,0,0,0.28)] hover:scale-105 active:scale-95 transition-all cursor-pointer"
+            >
+              <ArrowLeft className="w-4 h-4 stroke-[1.8]" />
+              <span>Retour</span>
+            </button>
+          </div>
+        )}
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-24 animate-pulse">
           <div className="h-64 sm:h-80 md:h-96 w-full rounded-[2.5rem] bg-zinc-200 dark:bg-zinc-800/80" />
           <div className="max-w-4xl mx-auto -mt-20 px-4">
@@ -221,7 +267,7 @@ export default function UserProfileView({
   if (error && !profileUser) {
     return (
       <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 font-outfit flex flex-col">
-        <Header />
+        {!isModal && <Header />}
         <div className="flex-1 flex items-center justify-center p-6">
           <div className="max-w-md w-full rounded-[2.5rem] p-8 sm:p-10 text-center bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-white/10 shadow-xl">
             <div className="w-16 h-16 rounded-full bg-brand-green/15 text-brand-green flex items-center justify-center mx-auto mb-4">
@@ -235,7 +281,7 @@ export default function UserProfileView({
             </p>
             <button
               type="button"
-              onClick={() => router.back()}
+              onClick={handleBack}
               className="px-8 py-4 rounded-full bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 font-light text-sm tracking-wide hover:scale-105 active:scale-95 transition-all cursor-pointer"
             >
               Retour
@@ -247,8 +293,8 @@ export default function UserProfileView({
   }
 
   return (
-    <div className="min-h-screen bg-[#F7F8FA] dark:bg-zinc-950 pb-28 font-outfit selection:bg-brand-green/20">
-      <Header />
+    <div className="min-h-screen bg-[#F7F8FA] dark:bg-zinc-950 pb-28 font-outfit selection:bg-brand-green/20 relative">
+      {!isModal && <Header />}
 
       {/* Hidden File Inputs for Direct Cover & Avatar Uploads */}
       <input
@@ -292,11 +338,11 @@ export default function UserProfileView({
           )}
 
           {/* Top Floating Action Bar inside Cover */}
-          <div className="absolute top-4 sm:top-6 inset-x-4 sm:inset-x-7 z-20 flex items-center justify-between gap-3">
+          <div className="absolute top-[calc(1rem+var(--ios-safe-top,0px))] sm:top-6 inset-x-4 sm:inset-x-7 z-20 flex items-center justify-between gap-3">
             {/* Back Button (Big Padding, Thin Font, Ultra-Rounded) */}
             <button
               type="button"
-              onClick={() => router.back()}
+              onClick={handleBack}
               className="flex items-center gap-2.5 px-5 sm:px-6 py-3 sm:py-3.5 rounded-full
                 bg-black/45 hover:bg-black/65 backdrop-blur-2xl
                 border border-white/25 text-white
@@ -467,6 +513,7 @@ export default function UserProfileView({
 
                   <Link
                     href="/account"
+                    onClick={handleCloseOverlaysBeforeRoute}
                     className="flex items-center justify-center gap-2
                       px-6 py-4 rounded-full
                       bg-zinc-100 dark:bg-zinc-800/90 text-zinc-800 dark:text-zinc-200
@@ -638,8 +685,14 @@ export default function UserProfileView({
           )}
         </div>
 
-        {/* Listings Grid or Minimalist Empty State */}
-        {filteredProperties.length === 0 ? (
+        {/* Listings Grid, Loading Skeletons, or Minimalist Empty State */}
+        {isLoading && properties.length === 0 ? (
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 min-[2100px]:grid-cols-6">
+            {[1, 2, 3, 4].map((n) => (
+              <PropertyCardSkeleton key={n} />
+            ))}
+          </div>
+        ) : filteredProperties.length === 0 ? (
           <div className="rounded-[2.5rem] p-10 sm:p-14 text-center bg-white/80 dark:bg-zinc-900/70 border border-zinc-200/70 dark:border-white/10">
             <div className="w-14 h-14 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-400 flex items-center justify-center mx-auto mb-4">
               <Building2 className="w-6 h-6 stroke-[1.5]" />
@@ -659,6 +712,7 @@ export default function UserProfileView({
             {isOwnProfile && properties.length === 0 && (
               <Link
                 href="/create-listing"
+                onClick={handleCloseOverlaysBeforeRoute}
                 className="inline-flex items-center gap-2 mt-6 px-7 py-3.5 rounded-full bg-brand-green text-white font-light text-sm tracking-wide shadow-[0_8px_24px_rgba(114,193,70,0.3)] hover:scale-105 active:scale-95 transition-all"
               >
                 <span>Publier ma première annonce</span>
@@ -679,6 +733,8 @@ export default function UserProfileView({
       ══════════════════════════════════════════════════════════════════ */}
       {isEditModalOpen && (
         <div
+          data-modal-overlay-active="true"
+          data-swipe-dismiss-ignore="true"
           className="fixed inset-0 z-[120] bg-black/65 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200"
           onClick={() => setIsEditModalOpen(false)}
         >
@@ -856,6 +912,8 @@ export default function UserProfileView({
       ══════════════════════════════════════════════════════════════════ */}
       {isContactModalOpen && (
         <div
+          data-modal-overlay-active="true"
+          data-swipe-dismiss-ignore="true"
           className="fixed inset-0 z-[120] bg-black/65 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200"
           onClick={() => setIsContactModalOpen(false)}
         >

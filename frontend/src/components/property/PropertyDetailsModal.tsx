@@ -2,7 +2,11 @@
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { usePathname } from 'next/navigation';
-import { usePropertyDetailModalStore } from '@/store/propertyDetailModalStore';
+import {
+  usePropertyDetailModalStore,
+  claimOverlayDismissEvent,
+} from '@/store/propertyDetailModalStore';
+import { useProfileStore } from '@/store/profileStore';
 import PropertyDetailsClient from '@/app/properties/[id]/PropertyDetailsClient';
 
 interface OverlayRect {
@@ -15,12 +19,31 @@ interface OverlayRect {
 
 export default function PropertyDetailsModal() {
   const pathname = usePathname();
-  const isOpen = usePropertyDetailModalStore(s => s.isOpen);
-  const propertyId = usePropertyDetailModalStore(s => s.propertyId);
-  const initialProperty = usePropertyDetailModalStore(s => s.initialProperty);
-  const transitionOrigin = usePropertyDetailModalStore(s => s.transitionOrigin);
-  const closePropertyDetail = usePropertyDetailModalStore(s => s.closePropertyDetail);
-  const setIsTransitioning = usePropertyDetailModalStore(s => s.setIsTransitioning);
+  const isOpen = usePropertyDetailModalStore((s) => s.isOpen);
+  const propertyId = usePropertyDetailModalStore((s) => s.propertyId);
+  const initialProperty = usePropertyDetailModalStore((s) => s.initialProperty);
+  const transitionOrigin = usePropertyDetailModalStore((s) => s.transitionOrigin);
+  const stackOrder = usePropertyDetailModalStore((s) => s.stackOrder);
+  const restoredScrollTop = usePropertyDetailModalStore((s) => s.restoredScrollTop);
+  const popOrClosePropertyDetail = usePropertyDetailModalStore(
+    (s) => s.popOrClosePropertyDetail
+  );
+  const closePropertyDetail = usePropertyDetailModalStore((s) => s.closePropertyDetail);
+  const setIsTransitioning = usePropertyDetailModalStore((s) => s.setIsTransitioning);
+  const setActiveScrollTop = usePropertyDetailModalStore((s) => s.setActiveScrollTop);
+  const clearRestoredScrollTop = usePropertyDetailModalStore(
+    (s) => s.clearRestoredScrollTop
+  );
+
+  const profileIsOpen = useProfileStore((s) => s.isModalOpen);
+  const profileStackOrder = useProfileStore((s) => s.modalStackOrder);
+
+  const isTopmostOverlay =
+    isOpen && (!profileIsOpen || stackOrder > profileStackOrder);
+
+  const modalZIndex =
+    stackOrder <= 1 ? 70 : Math.min(128, 120 + stackOrder * 2);
+  const overlayImageZIndex = modalZIndex + 1;
 
   const [activeId, setActiveId] = useState<string | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -39,11 +62,16 @@ export default function PropertyDetailsModal() {
   const previousUrlRef = useRef<string>('');
   const isClosingRef = useRef<boolean>(false);
   const originalOverflowRef = useRef<string>('');
-  const savedOriginRectRef = useRef<{ top: number; left: number; width: number; height: number } | null>(null);
+  const savedOriginRectRef = useRef<{
+    top: number;
+    left: number;
+    width: number;
+    height: number;
+  } | null>(null);
   const savedOriginRadiusRef = useRef<string>('1.5rem 1.5rem 0 0');
   const openTimerRef = useRef<NodeJS.Timeout | null>(null);
   const closeTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const lastOpenedIdRef = useRef<string | null>(null);
+  const lastOpenedKeyRef = useRef<string | null>(null);
   const wasOnOverlayRouteRef = useRef<boolean>(false);
 
   const clearDragVisualStyles = useCallback(() => {
@@ -65,12 +93,35 @@ export default function PropertyDetailsModal() {
     }
   }, []);
 
+  const restoreBodyScrollIfAllClosed = useCallback(() => {
+    if (typeof document === 'undefined') return;
+    const anyOpen =
+      usePropertyDetailModalStore.getState().isOpen ||
+      useProfileStore.getState().isModalOpen;
+    if (!anyOpen) {
+      document.body.style.overflow = originalOverflowRef.current || '';
+    } else {
+      document.body.style.overflow = 'hidden';
+    }
+  }, []);
+
   // Synchronize active property state when store triggers open or updates initialProperty
   if (isOpen && propertyId && activeId !== propertyId) {
     setActiveId(propertyId);
     setActiveProp(initialProperty || null);
-  } else if (isOpen && propertyId && activeId === propertyId && initialProperty && initialProperty !== activeProp) {
-    if (!(activeProp?.contactLocked === false && initialProperty?.contactLocked === true)) {
+  } else if (
+    isOpen &&
+    propertyId &&
+    activeId === propertyId &&
+    initialProperty &&
+    initialProperty !== activeProp
+  ) {
+    if (
+      !(
+        activeProp?.contactLocked === false &&
+        initialProperty?.contactLocked === true
+      )
+    ) {
       setActiveProp(initialProperty);
     }
   }
@@ -100,141 +151,229 @@ export default function PropertyDetailsModal() {
     setIsTransitioning(false);
     closePropertyDetail();
     isClosingRef.current = false;
-  }, [clearDragVisualStyles, closePropertyDetail, setIsTransitioning]);
+    lastOpenedKeyRef.current = null;
+    restoreBodyScrollIfAllClosed();
+  }, [
+    clearDragVisualStyles,
+    closePropertyDetail,
+    restoreBodyScrollIfAllClosed,
+    setIsTransitioning,
+  ]);
 
-  // Smooth close with shared element reverse zoom
-  const animateAndClose = useCallback((shouldPopHistory = true) => {
-    if (isClosingRef.current) return;
-    isClosingRef.current = true;
-
-    if (openTimerRef.current) {
-      clearTimeout(openTimerRef.current);
-      openTimerRef.current = null;
-    }
-
-    // Immediately restore body scroll
-    if (typeof document !== 'undefined') {
-      document.body.style.overflow = originalOverflowRef.current || '';
-    }
-
-    // Clear any unlock return context since user explicitly closed the property modal
-    usePropertyDetailModalStore.getState().clearUnlockReturnContext();
-
-    // Restore URL cleanly using native replaceState to prevent Next.js RSC re-fetch
-    if (shouldPopHistory && typeof window !== 'undefined' && previousUrlRef.current) {
-      try {
-        History.prototype.replaceState.call(
-          window.history,
-          window.history.state,
-          '',
-          previousUrlRef.current
-        );
-      } catch {
-        window.history.replaceState(window.history.state, '', previousUrlRef.current);
-      }
-    }
-
-    // Find destination hero image current location
-    const heroElements = document.querySelectorAll(`[data-detail-hero-image="${activeId}"]`);
-    let currentHeroEl: HTMLElement | null = null;
-    for (let i = 0; i < heroElements.length; i++) {
-      const el = heroElements[i] as HTMLElement;
-      const r = el.getBoundingClientRect();
-      if (r.width > 0 && r.height > 0) {
-        currentHeroEl = el;
-        break;
-      }
-    }
-
-    // Find original card image in the listing
-    const cardImgEl = document.querySelector(`[data-property-card-image="${activeId}"]`) as HTMLElement | null;
-    let targetCardRect: { top: number; left: number; width: number; height: number } | null = null;
-    let targetCardRadius = savedOriginRadiusRef.current || '1.5rem 1.5rem 0 0';
-
-    if (cardImgEl) {
-      const r = cardImgEl.getBoundingClientRect();
-      targetCardRect = {
-        top: r.top,
-        left: r.left,
-        width: r.width,
-        height: r.height,
-      };
-      targetCardRadius = window.getComputedStyle(cardImgEl).borderRadius || targetCardRadius;
-    } else if (savedOriginRectRef.current) {
-      targetCardRect = savedOriginRectRef.current;
-    }
-
-    const currentHeroRect = currentHeroEl?.getBoundingClientRect();
-    const isHeroVisible = currentHeroRect && currentHeroRect.bottom > 50 && currentHeroRect.top < window.innerHeight;
-    const canReverseZoom = isHeroVisible && targetCardRect;
-
-    if (canReverseZoom && currentHeroRect && currentHeroEl) {
-      // Step 1: Hide live hero in details page
-      setIsTransitioning(true);
-
-      // Step 2: Show overlay at current hero rect without animation
-      setIsAnimatingOverlay(false);
-      setOverlayRect({
-        top: currentHeroRect.top,
-        left: currentHeroRect.left,
-        width: currentHeroRect.width,
-        height: currentHeroRect.height,
-        borderRadius: window.getComputedStyle(currentHeroEl).borderRadius || '0px',
-      });
-
-      // Step 3: Fade out modal background & content
+  // If store `isOpen` is set to false externally (e.g. route exit), clean up immediately
+  useEffect(() => {
+    if (!isOpen && activeId && !isClosingRef.current) {
       setIsModalVisible(false);
+      finishCloseTransition();
+    }
+  }, [isOpen, activeId, finishCloseTransition]);
 
-      // Step 4: Next frame, animate overlay smoothly back to card
+  // Restore scroll position when popping back to an earlier property in historyStack, or reset to top for a new property
+  useEffect(() => {
+    if (!activeId) return;
+    const scroller = scrollContainerRef.current;
+    if (!scroller) return;
+
+    if (restoredScrollTop !== null) {
+      const targetTop = restoredScrollTop;
       requestAnimationFrame(() => {
+        if (scrollContainerRef.current) {
+          scrollContainerRef.current.scrollTop = targetTop;
+        }
+        clearRestoredScrollTop();
+      });
+    } else {
+      scroller.scrollTop = 0;
+    }
+  }, [activeId, stackOrder, restoredScrollTop, clearRestoredScrollTop]);
+
+  const replaceBrowserUrlCleanly = useCallback((targetUrl: string | null) => {
+    if (!targetUrl || typeof window === 'undefined') return;
+    try {
+      History.prototype.replaceState.call(
+        window.history,
+        window.history.state,
+        '',
+        targetUrl
+      );
+    } catch {
+      window.history.replaceState(window.history.state, '', targetUrl);
+    }
+  }, []);
+
+  // Smooth close (or pop to previous property in historyStack if stacked above UserProfileModal)
+  const animateAndClose = useCallback(
+    (shouldPopHistory = true) => {
+      if (isClosingRef.current) return;
+
+      const storeState = usePropertyDetailModalStore.getState();
+
+      // If there is an earlier property in historyStack (e.g. Property A -> Profile X -> Property B),
+      // pop Property B and restore Property A underneath Profile X immediately.
+      if (storeState.historyStack.length > 0) {
+        finishOpenTransition();
+        clearDragVisualStyles();
+        const { restoredEntry, returnUrlToRestore } = popOrClosePropertyDetail();
+        if (restoredEntry) {
+          setActiveId(restoredEntry.propertyId);
+          setActiveProp(restoredEntry.initialProperty || null);
+        }
+        if (shouldPopHistory && returnUrlToRestore) {
+          replaceBrowserUrlCleanly(returnUrlToRestore);
+        }
+        restoreBodyScrollIfAllClosed();
+        return;
+      }
+
+      isClosingRef.current = true;
+
+      if (openTimerRef.current) {
+        clearTimeout(openTimerRef.current);
+        openTimerRef.current = null;
+      }
+
+      // Immediately restore body scroll only if no other overlay modal (like UserProfileModal) remains open
+      if (
+        typeof document !== 'undefined' &&
+        !useProfileStore.getState().isModalOpen
+      ) {
+        document.body.style.overflow = originalOverflowRef.current || '';
+      }
+
+      // Clear any unlock return context since user explicitly closed the property modal
+      storeState.clearUnlockReturnContext();
+
+      // Restore URL cleanly using native replaceState to prevent Next.js RSC re-fetch
+      const targetReturnUrl =
+        storeState.currentReturnUrl ||
+        storeState.originUrl ||
+        previousUrlRef.current;
+      if (shouldPopHistory && targetReturnUrl) {
+        replaceBrowserUrlCleanly(targetReturnUrl);
+      }
+
+      // Find destination hero image current location
+      const heroElements = document.querySelectorAll(
+        `[data-detail-hero-image="${activeId}"]`
+      );
+      let currentHeroEl: HTMLElement | null = null;
+      for (let i = 0; i < heroElements.length; i++) {
+        const el = heroElements[i] as HTMLElement;
+        const r = el.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0) {
+          currentHeroEl = el;
+          break;
+        }
+      }
+
+      // Find original card image in the listing
+      const cardImgEl = document.querySelector(
+        `[data-property-card-image="${activeId}"]`
+      ) as HTMLElement | null;
+      let targetCardRect: {
+        top: number;
+        left: number;
+        width: number;
+        height: number;
+      } | null = null;
+      let targetCardRadius =
+        savedOriginRadiusRef.current || '1.5rem 1.5rem 0 0';
+
+      if (cardImgEl) {
+        const r = cardImgEl.getBoundingClientRect();
+        targetCardRect = {
+          top: r.top,
+          left: r.left,
+          width: r.width,
+          height: r.height,
+        };
+        targetCardRadius =
+          window.getComputedStyle(cardImgEl).borderRadius || targetCardRadius;
+      } else if (savedOriginRectRef.current) {
+        targetCardRect = savedOriginRectRef.current;
+      }
+
+      const currentHeroRect = currentHeroEl?.getBoundingClientRect();
+      const isHeroVisible =
+        currentHeroRect &&
+        currentHeroRect.bottom > 50 &&
+        currentHeroRect.top < window.innerHeight;
+      const canReverseZoom = isHeroVisible && targetCardRect;
+
+      if (canReverseZoom && currentHeroRect && currentHeroEl) {
+        // Step 1: Hide live hero in details page
+        setIsTransitioning(true);
+
+        // Step 2: Show overlay at current hero rect without animation
+        setIsAnimatingOverlay(false);
+        setOverlayRect({
+          top: currentHeroRect.top,
+          left: currentHeroRect.left,
+          width: currentHeroRect.width,
+          height: currentHeroRect.height,
+          borderRadius:
+            window.getComputedStyle(currentHeroEl).borderRadius || '0px',
+        });
+
+        // Step 3: Fade out modal background & content
+        setIsModalVisible(false);
+
+        // Step 4: Next frame, animate overlay smoothly back to card
         requestAnimationFrame(() => {
-          setIsAnimatingOverlay(true);
-          setOverlayRect({
-            top: targetCardRect!.top,
-            left: targetCardRect!.left,
-            width: targetCardRect!.width,
-            height: targetCardRect!.height,
-            borderRadius: targetCardRadius,
+          requestAnimationFrame(() => {
+            setIsAnimatingOverlay(true);
+            setOverlayRect({
+              top: targetCardRect!.top,
+              left: targetCardRect!.left,
+              width: targetCardRect!.width,
+              height: targetCardRect!.height,
+              borderRadius: targetCardRadius,
+            });
           });
         });
-      });
 
-      // Step 5: Complete close
-      closeTimerRef.current = setTimeout(finishCloseTransition, 220);
-    } else {
-      // Fallback clean fade out if hero was scrolled off screen
-      setIsModalVisible(false);
-      closeTimerRef.current = setTimeout(finishCloseTransition, 180);
-    }
-  }, [activeId, finishCloseTransition, setIsTransitioning]);
+        // Step 5: Complete close
+        closeTimerRef.current = setTimeout(finishCloseTransition, 220);
+      } else {
+        // Fallback clean fade out if hero was scrolled off screen
+        setIsModalVisible(false);
+        closeTimerRef.current = setTimeout(finishCloseTransition, 180);
+      }
+    },
+    [
+      activeId,
+      clearDragVisualStyles,
+      finishCloseTransition,
+      finishOpenTransition,
+      popOrClosePropertyDetail,
+      replaceBrowserUrlCleanly,
+      restoreBodyScrollIfAllClosed,
+      setIsTransitioning,
+    ]
+  );
 
   // Handle open state lifecycle (native URL sync, scroll lock, image zoom in)
   useEffect(() => {
-    if (!activeId) {
-      lastOpenedIdRef.current = null;
+    if (!activeId || !isOpen) {
+      lastOpenedKeyRef.current = null;
       return;
     }
 
-    // Only run open animation once per property
-    if (lastOpenedIdRef.current === activeId) return;
-    lastOpenedIdRef.current = activeId;
+    const openKey = `${activeId}::${stackOrder}`;
+    // Only run open animation once per property stack open
+    if (lastOpenedKeyRef.current === openKey) return;
+    lastOpenedKeyRef.current = openKey;
     isClosingRef.current = false;
 
-    // Record origin URL
-    const currentUrl = window.location.pathname + window.location.search;
-    const isOverlayRoute =
-      window.location.pathname.startsWith('/pricing') ||
-      window.location.pathname.startsWith('/properties/') ||
-      window.location.pathname.startsWith('/login') ||
-      window.location.pathname.startsWith('/signup');
-    const resolvedOriginUrl = !isOverlayRoute
-      ? currentUrl
-      : usePropertyDetailModalStore.getState().originUrl || '/';
-    previousUrlRef.current = resolvedOriginUrl;
-    usePropertyDetailModalStore.getState().setOriginUrl(resolvedOriginUrl);
+    const storeState = usePropertyDetailModalStore.getState();
+    const resolvedReturnUrl =
+      storeState.currentReturnUrl || storeState.originUrl || '/';
+    previousUrlRef.current = resolvedReturnUrl;
 
     // Lock body scroll so origin feed retains exact position
-    originalOverflowRef.current = document.body.style.overflow;
+    if (document.body.style.overflow !== 'hidden') {
+      originalOverflowRef.current = document.body.style.overflow;
+    }
     document.body.style.overflow = 'hidden';
 
     // Push native history state without triggering Next.js App Router background RSC fetches
@@ -248,7 +387,8 @@ export default function PropertyDetailsModal() {
           {
             ...(window.history.state || {}),
             modalPropertyId: activeId,
-            returnUrl: resolvedOriginUrl,
+            modalPropertyOrder: stackOrder,
+            returnUrl: resolvedReturnUrl,
           },
           '',
           `/properties/${activeId}`
@@ -258,7 +398,8 @@ export default function PropertyDetailsModal() {
           {
             ...(window.history.state || {}),
             modalPropertyId: activeId,
-            returnUrl: resolvedOriginUrl,
+            modalPropertyOrder: stackOrder,
+            returnUrl: resolvedReturnUrl,
           },
           '',
           `/properties/${activeId}`
@@ -268,7 +409,8 @@ export default function PropertyDetailsModal() {
 
     if (transitionOrigin && transitionOrigin.rect) {
       savedOriginRectRef.current = transitionOrigin.rect;
-      savedOriginRadiusRef.current = transitionOrigin.borderRadius || '1.5rem 1.5rem 0 0';
+      savedOriginRadiusRef.current =
+        transitionOrigin.borderRadius || '1.5rem 1.5rem 0 0';
       setOverlaySrc(transitionOrigin.src);
 
       // Frame 0: Put overlay at origin rect without transition
@@ -288,7 +430,9 @@ export default function PropertyDetailsModal() {
           if (isClosingRef.current) return;
 
           // Find the visible hero image element in the DOM
-          const heroElements = document.querySelectorAll(`[data-detail-hero-image="${activeId}"]`);
+          const heroElements = document.querySelectorAll(
+            `[data-detail-hero-image="${activeId}"]`
+          );
           let destEl: HTMLElement | null = null;
           for (let i = 0; i < heroElements.length; i++) {
             const el = heroElements[i] as HTMLElement;
@@ -307,7 +451,8 @@ export default function PropertyDetailsModal() {
               left: r.left,
               width: r.width,
               height: r.height,
-              borderRadius: window.getComputedStyle(destEl).borderRadius || '0px',
+              borderRadius:
+                window.getComputedStyle(destEl).borderRadius || '0px',
             };
           } else {
             const isMobile = window.innerWidth < 1024;
@@ -333,13 +478,22 @@ export default function PropertyDetailsModal() {
       setIsModalVisible(true);
       finishOpenTransition();
     }
+  }, [
+    activeId,
+    isOpen,
+    stackOrder,
+    transitionOrigin,
+    finishOpenTransition,
+    setIsTransitioning,
+  ]);
 
+  // Cleanup timers on unmount
+  useEffect(() => {
     return () => {
       if (openTimerRef.current) clearTimeout(openTimerRef.current);
       if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
-      document.body.style.overflow = originalOverflowRef.current || '';
     };
-  }, [activeId, transitionOrigin, finishOpenTransition, setIsTransitioning]);
+  }, []);
 
   // Track overlay routes (e.g. /pricing) so returning from /pricing keeps PropertyDetailsModal open and re-syncs URL
   useEffect(() => {
@@ -358,6 +512,7 @@ export default function PropertyDetailsModal() {
     if (wasOnOverlayRouteRef.current) {
       document.body.style.overflow = 'hidden';
       if (
+        isTopmostOverlay &&
         typeof window !== 'undefined' &&
         window.location.pathname !== `/properties/${activeId}`
       ) {
@@ -389,51 +544,82 @@ export default function PropertyDetailsModal() {
       }, 150);
       return () => clearTimeout(timer);
     }
-  }, [pathname, activeId]);
+  }, [pathname, activeId, isTopmostOverlay]);
 
-  // Handle browser Back / Forward (popstate)
+  // Handle browser Back / Forward (popstate) ONLY when PropertyDetailsModal is the topmost overlay
   useEffect(() => {
-    const handlePopState = () => {
+    const handlePopState = (e: PopStateEvent) => {
       if (!activeId || isClosingRef.current) return;
+
+      const propState = usePropertyDetailModalStore.getState();
+      const profState = useProfileStore.getState();
+      const currentlyTopmost =
+        propState.isOpen &&
+        (!profState.isModalOpen || propState.stackOrder > profState.modalStackOrder);
+
+      if (!currentlyTopmost) return;
 
       const currentPath = window.location.pathname;
       if (
         wasOnOverlayRouteRef.current ||
-        currentPath.startsWith('/pricing') ||
-        currentPath === `/properties/${activeId}`
+        currentPath.startsWith('/pricing')
       ) {
-        const store = usePropertyDetailModalStore.getState();
-        const returnCtx = store.getUnlockReturnContext();
+        const returnCtx = propState.getUnlockReturnContext();
         if (returnCtx && String(returnCtx.propertyId) === String(activeId)) {
           if (returnCtx.openContactModal) {
-            store.setAutoOpenContactForPropertyId(activeId);
+            propState.setAutoOpenContactForPropertyId(activeId);
           }
-          store.clearUnlockReturnContext();
+          propState.clearUnlockReturnContext();
         }
         return;
       }
 
+      if (!claimOverlayDismissEvent(e)) return;
+
+      const returnUrl =
+        propState.currentReturnUrl || propState.originUrl || previousUrlRef.current;
       animateAndClose(false);
+      if (
+        returnUrl &&
+        typeof window !== 'undefined' &&
+        window.location.pathname + window.location.search !== returnUrl
+      ) {
+        replaceBrowserUrlCleanly(returnUrl);
+      }
     };
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [activeId, animateAndClose]);
+  }, [activeId, animateAndClose, replaceBrowserUrlCleanly]);
 
-  // Handle Escape key
+  // Handle Escape key ONLY when PropertyDetailsModal is the topmost overlay
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && activeId && !isClosingRef.current) {
-        if (typeof window !== 'undefined' && window.location.pathname.startsWith('/pricing')) {
+        const propState = usePropertyDetailModalStore.getState();
+        const profState = useProfileStore.getState();
+        const currentlyTopmost =
+          propState.isOpen &&
+          (!profState.isModalOpen || propState.stackOrder > profState.modalStackOrder);
+
+        if (!currentlyTopmost) return;
+
+        if (
+          typeof window !== 'undefined' &&
+          window.location.pathname.startsWith('/pricing')
+        ) {
           return;
         }
         if (typeof document !== 'undefined' && document.fullscreenElement) {
           return;
         }
-        const isHigherOverlayOpen = document.querySelector(
-          '[data-modal-overlay-active="true"], [class*="z-[100]"], [class*="z-[120]"], [class*="z-[130]"], [class*="z-[140]"], [class*="z-[150]"]'
-        );
+        const isHigherOverlayOpen =
+          sheetRef.current?.querySelector('[data-modal-overlay-active="true"]') ||
+          document.querySelector(
+            '[class*="z-[130]"], [class*="z-[140]"], [class*="z-[150]"]'
+          );
         if (!isHigherOverlayOpen) {
+          if (!claimOverlayDismissEvent(e)) return;
           animateAndClose(true);
         }
       }
@@ -444,15 +630,18 @@ export default function PropertyDetailsModal() {
   }, [activeId, animateAndClose]);
 
   // Precision native non-passive swipe-down-to-dismiss controller for mobile:
-  // - Strict directional axis locking & slop so horizontal/diagonal photo swipes NEVER pull the page down.
-  // - Complete isolation from nested overlays (Lightbox, Fullscreen/Inline Map, Comments, Contact).
-  // - Direct 60/120fps DOM transforms with zero React re-renders during drag + spring-back & touchcancel cleanup.
   useEffect(() => {
     if (!activeId) return;
     const sheet = sheetRef.current;
     if (!sheet) return;
 
-    type PullPhase = 'idle' | 'undecided' | 'dismiss' | 'scroll' | 'horizontal' | 'ignored';
+    type PullPhase =
+      | 'idle'
+      | 'undecided'
+      | 'dismiss'
+      | 'scroll'
+      | 'horizontal'
+      | 'ignored';
 
     let phase: PullPhase = 'idle';
     let startX = 0;
@@ -487,15 +676,19 @@ export default function PropertyDetailsModal() {
     };
 
     const handleTouchStart = (e: TouchEvent) => {
-      // If the open zoom overlay is somehow still visible when the user touches, dismiss it immediately
       finishOpenTransition();
 
-      if (isClosingRef.current || e.touches.length !== 1) {
+      const propState = usePropertyDetailModalStore.getState();
+      const profState = useProfileStore.getState();
+      const currentlyTopmost =
+        propState.isOpen &&
+        (!profState.isModalOpen || propState.stackOrder > profState.modalStackOrder);
+
+      if (!currentlyTopmost || isClosingRef.current || e.touches.length !== 1) {
         phase = 'ignored';
         return;
       }
 
-      // Never hijack touches while any fullscreen element or nested overlay/map is active
       if (typeof document !== 'undefined' && document.fullscreenElement) {
         phase = 'ignored';
         return;
@@ -511,7 +704,7 @@ export default function PropertyDetailsModal() {
         return;
       }
 
-      if (document.querySelector('[data-modal-overlay-active="true"]')) {
+      if (sheet.querySelector('[data-modal-overlay-active="true"]')) {
         phase = 'ignored';
         return;
       }
@@ -532,7 +725,9 @@ export default function PropertyDetailsModal() {
       lastTime = now;
       prevY = startY;
       prevTime = now;
-      startedInCarousel = Boolean(target?.closest('[data-horizontal-carousel="true"]'));
+      startedInCarousel = Boolean(
+        target?.closest('[data-horizontal-carousel="true"]')
+      );
       phase = 'undecided';
     };
 
@@ -566,7 +761,6 @@ export default function PropertyDetailsModal() {
       const absX = Math.abs(dx);
 
       if (phase === 'undecided') {
-        // Yield immediately if an inner horizontal carousel already claimed this touch
         if (e.defaultPrevented) {
           phase = 'horizontal';
           return;
@@ -582,15 +776,11 @@ export default function PropertyDetailsModal() {
           return;
         }
 
-        // Upward swipe = user wants to read details -> normal vertical scroll
         if (dy <= 0) {
           phase = 'scroll';
           return;
         }
 
-        // Strict vertical downward cone:
-        // - On top photo gallery: must be nearly straight down (<= ~26.5 deg off vertical)
-        // - Elsewhere on the details sheet: <= ~33 deg off vertical
         const requiredVerticalRatio = startedInCarousel ? 2.0 : 1.5;
         if (dy > absX * requiredVerticalRatio && e.cancelable) {
           phase = 'dismiss';
@@ -615,7 +805,6 @@ export default function PropertyDetailsModal() {
         }
       }
 
-      // phase === 'dismiss'
       if (e.cancelable) {
         e.preventDefault();
       }
@@ -629,8 +818,8 @@ export default function PropertyDetailsModal() {
       }
 
       const rawDelta = Math.max(0, touch.clientY - dragAnchorY);
-      // Smooth 1:1 follow up to 160px, gentle rubber-band damping beyond
-      currentDragY = rawDelta <= 160 ? rawDelta : 160 + (rawDelta - 160) * 0.55;
+      currentDragY =
+        rawDelta <= 160 ? rawDelta : 160 + (rawDelta - 160) * 0.55;
 
       const sheetEl = sheetRef.current;
       const backdropEl = backdropRef.current;
@@ -670,8 +859,12 @@ export default function PropertyDetailsModal() {
 
     sheet.addEventListener('touchstart', handleTouchStart, { passive: true });
     sheet.addEventListener('touchmove', handleTouchMove, { passive: false });
-    sheet.addEventListener('touchend', handleTouchEndOrCancel, { passive: true });
-    sheet.addEventListener('touchcancel', handleTouchEndOrCancel, { passive: true });
+    sheet.addEventListener('touchend', handleTouchEndOrCancel, {
+      passive: true,
+    });
+    sheet.addEventListener('touchcancel', handleTouchEndOrCancel, {
+      passive: true,
+    });
 
     return () => {
       sheet.removeEventListener('touchstart', handleTouchStart);
@@ -690,40 +883,41 @@ export default function PropertyDetailsModal() {
   }
 
   return (
-    <div 
-      className={`fixed inset-0 z-[70] overflow-hidden ${
-        (!isModalVisible || isClosingRef.current) ? 'pointer-events-none' : ''
-      }`} 
-      role="dialog" 
+    <div
+      style={{ zIndex: modalZIndex }}
+      className={`fixed inset-0 overflow-hidden ${
+        !isModalVisible || isClosingRef.current ? 'pointer-events-none' : ''
+      }`}
+      role="dialog"
       aria-modal="true"
       aria-label="Détails de la propriété"
     >
       {/* ── Backdrop Overlay with Smooth Fade ── */}
-      <div 
+      <div
         ref={backdropRef}
         onClick={() => animateAndClose(true)}
         className={`fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity duration-220 ease-out ${
           isModalVisible && !isClosingRef.current
-            ? 'opacity-100 cursor-pointer pointer-events-auto' 
+            ? 'opacity-100 cursor-pointer pointer-events-auto'
             : 'opacity-0 pointer-events-none'
         }`}
         aria-hidden="true"
       />
 
       {/* ── Details Sheet Container with Subtle Fade ── */}
-      <div 
+      <div
         className="fixed inset-0 pointer-events-none"
         onPointerDown={finishOpenTransition}
       >
-        <div 
+        <div
           ref={sheetRef}
           className={`w-full h-full bg-white dark:bg-zinc-950 flex flex-col overflow-hidden transition-opacity ${
-            (!isModalVisible || isClosingRef.current) 
-              ? 'pointer-events-none opacity-0' 
+            !isModalVisible || isClosingRef.current
+              ? 'pointer-events-none opacity-0'
               : 'pointer-events-auto opacity-100'
           } ${
-            isClosingRef.current 
-              ? 'duration-180 ease-in' 
+            isClosingRef.current
+              ? 'duration-180 ease-in'
               : 'duration-220 ease-out'
           }`}
         >
@@ -733,18 +927,21 @@ export default function PropertyDetailsModal() {
           </div>
 
           {/* Full Page Oriented Scroll Container */}
-          <div 
+          <div
             ref={scrollContainerRef}
             className="w-full h-full overflow-y-auto overscroll-contain"
-            style={{ 
+            style={{
               scrollbarWidth: 'thin',
               WebkitOverflowScrolling: 'touch',
             }}
-            onScroll={finishOpenTransition}
+            onScroll={(e) => {
+              finishOpenTransition();
+              setActiveScrollTop(e.currentTarget.scrollTop);
+            }}
           >
-            <PropertyDetailsClient 
-              propertyId={activeId} 
-              initialProperty={activeProp} 
+            <PropertyDetailsClient
+              propertyId={activeId}
+              initialProperty={activeProp}
               onClose={() => animateAndClose(true)}
               isModal={true}
             />
@@ -759,7 +956,7 @@ export default function PropertyDetailsModal() {
           alt=""
           className="fixed pointer-events-none object-cover shadow-2xl select-none"
           style={{
-            zIndex: 85,
+            zIndex: overlayImageZIndex,
             top: `${overlayRect.top}px`,
             left: `${overlayRect.left}px`,
             width: `${overlayRect.width}px`,

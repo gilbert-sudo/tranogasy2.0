@@ -18,6 +18,7 @@ import { FeedProperty } from './types';
 import { commentService, CommentItem } from '@/services/comment.service';
 import { useUserStore } from '@/store/userStore';
 import { useModalStore } from '@/store/modalStore';
+import { useProfileStore } from '@/store/profileStore';
 
 interface TikTokCommentsDrawerProps {
   property: FeedProperty | null;
@@ -318,6 +319,24 @@ export default function TikTokCommentsDrawer({
                 comment.authorName || 'Utilisateur'
               )}&background=7cbd1e&color=fff&bold=true`;
 
+            const commentTargetId = String(
+              comment.user || (comment as any).userId || comment.authorName || 'membre'
+            );
+            const handleOpenCommentAuthorProfile = (e: React.MouseEvent) => {
+              if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) {
+                return;
+              }
+              e.preventDefault();
+              e.stopPropagation();
+              useProfileStore.getState().openProfileModal(commentTargetId, {
+                initialUser: {
+                  _id: commentTargetId,
+                  username: comment.authorName || 'Utilisateur',
+                  avatar: comment.authorAvatar || null,
+                },
+              });
+            };
+
             return (
               <div
                 key={comment._id}
@@ -325,10 +344,8 @@ export default function TikTokCommentsDrawer({
               >
                 {/* User Avatar */}
                 <Link
-                  href={`/profile/${encodeURIComponent(
-                    comment.user || (comment as any).userId || comment.authorName || 'membre'
-                  )}`}
-                  onClick={onClose}
+                  href={`/profile/${encodeURIComponent(commentTargetId)}`}
+                  onClick={handleOpenCommentAuthorProfile}
                   className="w-9 h-9 rounded-full overflow-hidden shrink-0 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-white/10 shadow-xs hover:scale-105 transition-transform"
                 >
                   <img
@@ -343,10 +360,8 @@ export default function TikTokCommentsDrawer({
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5 min-w-0">
                       <Link
-                        href={`/profile/${encodeURIComponent(
-                          comment.user || (comment as any).userId || comment.authorName || 'membre'
-                        )}`}
-                        onClick={onClose}
+                        href={`/profile/${encodeURIComponent(commentTargetId)}`}
+                        onClick={handleOpenCommentAuthorProfile}
                         className="text-xs font-bold text-zinc-900 dark:text-white hover:text-brand-green hover:underline truncate transition-colors"
                       >
                         @{comment.authorName}

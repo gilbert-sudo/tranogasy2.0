@@ -5,6 +5,7 @@ import BottomNavigation from "@/components/BottomNavigation";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import AuthModals from "@/components/AuthModals";
 import PropertyDetailsModal from "@/components/property/PropertyDetailsModal";
+import UserProfileModal from "@/components/profile/UserProfileModal";
 import NativeAppBootstrap from "@/components/mobile/NativeAppBootstrap";
 import { APP_PLATFORM } from "@/lib/platform";
 
@@ -71,6 +72,7 @@ export default function RootLayout({
             <BottomNavigation />
             <AuthModals />
             <PropertyDetailsModal />
+            <UserProfileModal />
           </div>
         </ThemeProvider>
       </body>

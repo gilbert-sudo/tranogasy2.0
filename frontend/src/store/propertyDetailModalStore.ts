@@ -3,6 +3,39 @@ import { create } from 'zustand';
 const UNLOCK_RETURN_STORAGE_KEY = 'tranogasy_unlock_return_context';
 const UNLOCK_RETURN_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
+let globalOverlayOrderCounter = 0;
+let lastClaimedDismissEvent: Event | null = null;
+let lastClaimedDismissTimestamp = 0;
+
+/**
+ * Allocates a monotonically increasing integer order for stacked overlays
+ * (`PropertyDetailsModal` and `UserProfileModal`) so the most recently opened
+ * overlay always renders on top and receives Back / Escape actions first.
+ */
+export function allocateOverlayOrder(): number {
+  globalOverlayOrderCounter += 1;
+  return globalOverlayOrderCounter;
+}
+
+/**
+ * Ensures a single `popstate` or `Escape` event is only claimed by one overlay
+ * in the same synchronous dispatch cycle.
+ */
+export function claimOverlayDismissEvent(e?: Event | null): boolean {
+  const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  if (e && lastClaimedDismissEvent === e) {
+    return false;
+  }
+  if (now - lastClaimedDismissTimestamp < 24) {
+    return false;
+  }
+  if (e) {
+    lastClaimedDismissEvent = e;
+  }
+  lastClaimedDismissTimestamp = now;
+  return true;
+}
+
 export interface TransitionOriginInfo {
   rect: {
     top: number;
@@ -22,6 +55,15 @@ export interface UnlockReturnContext {
   wasModal: boolean;
   openContactModal: boolean;
   savedAt: number;
+}
+
+export interface PropertyModalHistoryEntry {
+  propertyId: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  initialProperty: any | null;
+  stackOrder: number;
+  returnUrl: string | null;
+  scrollTop: number;
 }
 
 function readStoredReturnContext(): UnlockReturnContext | null {
@@ -72,6 +114,11 @@ interface PropertyDetailModalStore {
   transitionOrigin: TransitionOriginInfo | null;
   isTransitioning: boolean;
   originUrl: string | null;
+  currentReturnUrl: string | null;
+  stackOrder: number;
+  historyStack: PropertyModalHistoryEntry[];
+  activeScrollTop: number;
+  restoredScrollTop: number | null;
   autoOpenContactForPropertyId: string | null;
   unlockReturnContext: UnlockReturnContext | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -83,9 +130,15 @@ interface PropertyDetailModalStore {
   ) => void;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   updateInitialProperty: (property: any) => void;
+  popOrClosePropertyDetail: () => {
+    restoredEntry: PropertyModalHistoryEntry | null;
+    returnUrlToRestore: string | null;
+  };
   closePropertyDetail: () => void;
   setIsTransitioning: (val: boolean) => void;
   setOriginUrl: (url: string | null) => void;
+  setActiveScrollTop: (scrollTop: number) => void;
+  clearRestoredScrollTop: () => void;
   setAutoOpenContactForPropertyId: (propertyId: string | null) => void;
   saveUnlockReturnContext: (ctx: Omit<UnlockReturnContext, 'savedAt'>) => void;
   getUnlockReturnContext: () => UnlockReturnContext | null;
@@ -99,15 +152,72 @@ export const usePropertyDetailModalStore = create<PropertyDetailModalStore>((set
   transitionOrigin: null,
   isTransitioning: false,
   originUrl: null,
+  currentReturnUrl: null,
+  stackOrder: 0,
+  historyStack: [],
+  activeScrollTop: 0,
+  restoredScrollTop: null,
   autoOpenContactForPropertyId: null,
   unlockReturnContext: null,
   openPropertyDetail: (propertyId, initialProperty = null, transitionOrigin = null) => {
+    const state = get();
+    const currentBrowserUrl =
+      typeof window !== 'undefined'
+        ? window.location.pathname + window.location.search
+        : null;
+    const isOverlayRoute =
+      typeof window !== 'undefined' &&
+      (window.location.pathname.startsWith('/pricing') ||
+        window.location.pathname.startsWith('/login') ||
+        window.location.pathname.startsWith('/signup'));
+
+    const nextOrder = allocateOverlayOrder();
+
+    // If a property is already open (e.g. underneath UserProfileModal) and user opens another property,
+    // push the previous property onto historyStack so clicking "Retour" returns to the profile and preserves the earlier property.
+    if (state.isOpen && state.propertyId) {
+      const nextHistory: PropertyModalHistoryEntry[] = [
+        ...state.historyStack,
+        {
+          propertyId: state.propertyId,
+          initialProperty: state.initialProperty,
+          stackOrder: state.stackOrder,
+          returnUrl: state.currentReturnUrl || state.originUrl,
+          scrollTop: state.activeScrollTop,
+        },
+      ];
+      set({
+        isOpen: true,
+        propertyId,
+        initialProperty,
+        transitionOrigin: transitionOrigin || null,
+        isTransitioning: !!transitionOrigin,
+        stackOrder: nextOrder,
+        currentReturnUrl: currentBrowserUrl || state.originUrl || '/',
+        historyStack: nextHistory,
+        activeScrollTop: 0,
+        restoredScrollTop: null,
+      });
+      return;
+    }
+
+    const baseOriginUrl =
+      !isOverlayRoute && currentBrowserUrl
+        ? currentBrowserUrl
+        : state.originUrl || '/';
+
     set({
       isOpen: true,
       propertyId,
       initialProperty,
       transitionOrigin: transitionOrigin || null,
       isTransitioning: !!transitionOrigin,
+      originUrl: baseOriginUrl,
+      currentReturnUrl: currentBrowserUrl || baseOriginUrl,
+      stackOrder: nextOrder,
+      historyStack: [],
+      activeScrollTop: 0,
+      restoredScrollTop: null,
     });
   },
   updateInitialProperty: (property) => {
@@ -122,6 +232,42 @@ export const usePropertyDetailModalStore = create<PropertyDetailModalStore>((set
       return state;
     });
   },
+  popOrClosePropertyDetail: () => {
+    const state = get();
+    const returnUrlToRestore = state.currentReturnUrl || state.originUrl;
+    if (state.historyStack.length > 0) {
+      const nextHistory = state.historyStack.slice(0, -1);
+      const restoredEntry = state.historyStack[state.historyStack.length - 1];
+      set({
+        isOpen: true,
+        propertyId: restoredEntry.propertyId,
+        initialProperty: restoredEntry.initialProperty,
+        transitionOrigin: null,
+        isTransitioning: false,
+        stackOrder: restoredEntry.stackOrder,
+        currentReturnUrl: restoredEntry.returnUrl,
+        historyStack: nextHistory,
+        activeScrollTop: restoredEntry.scrollTop,
+        restoredScrollTop: restoredEntry.scrollTop,
+      });
+      return { restoredEntry, returnUrlToRestore };
+    }
+
+    set({
+      isOpen: false,
+      propertyId: null,
+      initialProperty: null,
+      transitionOrigin: null,
+      isTransitioning: false,
+      originUrl: null,
+      currentReturnUrl: null,
+      stackOrder: 0,
+      historyStack: [],
+      activeScrollTop: 0,
+      restoredScrollTop: null,
+    });
+    return { restoredEntry: null, returnUrlToRestore };
+  },
   closePropertyDetail: () => {
     set({
       isOpen: false,
@@ -130,13 +276,27 @@ export const usePropertyDetailModalStore = create<PropertyDetailModalStore>((set
       transitionOrigin: null,
       isTransitioning: false,
       originUrl: null,
+      currentReturnUrl: null,
+      stackOrder: 0,
+      historyStack: [],
+      activeScrollTop: 0,
+      restoredScrollTop: null,
     });
   },
   setIsTransitioning: (val: boolean) => {
     set({ isTransitioning: val });
   },
   setOriginUrl: (url: string | null) => {
-    set({ originUrl: url });
+    set((state) => ({
+      originUrl: url,
+      currentReturnUrl: state.currentReturnUrl || url,
+    }));
+  },
+  setActiveScrollTop: (scrollTop: number) => {
+    set({ activeScrollTop: scrollTop });
+  },
+  clearRestoredScrollTop: () => {
+    set({ restoredScrollTop: null });
   },
   setAutoOpenContactForPropertyId: (propertyId: string | null) => {
     set({ autoOpenContactForPropertyId: propertyId });
@@ -165,4 +325,3 @@ export const usePropertyDetailModalStore = create<PropertyDetailModalStore>((set
     set({ unlockReturnContext: null });
   },
 }));
-
