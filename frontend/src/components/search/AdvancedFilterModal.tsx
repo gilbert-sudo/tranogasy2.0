@@ -30,6 +30,7 @@ import {
   PlacementFilter,
   SearchViewMode,
   SearchSortBy,
+  SEARCH_RADIUS_OPTIONS,
 } from '@/store/searchStore';
 import { SEARCH_CATEGORY_OPTIONS } from '@/lib/propertyTypes';
 import {
@@ -73,16 +74,6 @@ const SALE_PRESETS = [
   { label: '50M – 150M Ar', min: 50_000_000, max: 150_000_000 },
   { label: '150M – 350M Ar', min: 150_000_000, max: 350_000_000 },
   { label: '350M+ Ar', min: 350_000_000, max: null },
-];
-
-const RADIUS_PILLS = [
-  { label: 'Toute la carte', value: 0 },
-  { label: '500 m', value: 500 },
-  { label: '800 m', value: 800 },
-  { label: '1.5 km', value: 1500 },
-  { label: '3 km', value: 3000 },
-  { label: '5 km', value: 5000 },
-  { label: '10 km', value: 10000 },
 ];
 
 interface BudgetRangeSectionProps {
@@ -616,7 +607,7 @@ function AdvancedFilterModalComponent({
               </div>
 
               <div className="flex flex-wrap gap-2 sm:gap-2.5">
-                {RADIUS_PILLS.map((r) => {
+                {SEARCH_RADIUS_OPTIONS.map((r) => {
                   const isActive = filters.searchRadius === r.value;
                   return (
                     <button

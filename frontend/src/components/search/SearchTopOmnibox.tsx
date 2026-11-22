@@ -29,18 +29,9 @@ import {
   OfferTypeFilter,
   HouseCategoryFilter,
   DEFAULT_ANTANANARIVO_CENTER,
+  SEARCH_RADIUS_OPTIONS,
 } from '@/store/searchStore';
 import { SEARCH_CATEGORY_OPTIONS } from '@/lib/propertyTypes';
-
-const RADIUS_OPTIONS = [
-  { label: 'Toute la carte', value: 0 },
-  { label: '500 m', value: 500 },
-  { label: '800 m', value: 800 },
-  { label: '1.5 km', value: 1500 },
-  { label: '3 km', value: 3000 },
-  { label: '5 km', value: 5000 },
-  { label: '10 km', value: 10000 },
-];
 
 const QUICK_CATEGORIES = SEARCH_CATEGORY_OPTIONS;
 
@@ -710,7 +701,7 @@ function SearchTopOmniboxComponent({
                 bg-white/96 dark:bg-zinc-900/96 backdrop-blur-3xl
                 border border-white/90 dark:border-white/15
                 shadow-[0_24px_60px_rgba(0,0,0,0.24)] dark:shadow-[0_24px_60px_rgba(0,0,0,0.7)]
-                max-h-[calc(100dvh-165px)] sm:max-h-[70vh]
+                max-h-[calc(100dvh-165px-var(--ios-safe-top))] sm:max-h-[70vh]
                 overflow-y-auto overscroll-contain no-scrollbar animate-glass-island"
             >
               {/* Quick GPS & Radius Selector Header */}
@@ -755,7 +746,7 @@ function SearchTopOmniboxComponent({
                     <span className="truncate">Rayon du radar géographique</span>
                   </div>
                   <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5 -mx-1 px-1">
-                    {RADIUS_OPTIONS.map((opt) => {
+                    {SEARCH_RADIUS_OPTIONS.map((opt) => {
                       const isSelected = filters.searchRadius === opt.value;
                       return (
                         <button
@@ -984,36 +975,6 @@ function SearchTopOmniboxComponent({
             <span className="w-2.5 h-2.5 rounded-full bg-brand-green" />
             <span>{filters.type === 'rent' ? 'Location' : 'Vente'}</span>
           </button>
-
-          {/* Active Geo-Radius Pill if searchCoords is set */}
-          {filters.searchCoords && (
-            <div className="flex items-center gap-2 h-12 pl-4.5 pr-2.5 rounded-full bg-brand-green text-white shadow-[0_8px_24px_rgba(124,189,30,0.4)] text-sm font-semibold tracking-wide shrink-0">
-              <Radar className="w-4.5 h-4.5 animate-pulse shrink-0" />
-              <span className="max-w-[120px] sm:max-w-[150px] truncate">
-                {filters.searchPlaceName || 'Zone radar'}
-              </span>
-              <select
-                value={filters.searchRadius}
-                onChange={(e) => onSetFilter('searchRadius', Number(e.target.value))}
-                aria-label="Rayon de recherche"
-                className="bg-black/20 text-white rounded-full px-2.5 py-1 text-xs font-medium outline-none cursor-pointer"
-              >
-                {RADIUS_OPTIONS.map((r) => (
-                  <option key={r.value} value={r.value} className="bg-zinc-900 text-white">
-                    {r.label}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={onClearLocationZone}
-                className="w-6.5 h-6.5 rounded-full bg-black/25 hover:bg-black/45 flex items-center justify-center transition-colors cursor-pointer"
-                title="Retirer la zone"
-              >
-                <X className="w-4 h-4 stroke-[2.25]" />
-              </button>
-            </div>
-          )}
 
           {/* Quick Category Pills */}
           {QUICK_CATEGORIES.map((cat) => {

@@ -40,15 +40,39 @@ function deterministicHash(str: string, seed = 0): number {
   return ((h >>> 0) % 100000) / 100000;
 }
 
-// Compute deterministic non-overlapping map coordinates for any property
-export function getPropertyMapCoords(property: any): { lat: number; lng: number; isApproximate: boolean } {
-  if (
-    property?.coords &&
-    typeof property.coords.lat === 'number' &&
-    typeof property.coords.lng === 'number' &&
-    !isNaN(property.coords.lat) &&
-    !isNaN(property.coords.lng)
-  ) {
+const METERS_PER_DEG_LAT = 111320;
+const GOLDEN_ANGLE_RAD = 2.399963229728653; // ~137.508 deg (Vogel/phyllotaxis optimal packing)
+const COLOCATION_GROUP_RADIUS_M = 35; // Group identical or few-meter-apart properties
+const SPIRAL_STEP_METERS = 44; // Yields ~68-75m minimum spacing between nearest neighbors
+
+export interface MapCoordPoint {
+  lat: number;
+  lng: number;
+  isApproximate: boolean;
+}
+
+interface CoordLikeProperty {
+  _id?: string;
+  _mapCoords?: unknown;
+  coords?: unknown;
+  city?: { coords?: unknown } | null;
+}
+
+function isValidCoordPair(coords: unknown): coords is { lat: number; lng: number } {
+  if (!coords || typeof coords !== 'object') return false;
+  const { lat, lng } = coords as { lat?: unknown; lng?: unknown };
+  return (
+    typeof lat === 'number' &&
+    typeof lng === 'number' &&
+    !isNaN(lat) &&
+    !isNaN(lng) &&
+    (lat !== 0 || lng !== 0)
+  );
+}
+
+// Extract the property's true un-dispersed base coordinates (used for accurate distance & radius filtering)
+export function getPropertyBaseCoords(property: CoordLikeProperty | null | undefined): MapCoordPoint {
+  if (isValidCoordPair(property?.coords)) {
     return {
       lat: property.coords.lat,
       lng: property.coords.lng,
@@ -56,24 +80,185 @@ export function getPropertyMapCoords(property: any): { lat: number; lng: number;
     };
   }
 
-  const baseCoords =
-    property?.city?.coords &&
-      typeof property.city.coords.lat === 'number' &&
-      typeof property.city.coords.lng === 'number'
-      ? property.city.coords
-      : DEFAULT_ANTANANARIVO_CENTER;
+  if (isValidCoordPair(property?.city?.coords)) {
+    return {
+      lat: property.city.coords.lat,
+      lng: property.city.coords.lng,
+      isApproximate: true,
+    };
+  }
+
+  return {
+    lat: DEFAULT_ANTANANARIVO_CENTER.lat,
+    lng: DEFAULT_ANTANANARIVO_CENTER.lng,
+    isApproximate: true,
+  };
+}
+
+// Deterministic non-overlapping geographic dispersion for properties sharing identical or near-identical (<35m) coordinates.
+// Uses an O(N) spatial grid anchor grouping (sorted by _id for full determinism) + metric Vogel golden-angle spiral.
+export function buildDispersedMapCoordsLookup(
+  properties: ReadonlyArray<CoordLikeProperty | null | undefined>
+): { baseById: Map<string, MapCoordPoint>; mapById: Map<string, MapCoordPoint> } {
+  const baseById = new Map<string, MapCoordPoint>();
+  const mapById = new Map<string, MapCoordPoint>();
+
+  if (!properties || properties.length === 0) {
+    return { baseById, mapById };
+  }
+
+  interface Entry {
+    id: string;
+    base: MapCoordPoint;
+  }
+
+  const entries: Entry[] = [];
+  for (let i = 0; i < properties.length; i++) {
+    const prop = properties[i];
+    if (!prop) continue;
+    const id = String(prop._id || `idx-${i}`);
+    const base = getPropertyBaseCoords(prop);
+    baseById.set(id, base);
+    entries.push({ id, base });
+  }
+
+  // Sort deterministically by ID so groups and spiral slots never jump across renders or API ordering changes
+  entries.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+
+  interface AnchorGroup {
+    anchorLat: number;
+    anchorLng: number;
+    sumLat: number;
+    sumLng: number;
+    members: Entry[];
+  }
+
+  const cellDeg = COLOCATION_GROUP_RADIUS_M / METERS_PER_DEG_LAT; // ~0.000314 deg
+  const grid = new Map<string, AnchorGroup[]>();
+  const groups: AnchorGroup[] = [];
+
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    const { lat, lng } = entry.base;
+    const cellX = Math.floor(lng / cellDeg);
+    const cellY = Math.floor(lat / cellDeg);
+
+    let bestGroup: AnchorGroup | null = null;
+    let bestDist = COLOCATION_GROUP_RADIUS_M;
+
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        const bucket = grid.get(`${cellX + dx}:${cellY + dy}`);
+        if (!bucket) continue;
+        for (let j = 0; j < bucket.length; j++) {
+          const candidate = bucket[j];
+          const d = fastDistanceMeters(lat, lng, candidate.anchorLat, candidate.anchorLng);
+          if (d <= bestDist) {
+            bestDist = d;
+            bestGroup = candidate;
+          }
+        }
+      }
+    }
+
+    if (bestGroup) {
+      bestGroup.members.push(entry);
+      bestGroup.sumLat += lat;
+      bestGroup.sumLng += lng;
+    } else {
+      const newGroup: AnchorGroup = {
+        anchorLat: lat,
+        anchorLng: lng,
+        sumLat: lat,
+        sumLng: lng,
+        members: [entry],
+      };
+      groups.push(newGroup);
+      const key = `${cellX}:${cellY}`;
+      const existing = grid.get(key);
+      if (existing) {
+        existing.push(newGroup);
+      } else {
+        grid.set(key, [newGroup]);
+      }
+    }
+  }
+
+  // Assign non-overlapping spiral positions for every multi-property group
+  for (let g = 0; g < groups.length; g++) {
+    const group = groups[g];
+    const count = group.members.length;
+
+    if (count === 1) {
+      const solo = group.members[0];
+      mapById.set(solo.id, solo.base);
+      continue;
+    }
+
+    const centerLat = group.sumLat / count;
+    const centerLng = group.sumLng / count;
+    const cosLat = Math.max(0.2, Math.cos(centerLat * DEG_TO_RAD));
+
+    // Seed initial rotation angle deterministically from the group anchor so neighboring Fokotany look organic
+    const groupPhase =
+      deterministicHash(`${centerLat.toFixed(4)}:${centerLng.toFixed(4)}`, 7) * Math.PI * 2;
+
+    for (let k = 0; k < count; k++) {
+      const member = group.members[k];
+      let radiusMeters: number;
+      let angle: number;
+
+      if (count === 2) {
+        // Place pairs symmetrically on opposite sides (~72m apart)
+        radiusMeters = 36;
+        angle = groupPhase + (k === 0 ? 0 : Math.PI);
+      } else {
+        // Vogel golden-angle phyllotaxis spiral: mathematically optimal uniform packing with ~68-75m spacing
+        radiusMeters = SPIRAL_STEP_METERS * Math.sqrt(k + 0.6);
+        angle = groupPhase + k * GOLDEN_ANGLE_RAD;
+      }
+
+      const dLat = (radiusMeters * Math.sin(angle)) / METERS_PER_DEG_LAT;
+      const dLng = (radiusMeters * Math.cos(angle)) / (METERS_PER_DEG_LAT * cosLat);
+
+      mapById.set(member.id, {
+        lat: centerLat + dLat,
+        lng: centerLng + dLng,
+        isApproximate: true,
+      });
+    }
+  }
+
+  return { baseById, mapById };
+}
+
+// Compute deterministic map coordinates for a single property (prefers catalog-dispersed _mapCoords when available)
+export function getPropertyMapCoords(property: CoordLikeProperty | null | undefined): MapCoordPoint {
+  if (isValidCoordPair(property?._mapCoords)) {
+    const existing = property._mapCoords as Partial<MapCoordPoint>;
+    return {
+      lat: existing.lat as number,
+      lng: existing.lng as number,
+      isApproximate: Boolean(existing.isApproximate),
+    };
+  }
+
+  const base = getPropertyBaseCoords(property);
+  if (!base.isApproximate) {
+    return base;
+  }
 
   const idStr = String(property?._id || 'default');
-  // Golden-angle spiral offset (approx 80m to 380m around fokontany center)
   const rHash = deterministicHash(idStr, 1);
   const thetaHash = deterministicHash(idStr, 2);
 
-  const radiusDeg = 0.0007 + Math.sqrt(rHash) * 0.0028; // ~80m to ~390m
+  const radiusMeters = 35 + Math.sqrt(rHash) * 140;
   const angle = thetaHash * Math.PI * 2;
+  const cosLat = Math.max(0.2, Math.cos(base.lat * DEG_TO_RAD));
 
   return {
-    lat: baseCoords.lat + radiusDeg * Math.sin(angle),
-    lng: baseCoords.lng + radiusDeg * Math.cos(angle),
+    lat: base.lat + (radiusMeters * Math.sin(angle)) / METERS_PER_DEG_LAT,
+    lng: base.lng + (radiusMeters * Math.cos(angle)) / (METERS_PER_DEG_LAT * cosLat),
     isApproximate: true,
   };
 }
@@ -256,10 +441,15 @@ export function usePropertySearch(initialProperties?: any[]) {
     [setUserLocation, setMapCenter, setMapZoom, setLocationZone]
   );
 
-  // Pre-index catalog properties once so filtering, sorting & map coordinates never recompute strings/hashes on every keystroke
+  // Pre-index catalog properties once so filtering, sorting & non-overlapping map coordinates never recompute on every keystroke
   const indexedCatalog = useMemo(() => {
-    return catalogProperties.filter(Boolean).map((prop) => {
-      const mapCoords = prop._mapCoords || getPropertyMapCoords(prop);
+    const validCatalog = catalogProperties.filter(Boolean);
+    const { baseById, mapById } = buildDispersedMapCoordsLookup(validCatalog);
+
+    return validCatalog.map((prop, idx) => {
+      const id = String(prop._id || `idx-${idx}`);
+      const baseCoords = baseById.get(id) || getPropertyBaseCoords(prop);
+      const mapCoords = mapById.get(id) || baseCoords;
       const score = prop._score ?? calculatePropertyRelevanceScore(prop);
       const createdAtMs = prop.created_at ? Date.parse(prop.created_at) || 0 : 0;
 
@@ -300,6 +490,7 @@ export function usePropertySearch(initialProperties?: any[]) {
 
       return {
         ...prop,
+        _baseCoords: baseCoords,
         _mapCoords: mapCoords,
         _score: score,
         _createdAtMs: createdAtMs,
@@ -478,14 +669,15 @@ export function usePropertySearch(initialProperties?: any[]) {
 
     for (let i = 0; i < rawFilteredWithoutRadius.length; i++) {
       const prop = rawFilteredWithoutRadius[i];
-      const mapCoords = prop._mapCoords;
+      // Use true base coordinates for distance & radius membership so visual marker dispersion never skews geo-filtering
+      const geoCoords = prop._baseCoords || prop._mapCoords;
 
       if (center && radius > 0) {
         const distFromZone = fastDistanceMeters(
           center.lat,
           center.lng,
-          mapCoords.lat,
-          mapCoords.lng
+          geoCoords.lat,
+          geoCoords.lng
         );
         const isSameCityId =
           selectedCityId !== null &&
@@ -504,8 +696,8 @@ export function usePropertySearch(initialProperties?: any[]) {
         const distFromRef = fastDistanceMeters(
           refPoint.lat,
           refPoint.lng,
-          mapCoords.lat,
-          mapCoords.lng
+          geoCoords.lat,
+          geoCoords.lng
         );
         results.push({
           ...prop,

@@ -32,6 +32,83 @@ export const DEFAULT_ANTANANARIVO_CENTER = {
   lng: 47.5237,
 };
 
+export interface SearchRadiusOption {
+  label: string;
+  shortLabel: string;
+  value: number; // meters; 0 = unlimited / toute la carte
+}
+
+export const SEARCH_RADIUS_OPTIONS: readonly SearchRadiusOption[] = [
+  { label: '500 m', shortLabel: '500 m', value: 500 },
+  { label: '800 m', shortLabel: '800 m', value: 800 },
+  { label: '1.5 km', shortLabel: '1.5 km', value: 1500 },
+  { label: '3 km', shortLabel: '3 km', value: 3000 },
+  { label: '5 km', shortLabel: '5 km', value: 5000 },
+  { label: '10 km', shortLabel: '10 km', value: 10000 },
+  { label: 'Toute la carte', shortLabel: 'Tout', value: 0 },
+] as const;
+
+export function formatRadiusLabel(radiusMeters: number, compact = false): string {
+  if (!radiusMeters || radiusMeters <= 0) {
+    return compact ? 'Tout' : 'Toute la carte';
+  }
+  if (radiusMeters >= 1000) {
+    return `${(radiusMeters / 1000).toFixed(1).replace(/\.0$/, '')} km`;
+  }
+  return `${Math.round(radiusMeters)} m`;
+}
+
+export function getRadiusStepIndex(radiusMeters: number): number {
+  const exactIdx = SEARCH_RADIUS_OPTIONS.findIndex((o) => o.value === radiusMeters);
+  if (exactIdx !== -1) return exactIdx;
+  if (!radiusMeters || radiusMeters <= 0) return SEARCH_RADIUS_OPTIONS.length - 1;
+  // Find closest finite option
+  let bestIdx = 0;
+  let bestDiff = Infinity;
+  for (let i = 0; i < SEARCH_RADIUS_OPTIONS.length - 1; i++) {
+    const diff = Math.abs(SEARCH_RADIUS_OPTIONS[i].value - radiusMeters);
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      bestIdx = i;
+    }
+  }
+  return bestIdx;
+}
+
+export function getPrevSearchRadius(currentRadius: number): number | null {
+  if (!currentRadius || currentRadius <= 0) {
+    return SEARCH_RADIUS_OPTIONS[SEARCH_RADIUS_OPTIONS.length - 2].value; // 10 km
+  }
+  for (let i = SEARCH_RADIUS_OPTIONS.length - 2; i >= 0; i--) {
+    if (SEARCH_RADIUS_OPTIONS[i].value < currentRadius) {
+      return SEARCH_RADIUS_OPTIONS[i].value;
+    }
+  }
+  return null;
+}
+
+export function getNextSearchRadius(currentRadius: number): number | null {
+  if (!currentRadius || currentRadius <= 0) {
+    return null; // Already at unlimited ("Toute la carte")
+  }
+  for (let i = 0; i < SEARCH_RADIUS_OPTIONS.length - 1; i++) {
+    if (SEARCH_RADIUS_OPTIONS[i].value > currentRadius) {
+      return SEARCH_RADIUS_OPTIONS[i].value;
+    }
+  }
+  return 0; // Expand from 10 km -> Toute la carte
+}
+
+export function getFallbackZoomForRadius(radiusMeters: number): number {
+  if (!radiusMeters || radiusMeters <= 0) return 12;
+  if (radiusMeters <= 500) return 15;
+  if (radiusMeters <= 1000) return 14;
+  if (radiusMeters <= 2000) return 14;
+  if (radiusMeters <= 4000) return 13;
+  if (radiusMeters <= 7000) return 12;
+  return 11;
+}
+
 export const INITIAL_SEARCH_FILTERS: SearchFilters = {
   type: 'rent',
   houseType: 'all',
@@ -165,18 +242,21 @@ export const useSearchStore = create<SearchStoreState>((set) => ({
     })),
 
   setLocationZone: (coords, placeName, city = null, radius = 1500) =>
-    set((state) => ({
-      filters: {
-        ...state.filters,
-        searchCoords: coords,
-        searchPlaceName: placeName,
-        selectedCity: city,
-        searchRadius: coords ? (radius > 0 ? radius : 1500) : 0,
-      },
-      mapCenter: coords || state.mapCenter,
-      mapZoom: coords ? 15 : state.mapZoom,
-      isRadarClickMode: false,
-    })),
+    set((state) => {
+      const resolvedRadius = coords ? (radius > 0 ? radius : 1500) : 0;
+      return {
+        filters: {
+          ...state.filters,
+          searchCoords: coords,
+          searchPlaceName: placeName,
+          selectedCity: city,
+          searchRadius: resolvedRadius,
+        },
+        mapCenter: coords || state.mapCenter,
+        mapZoom: coords ? getFallbackZoomForRadius(resolvedRadius) : state.mapZoom,
+        isRadarClickMode: false,
+      };
+    }),
 
   clearLocationZone: () =>
     set((state) => ({

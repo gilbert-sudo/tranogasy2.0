@@ -351,7 +351,9 @@ export default function TranogasyFeed({
       {toastMessage && (
         <div
           className={`fixed ${
-            embeddedInSearch ? 'top-8' : 'top-20'
+            embeddedInSearch
+              ? 'top-[calc(4.5rem+var(--ios-safe-top))] lg:top-8'
+              : 'top-[calc(5rem+var(--ios-safe-top))]'
           } left-1/2 -translate-x-1/2 z-[200] flex items-center gap-2 px-5 py-2.5 rounded-full bg-zinc-900/90 text-white backdrop-blur-md border border-white/20 shadow-2xl text-xs font-bold animate-in fade-in slide-in-from-top-4 duration-300`}
         >
           <Check className="w-4 h-4 text-brand-green" />

@@ -275,7 +275,11 @@ export default function TikTokCard({
       </div>
 
       {/* Top Gradient Overlay */}
-      <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-black/80 via-black/30 to-transparent pointer-events-none z-10" />
+      <div
+        className={`absolute top-0 left-0 right-0 bg-gradient-to-b from-black/85 via-black/35 to-transparent pointer-events-none z-10 ${
+          embeddedInSearch ? 'h-[calc(11.5rem+var(--ios-safe-top))] lg:h-32' : 'h-32'
+        }`}
+      />
 
       {/* Bottom Gradient Overlay */}
       <div className="absolute bottom-0 left-0 right-0 h-64 bg-gradient-to-t from-black/95 via-black/60 to-transparent pointer-events-none z-10" />
@@ -284,7 +288,7 @@ export default function TikTokCard({
       <div
         className={`absolute left-3 sm:left-4 z-20 flex items-center gap-2 ${
           embeddedInSearch
-            ? 'top-16 sm:top-[74px] lg:top-4'
+            ? 'top-[calc(4.5rem+var(--ios-safe-top))] sm:top-[calc(5rem+var(--ios-safe-top))] lg:top-4'
             : 'top-4'
         }`}
       >
@@ -310,7 +314,7 @@ export default function TikTokCard({
       <div
         className={`absolute right-3 sm:right-4 z-20 flex items-center gap-2 ${
           embeddedInSearch
-            ? 'top-16 sm:top-[74px] lg:top-4'
+            ? 'top-[calc(4.5rem+var(--ios-safe-top))] sm:top-[calc(5rem+var(--ios-safe-top))] lg:top-4'
             : 'top-4'
         }`}
       >
@@ -333,7 +337,7 @@ export default function TikTokCard({
           data-carousel-gesture-ignore="true"
           className={`absolute left-1/2 -translate-x-1/2 z-20 max-w-[92%] flex items-center gap-1.5 p-1.5 rounded-2xl bg-black/50 backdrop-blur-md border border-white/10 overflow-x-auto no-scrollbar ${
             embeddedInSearch
-              ? 'top-[98px] sm:top-[112px] lg:top-14'
+              ? 'top-[calc(6.5rem+var(--ios-safe-top))] sm:top-[calc(7.25rem+var(--ios-safe-top))] lg:top-14'
               : 'top-14'
           }`}
         >
@@ -368,7 +372,7 @@ export default function TikTokCard({
       <div
         className={`absolute right-2.5 md:right-3.5 z-30 flex flex-col items-center ${
           embeddedInSearch
-            ? 'bottom-[62px] sm:bottom-[68px] lg:bottom-14 gap-2.5 sm:gap-3.5'
+            ? 'bottom-[78px] sm:bottom-[84px] lg:bottom-14 gap-2.5 sm:gap-3.5'
             : 'bottom-4 sm:bottom-5 md:bottom-6 gap-2 sm:gap-2.5'
         }`}
       >
@@ -495,7 +499,7 @@ export default function TikTokCard({
       <div
         className={`absolute left-0 right-0 z-20 pointer-events-none flex flex-col items-center ${
           embeddedInSearch
-            ? 'bottom-[62px] sm:bottom-[68px] lg:bottom-14'
+            ? 'bottom-[78px] sm:bottom-[84px] lg:bottom-14'
             : 'bottom-4 sm:bottom-5 md:bottom-6'
         }`}
       >

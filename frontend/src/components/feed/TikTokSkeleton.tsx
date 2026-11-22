@@ -24,15 +24,33 @@ export default function TikTokSkeleton({
           } relative bg-zinc-950 overflow-hidden lg:rounded-[2.5rem] lg:border lg:border-white/10 shrink-0 animate-pulse`}
         >
           {/* Top thumbnail bar skeleton */}
-          <div className="absolute top-12 left-1/2 -translate-x-1/2 z-20 flex gap-2 p-2 bg-black/40 backdrop-blur-md rounded-xl">
+          <div
+            className={`absolute left-1/2 -translate-x-1/2 z-20 flex gap-2 p-2 bg-black/40 backdrop-blur-md rounded-xl ${
+              embeddedInSearch
+                ? 'top-[calc(6.5rem+var(--ios-safe-top))] sm:top-[calc(7.25rem+var(--ios-safe-top))] lg:top-12'
+                : 'top-12'
+            }`}
+          >
             {Array.from({ length: 5 }).map((_, i) => (
               <div key={i} className="w-10 h-10 rounded-lg bg-zinc-800 shrink-0" />
             ))}
           </div>
 
           {/* Top badges */}
-          <div className="absolute top-4 left-4 z-20 w-16 h-6 rounded-full bg-zinc-800" />
-          <div className="absolute top-4 right-4 z-20 w-20 h-6 rounded-full bg-zinc-800" />
+          <div
+            className={`absolute left-4 z-20 w-16 h-6 rounded-full bg-zinc-800 ${
+              embeddedInSearch
+                ? 'top-[calc(4.5rem+var(--ios-safe-top))] sm:top-[calc(5rem+var(--ios-safe-top))] lg:top-4'
+                : 'top-4'
+            }`}
+          />
+          <div
+            className={`absolute right-4 z-20 w-20 h-6 rounded-full bg-zinc-800 ${
+              embeddedInSearch
+                ? 'top-[calc(4.5rem+var(--ios-safe-top))] sm:top-[calc(5rem+var(--ios-safe-top))] lg:top-4'
+                : 'top-4'
+            }`}
+          />
 
           {/* Right vertical action column */}
           <div className="absolute bottom-28 right-4 z-20 flex flex-col items-center gap-5">

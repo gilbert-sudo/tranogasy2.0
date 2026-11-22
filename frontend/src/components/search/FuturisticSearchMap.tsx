@@ -28,6 +28,7 @@ import {
 import {
   useSearchStore,
   DEFAULT_ANTANANARIVO_CENTER,
+  formatRadiusLabel,
 } from '@/store/searchStore';
 
 const GOOGLE_MAP_ID = '80e7a8f8db80acb5';
@@ -62,6 +63,229 @@ function latLngToWorldPixel(lat: number, lng: number, zoom: number): { x: number
   const y =
     (0.5 - Math.log((1 + clampedSin) / (1 - clampedSin)) / (4 * Math.PI)) * scale;
   return { x, y };
+}
+
+// Convert Web Mercator world pixel coordinates back into (lat, lng) at a given zoom level
+function worldPixelToLatLng(x: number, y: number, zoom: number): { lat: number; lng: number } {
+  const scale = 256 * Math.pow(2, zoom);
+  const lng = (x / scale) * 360 - 180;
+  const n = Math.PI - (2 * Math.PI * y) / scale;
+  const lat = (180 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+  return { lat, lng };
+}
+
+// Estimate rendered CSS bounding box (width & height in pixels, including comfortable breathing room)
+// for any property badge or cluster capsule so zero pills ever overlap on screen.
+function estimateMarkerPixelBox(
+  item: PropertyClusterItem,
+  isSelected: boolean
+): { width: number; height: number } {
+  if (item.isCluster) {
+    const minPriceText = item.minPrice ? `dès ${formatCompactPrice(item.minPrice)}` : 'biens';
+    const countDigits = String(item.count).length;
+    const width = Math.max(106, Math.round(52 + countDigits * 7 + minPriceText.length * 7.6)) + 10;
+    return { width, height: 48 };
+  }
+
+  const prop = item.property;
+  const displayPrice = prop?.type === 'sale' ? prop?.price : prop?.rent;
+  const priceText = formatCompactPrice(displayPrice);
+  const hasRooms = Number(prop?.rooms) > 0;
+  const hasTop = Boolean(prop?.topProperty);
+
+  let width =
+    54 +
+    priceText.length * 7.8 +
+    (hasRooms ? 34 : 0) +
+    (hasTop ? 18 : 0) +
+    10;
+  let height = 46;
+
+  // Highlighted/selected badge scales up by 1.15x
+  if (isSelected) {
+    width = Math.round(width * 1.15) + 6;
+    height = Math.round(height * 1.15) + 4;
+  }
+
+  return { width: Math.max(96, Math.round(width)), height };
+}
+
+// Deterministic, mathematically guaranteed zero-overlap screen-space placement solver.
+// Places markers in priority order (selected marker pinned first, then clusters, then deterministic ID order).
+// Non-colliding markers stay at their exact original (lat, lng); any colliding marker snaps to the closest
+// overlap-free slot on concentric elliptical rings matched to the pill aspect ratio.
+function resolveMarkerScreenOverlaps(
+  items: PropertyClusterItem[],
+  zoom: number,
+  selectedPropertyId: string | null
+): PropertyClusterItem[] {
+  const n = items.length;
+  if (n <= 1) return items;
+
+  const GOLDEN_ANGLE = 2.399963229728653;
+
+  interface NodeBox {
+    index: number;
+    origCx: number;
+    origCy: number;
+    hw: number;
+    hh: number;
+    isSelected: boolean;
+    isCluster: boolean;
+    id: string;
+  }
+
+  const nodes: NodeBox[] = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const item = items[i];
+    const isSelected =
+      !item.isCluster && selectedPropertyId !== null && item.property?._id === selectedPropertyId;
+    const { width, height } = estimateMarkerPixelBox(item, isSelected);
+    const { x, y } = latLngToWorldPixel(item.lat, item.lng, zoom);
+    // AdvancedMarker anchors bottom-center at (x, y), so pill box center is (x, y - height / 2)
+    nodes[i] = {
+      index: i,
+      origCx: x,
+      origCy: y - height * 0.5,
+      hw: width * 0.5,
+      hh: height * 0.5,
+      isSelected,
+      isCluster: item.isCluster,
+      id: item.id,
+    };
+  }
+
+  // Deterministic placement priority: selected marker first (stays pinned), then clusters, then by stable ID
+  const placementOrder = [...nodes].sort((a, b) => {
+    if (a.isSelected !== b.isSelected) return a.isSelected ? -1 : 1;
+    if (a.isCluster !== b.isCluster) return a.isCluster ? -1 : 1;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  });
+
+  interface PlacedBox {
+    cx: number;
+    cy: number;
+    hw: number;
+    hh: number;
+  }
+
+  const placed: PlacedBox[] = [];
+  const resolvedCoords = new Array<{ cx: number; cy: number; moved: boolean }>(n);
+
+  const fitsWithoutOverlap = (cx: number, cy: number, hw: number, hh: number): boolean => {
+    for (let j = 0; j < placed.length; j++) {
+      const p = placed[j];
+      if (Math.abs(cx - p.cx) < hw + p.hw && Math.abs(cy - p.cy) < hh + p.hh) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  for (let orderIdx = 0; orderIdx < placementOrder.length; orderIdx++) {
+    const node = placementOrder[orderIdx];
+    const { origCx, origCy, hw, hh, index } = node;
+
+    // Fast path: keep exact position whenever no overlap exists
+    if (fitsWithoutOverlap(origCx, origCy, hw, hh)) {
+      placed.push({ cx: origCx, cy: origCy, hw, hh });
+      resolvedCoords[index] = { cx: origCx, cy: origCy, moved: false };
+      continue;
+    }
+
+    // Search concentric elliptical rings (matched to pill width/height ratio) for the closest overlap-free slot
+    let bestX = origCx;
+    let bestY = origCy;
+    let bestDistSq = Infinity;
+    let found = false;
+
+    const baseAngle = ((orderIdx * GOLDEN_ANGLE) % (Math.PI * 2)) + Math.PI * 0.25;
+
+    for (let ring = 1; ring <= 28 && !found; ring++) {
+      const ry = ring * 24;
+      const rx = ring * 38;
+      const samples = Math.min(48, Math.max(12, ring * 8));
+
+      for (let s = 0; s < samples; s++) {
+        const theta = baseAngle + (s / samples) * Math.PI * 2;
+        const candX = origCx + Math.cos(theta) * rx;
+        const candY = origCy + Math.sin(theta) * ry;
+
+        if (fitsWithoutOverlap(candX, candY, hw, hh)) {
+          const dx = candX - origCx;
+          const dy = candY - origCy;
+          // Slightly favor compact vertical proximity over wide horizontal drift
+          const score = dx * dx + dy * dy * 1.15;
+          if (score < bestDistSq) {
+            bestDistSq = score;
+            bestX = candX;
+            bestY = candY;
+            found = true;
+          }
+        }
+      }
+    }
+
+    placed.push({ cx: bestX, cy: bestY, hw, hh });
+    resolvedCoords[index] = { cx: bestX, cy: bestY, moved: true };
+  }
+
+  return items.map((item, i) => {
+    const resolved = resolvedCoords[i];
+    if (!resolved || !resolved.moved) {
+      return item;
+    }
+    const anchorY = resolved.cy + nodes[i].hh;
+    const adjusted = worldPixelToLatLng(resolved.cx, anchorY, zoom);
+    return {
+      ...item,
+      lat: adjusted.lat,
+      lng: adjusted.lng,
+    };
+  });
+}
+
+// Smoothly fit Google Map viewport around a geographic search circle with safe-area UI padding
+function fitMapToSearchCircle(
+  map: google.maps.Map,
+  center: { lat: number; lng: number },
+  radiusMeters: number
+) {
+  if (typeof window === 'undefined' || !window.google?.maps) return;
+
+  // "Toute la carte" (0m radius): zoom out around the chosen center for a broad city overview
+  if (!radiusMeters || radiusMeters <= 0) {
+    map.panTo(center);
+    map.setZoom(12);
+    return;
+  }
+
+  const latRad = (center.lat * Math.PI) / 180;
+  const latDelta = radiusMeters / 111320;
+  const lngDelta = radiusMeters / (111320 * Math.max(0.2, Math.cos(latRad)));
+
+  const bounds = new window.google.maps.LatLngBounds(
+    { lat: center.lat - latDelta, lng: center.lng - lngDelta },
+    { lat: center.lat + latDelta, lng: center.lng + lngDelta }
+  );
+
+  const mapDiv = map.getDiv?.();
+  const width = mapDiv?.clientWidth || window.innerWidth || 400;
+  const height = mapDiv?.clientHeight || window.innerHeight || 800;
+  const isCompact = width < 640;
+
+  // Responsive padding clears Top Omnibox, Bottom Radius + HUD dock, and Right-side map buttons
+  const topPad = Math.min(isCompact ? 132 : 148, Math.round(height * 0.22));
+  const bottomPad = Math.min(isCompact ? 156 : 164, Math.round(height * 0.24));
+  const leftPad = Math.min(isCompact ? 22 : 44, Math.round(width * 0.1));
+  const rightPad = Math.min(isCompact ? 72 : 84, Math.round(width * 0.2));
+
+  map.fitBounds(bounds, {
+    top: topPad,
+    bottom: bottomPad,
+    left: leftPad,
+    right: rightPad,
+  });
 }
 
 // Estimate fallback viewport bounds around center & zoom before Google Map fires its first idle event
@@ -309,7 +533,7 @@ function computeViewportClusters(
     }
   }
 
-  return result;
+  return resolveMarkerScreenOverlaps(result, zoom, selectedPropertyId);
 }
 
 // ── Memoized Individual Property Price Pill Marker (High-contrast against map, NO green dot, NO expensive backdrop-blur) ──
@@ -500,6 +724,7 @@ interface FuturisticSearchMapProps {
   searchCoords: { lat: number; lng: number } | null;
   searchPlaceName: string | null;
   searchRadius: number;
+  zoneFocusNonce?: number;
   onSetLocationZone: (
     coords: { lat: number; lng: number } | null,
     placeName: string | null,
@@ -514,16 +739,23 @@ interface FuturisticSearchMapProps {
 function MapCameraSync({
   mapCenter,
   mapZoom,
+  searchCoords,
+  searchRadius,
+  zoneFocusNonce = 0,
   selectedProperty,
   onViewportChange,
 }: {
   mapCenter: { lat: number; lng: number };
   mapZoom: number;
+  searchCoords: { lat: number; lng: number } | null;
+  searchRadius: number;
+  zoneFocusNonce?: number;
   selectedProperty: any | null;
   onViewportChange: (zoom: number, bounds: MapBoundsLiteral) => void;
 }) {
   const map = useMap();
   const prevCenterRef = useRef<string>('');
+  const prevZoneKeyRef = useRef<string>('');
   const prevSelectedIdRef = useRef<string | null>(null);
   const rafRef = useRef<number | null>(null);
 
@@ -564,18 +796,39 @@ function MapCameraSync({
     };
   }, [map, onViewportChange]);
 
-  // Sync when mapCenter or mapZoom explicitly changes from store actions
+  // Coordinate camera updates cleanly: search zone / radius changes take precedence and fit exact circle bounds
   useEffect(() => {
-    if (!map || !mapCenter) return;
-    const key = `${mapCenter.lat.toFixed(5)},${mapCenter.lng.toFixed(5)},${mapZoom}`;
-    if (prevCenterRef.current !== key) {
-      prevCenterRef.current = key;
+    if (!map) return;
+
+    const centerKey = mapCenter
+      ? `${mapCenter.lat.toFixed(5)},${mapCenter.lng.toFixed(5)},${mapZoom}`
+      : '';
+    const zoneKey = searchCoords
+      ? `${searchCoords.lat.toFixed(5)},${searchCoords.lng.toFixed(5)},${searchRadius},${zoneFocusNonce}`
+      : '';
+
+    if (searchCoords && zoneKey !== prevZoneKeyRef.current) {
+      prevZoneKeyRef.current = zoneKey;
+      // Absorb simultaneous store mapCenter/mapZoom update so it never overrides fitBounds
+      if (centerKey) {
+        prevCenterRef.current = centerKey;
+      }
+      fitMapToSearchCircle(map, searchCoords, searchRadius);
+      return;
+    }
+
+    if (!searchCoords) {
+      prevZoneKeyRef.current = '';
+    }
+
+    if (mapCenter && prevCenterRef.current !== centerKey) {
+      prevCenterRef.current = centerKey;
       map.panTo(mapCenter);
       if (map.getZoom() !== mapZoom) {
         map.setZoom(mapZoom);
       }
     }
-  }, [map, mapCenter, mapZoom]);
+  }, [map, mapCenter, mapZoom, searchCoords, searchRadius, zoneFocusNonce]);
 
   // Smooth pan when a property is selected (from card carousel or marker)
   useEffect(() => {
@@ -611,6 +864,7 @@ function FuturisticSearchMapComponent({
   searchCoords,
   searchPlaceName,
   searchRadius,
+  zoneFocusNonce = 0,
   onSetLocationZone,
   onClearLocationZone,
   isRadarClickMode,
@@ -632,7 +886,9 @@ function FuturisticSearchMapComponent({
   const handleViewportChange = useCallback(
     (newZoom: number, newBounds: MapBoundsLiteral) => {
       setViewport((prev) => {
-        const zoomChanged = Math.round(prev.zoom) !== Math.round(newZoom);
+        const zoomChanged =
+          Math.abs(prev.zoom - newZoom) >= 0.35 ||
+          Math.round(prev.zoom) !== Math.round(newZoom);
         const latSpan = Math.max(0.0001, prev.bounds.north - prev.bounds.south);
         const lngSpan = Math.max(0.0001, prev.bounds.east - prev.bounds.west);
         const movedSignificantly =
@@ -671,11 +927,12 @@ function FuturisticSearchMapComponent({
       const latSpan = Math.abs(cluster.bounds.north - cluster.bounds.south);
       const lngSpan = Math.abs(cluster.bounds.east - cluster.bounds.west);
 
-      // If all properties in the cluster are at the exact same coordinates or already zoomed in deep
-      if (currentZoom >= 16 || (latSpan < 0.0006 && lngSpan < 0.0006)) {
+      // If all properties in the cluster are close together (e.g. same Fokotany) or already zoomed in deep,
+      // jump straight to zoom 17-18 so individual non-overlapping badges expand cleanly
+      if (currentZoom >= 16 || (latSpan < 0.0014 && lngSpan < 0.0014)) {
         if (currentZoom < 17) {
           map.panTo({ lat: cluster.lat, lng: cluster.lng });
-          map.setZoom(Math.min(18, currentZoom + 2));
+          map.setZoom(Math.max(17, Math.min(18, Math.round(currentZoom) + 2)));
         } else if (cluster.properties.length > 0) {
           onSelectProperty(cluster.properties[0]);
         }
@@ -701,11 +958,10 @@ function FuturisticSearchMapComponent({
     [map, viewport.zoom, onSelectProperty]
   );
 
-  // Fit bounds to all currently filtered properties
+  // Fit bounds to all currently filtered properties or active search area
   const handleFitBounds = useCallback(() => {
     if (
       !map ||
-      properties.length === 0 ||
       typeof window === 'undefined' ||
       !window.google?.maps
     ) {
@@ -713,18 +969,14 @@ function FuturisticSearchMapComponent({
     }
 
     if (searchCoords && searchRadius > 0) {
-      map.panTo(searchCoords);
-      const radiusZoom =
-        searchRadius <= 600
-          ? 16
-          : searchRadius <= 1200
-          ? 15
-          : searchRadius <= 2500
-          ? 14
-          : searchRadius <= 5000
-          ? 13
-          : 12;
-      map.setZoom(radiusZoom);
+      fitMapToSearchCircle(map, searchCoords, searchRadius);
+      return;
+    }
+
+    if (properties.length === 0) {
+      if (searchCoords) {
+        fitMapToSearchCircle(map, searchCoords, searchRadius);
+      }
       return;
     }
 
@@ -802,6 +1054,9 @@ function FuturisticSearchMapComponent({
         <MapCameraSync
           mapCenter={mapCenter}
           mapZoom={mapZoom}
+          searchCoords={searchCoords}
+          searchRadius={searchRadius}
+          zoneFocusNonce={zoneFocusNonce}
           selectedProperty={selectedProperty}
           onViewportChange={handleViewportChange}
         />
@@ -822,21 +1077,18 @@ function FuturisticSearchMapComponent({
 
             <AdvancedMarker
               position={searchCoords}
-              zIndex={90}
+              zIndex={20}
               title={searchPlaceName || 'Zone de recherche'}
             >
-              <div className="relative flex flex-col items-center pointer-events-auto">
-                {/* Pulsing Radar Halo */}
-                <span className="absolute -inset-3 rounded-full bg-brand-green/35 animate-radar-wave pointer-events-none" />
-                <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-zinc-950/95 text-white border border-brand-green/60 shadow-[0_8px_24px_rgba(124,189,30,0.4)]">
-                  <span className="w-2 h-2 rounded-full bg-brand-green animate-pulse" />
+              <div className="relative flex flex-col items-center translate-y-[7px] pointer-events-none">
+                {/* Desktop / Large-Screen Fokotany Pill (hidden on mobile so properties & map details stay unobstructed) */}
+                <div className="hidden md:flex items-center gap-2 px-3 py-1 mb-1.5 rounded-full bg-zinc-950/92 text-white border border-brand-green/60 shadow-[0_6px_20px_rgba(124,189,30,0.35)] pointer-events-auto">
+                  <span className="w-2 h-2 rounded-full bg-brand-green animate-pulse shrink-0" />
                   <span className="text-[11px] font-light tracking-wide whitespace-nowrap max-w-[140px] truncate">
                     {searchPlaceName || 'Radar actif'}
                   </span>
-                  <span className="text-[10px] font-medium text-brand-green px-1.5 py-0.5 rounded-full bg-brand-green/15">
-                    {searchRadius >= 1000
-                      ? `${(searchRadius / 1000).toFixed(1).replace(/\.0$/, '')} km`
-                      : `${searchRadius} m`}
+                  <span className="text-[10px] font-medium text-brand-green px-1.5 py-0.5 rounded-full bg-brand-green/15 shrink-0">
+                    {formatRadiusLabel(searchRadius)}
                   </span>
                   <button
                     type="button"
@@ -844,13 +1096,19 @@ function FuturisticSearchMapComponent({
                       ev.stopPropagation();
                       onClearLocationZone();
                     }}
-                    className="ml-0.5 w-4 h-4 rounded-full bg-white/15 hover:bg-white/30 flex items-center justify-center transition-colors cursor-pointer"
+                    className="ml-0.5 w-4 h-4 rounded-full bg-white/15 hover:bg-white/30 flex items-center justify-center transition-colors cursor-pointer shrink-0"
                     title="Retirer le radar"
+                    aria-label="Retirer le radar"
                   >
                     <X className="w-2.5 h-2.5 text-white" />
                   </button>
                 </div>
-                <div className="w-2.5 h-2.5 rounded-full bg-brand-green ring-4 ring-white shadow-md mt-1" />
+
+                {/* Minimal Non-Blocking Center Target Dot (Mobile + Desktop anchor) */}
+                <div className="relative flex items-center justify-center">
+                  <span className="absolute w-7 h-7 rounded-full bg-brand-green/35 animate-radar-wave pointer-events-none" />
+                  <span className="relative w-3.5 h-3.5 rounded-full bg-brand-green ring-[3px] ring-white shadow-[0_2px_8px_rgba(0,0,0,0.35)]" />
+                </div>
               </div>
             </AdvancedMarker>
           </>
@@ -909,7 +1167,7 @@ function FuturisticSearchMapComponent({
 
       {/* ── Radar Click Mode Floating Banner ── */}
       {isRadarClickMode && (
-        <div className="absolute top-32 sm:top-36 left-1/2 -translate-x-1/2 z-20 w-[92%] max-w-md pointer-events-auto animate-glass-island">
+        <div className="absolute top-[calc(8rem+var(--ios-safe-top))] sm:top-[calc(9rem+var(--ios-safe-top))] left-1/2 -translate-x-1/2 z-20 w-[92%] max-w-md pointer-events-auto animate-glass-island">
           <div className="flex items-center justify-between gap-3 px-5 py-3.5 rounded-full bg-zinc-950/90 dark:bg-white/95 text-white dark:text-zinc-950 backdrop-blur-2xl border border-brand-green/50 shadow-[0_16px_40px_rgba(0,0,0,0.35)]">
             <div className="flex items-center gap-3 min-w-0">
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-green text-white animate-pulse">

@@ -25,11 +25,14 @@ import {
   SearchSortBy,
   SearchViewMode,
   SearchFilters,
+  formatRadiusLabel,
+  getNextSearchRadius,
 } from '@/store/searchStore';
 import { mapCategoryQueryParam } from '@/lib/propertyTypes';
 import FuturisticSearchMap from './FuturisticSearchMap';
 import SearchTopOmnibox from './SearchTopOmnibox';
 import SearchFloatingBottomHud from './SearchFloatingBottomHud';
+import SearchRadiusFloatingBar from './SearchRadiusFloatingBar';
 import MapPropertyPreviewCarousel from './MapPropertyPreviewCarousel';
 import AdvancedFilterModal from './AdvancedFilterModal';
 import PropertyCard from '@/components/PropertyCard';
@@ -68,6 +71,7 @@ export default function SearchEngineShell() {
   const initializedFromUrlRef = useRef(false);
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
   const [visibleCount, setVisibleCount] = useState(CARDS_BATCH_SIZE);
+  const [zoneFocusNonce, setZoneFocusNonce] = useState(0);
 
   const {
     filteredProperties,
@@ -243,7 +247,7 @@ export default function SearchEngineShell() {
       const idx = filteredProperties.findIndex((p) => p._id === propertyId);
       const target = idx >= 0 ? filteredProperties[idx] : null;
       if (target) {
-        const coords = getPropertyMapCoords(target);
+        const coords = target._mapCoords || getPropertyMapCoords(target);
         setSelectedPropertyId(propertyId);
         setMapCenter(coords);
         setMapZoom(16);
@@ -261,12 +265,26 @@ export default function SearchEngineShell() {
     ) => {
       setLocationZone(coords, placeName, city, radius);
       if (coords) {
-        setMapCenter(coords);
-        setMapZoom(15);
+        setSelectedPropertyId(null);
+        setZoneFocusNonce((n) => n + 1);
       }
     },
-    [setLocationZone, setMapCenter, setMapZoom]
+    [setLocationZone, setSelectedPropertyId]
   );
+
+  const handleChangeSearchRadius = useCallback(
+    (nextRadius: number) => {
+      setFilter('searchRadius', nextRadius);
+      setSelectedPropertyId(null);
+      setZoneFocusNonce((n) => n + 1);
+    },
+    [setFilter, setSelectedPropertyId]
+  );
+
+  const handleRefocusSearchZone = useCallback(() => {
+    setSelectedPropertyId(null);
+    setZoneFocusNonce((n) => n + 1);
+  }, [setSelectedPropertyId]);
 
   return (
     <APIProvider apiKey={GOOGLE_MAPS_API_KEY} libraries={['places']}>
@@ -319,6 +337,7 @@ export default function SearchEngineShell() {
               searchCoords={filters.searchCoords}
               searchPlaceName={filters.searchPlaceName}
               searchRadius={filters.searchRadius}
+              zoneFocusNonce={zoneFocusNonce}
               onSetLocationZone={handleLocationZoneSelected}
               onClearLocationZone={clearLocationZone}
               isRadarClickMode={isRadarClickMode}
@@ -339,24 +358,21 @@ export default function SearchEngineShell() {
                     Essayez d&apos;élargir le rayon radar sur la carte ou d&apos;assouplir vos critères de recherche.
                   </p>
                   <div className="flex flex-wrap items-center justify-center gap-2.5">
-                    {filters.searchCoords && filters.searchRadius > 0 && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setFilter(
-                            'searchRadius',
-                            Math.min(10000, filters.searchRadius + 1500)
-                          )
-                        }
-                        className="min-h-[44px] px-6 py-3 rounded-full bg-brand-green text-white font-outfit font-medium text-sm tracking-wide shadow-[0_8px_24px_rgba(114,193,70,0.35)] hover:scale-105 active:scale-95 transition-all cursor-pointer"
-                      >
-                        Élargir à{' '}
-                        {(
-                          Math.min(10000, filters.searchRadius + 1500) / 1000
-                        ).toFixed(1)}{' '}
-                        km
-                      </button>
-                    )}
+                    {filters.searchCoords && filters.searchRadius > 0 && (() => {
+                      const widerRadius = getNextSearchRadius(filters.searchRadius);
+                      if (widerRadius === null) return null;
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => handleChangeSearchRadius(widerRadius)}
+                          className="min-h-[44px] px-6 py-3 rounded-full bg-brand-green text-white font-outfit font-medium text-sm tracking-wide shadow-[0_8px_24px_rgba(114,193,70,0.35)] hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                        >
+                          {widerRadius === 0
+                            ? 'Voir toute la carte'
+                            : `Élargir à ${formatRadiusLabel(widerRadius)}`}
+                        </button>
+                      );
+                    })()}
                     <button
                       type="button"
                       onClick={resetFilters}
@@ -378,7 +394,7 @@ export default function SearchEngineShell() {
           <div className="w-full h-[100dvh] overflow-hidden flex flex-col pt-[calc(132px+var(--ios-safe-top))] sm:pt-[calc(138px+var(--ios-safe-top))] bg-zinc-50 dark:bg-zinc-950">
             <div className="flex-1 flex overflow-hidden w-full max-w-[2000px] mx-auto">
               {/* Left Scrollable Bento Results Pane */}
-              <div className="w-full lg:w-[54%] xl:w-[52%] h-full overflow-y-auto px-4 sm:px-6 lg:px-8 pb-36 scrollbar-hide">
+              <div className="w-full lg:w-[54%] xl:w-[52%] h-full overflow-y-auto px-4 sm:px-6 lg:px-8 pb-44 scrollbar-hide">
                 {/* Split View Sticky Controls Header */}
                 <div className="flex flex-wrap items-center justify-between gap-3 py-3 mb-4 border-b border-zinc-200/70 dark:border-white/10">
                   <div className="flex items-center gap-2.5">
@@ -525,6 +541,7 @@ export default function SearchEngineShell() {
                     searchCoords={filters.searchCoords}
                     searchPlaceName={filters.searchPlaceName}
                     searchRadius={filters.searchRadius}
+                    zoneFocusNonce={zoneFocusNonce}
                     onSetLocationZone={handleLocationZoneSelected}
                     onClearLocationZone={clearLocationZone}
                     isRadarClickMode={isRadarClickMode}
@@ -540,7 +557,7 @@ export default function SearchEngineShell() {
             MODE 3: FULL BENTO LIST MODE ('list')
         ══════════════════════════════════════════════════════════════════ */}
         {viewMode === 'list' && (
-          <div className="w-full min-h-[100dvh] pt-[calc(132px+var(--ios-safe-top))] sm:pt-[calc(138px+var(--ios-safe-top))] pb-24 sm:pb-32 px-4 sm:px-6 md:px-8 lg:px-28 xl:px-32 2xl:px-36 max-w-[2000px] mx-auto">
+          <div className="w-full min-h-[100dvh] pt-[calc(132px+var(--ios-safe-top))] sm:pt-[calc(138px+var(--ios-safe-top))] pb-36 sm:pb-40 px-4 sm:px-6 md:px-8 lg:px-28 xl:px-32 2xl:px-36 max-w-[2000px] mx-auto">
             {/* List Header & Sort Bar - Space Optimized & Compact */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-4 pb-3 sm:pb-4 mb-4 sm:mb-6 border-b border-zinc-200/70 dark:border-white/10">
               <div>
@@ -724,7 +741,7 @@ export default function SearchEngineShell() {
         )}
 
         {/* ══════════════════════════════════════════════════════════════════
-            FLOATING BOTTOM DOCK: PREVIEW CAROUSEL (MAP MODE) + LIQUID-GLASS HUD
+            FLOATING BOTTOM DOCK: PREVIEW CAROUSEL + THUMB-ZONE RADIUS BAR + LIQUID-GLASS HUD
         ══════════════════════════════════════════════════════════════════ */}
         <div className="fixed bottom-1.5 sm:bottom-3 inset-x-0 z-30 flex flex-col items-center gap-2 pointer-events-none">
           {viewMode === 'map' && (
@@ -738,6 +755,16 @@ export default function SearchEngineShell() {
                 }
                 handleFocusPropertyOnMap(prop._id);
               }}
+            />
+          )}
+
+          {filters.searchCoords && viewMode !== 'feed' && (
+            <SearchRadiusFloatingBar
+              placeName={filters.searchPlaceName}
+              searchRadius={filters.searchRadius}
+              onChangeRadius={handleChangeSearchRadius}
+              onRefocusZone={handleRefocusSearchZone}
+              onClearZone={clearLocationZone}
             />
           )}
 
