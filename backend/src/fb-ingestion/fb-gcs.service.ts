@@ -1,4 +1,5 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import * as crypto from 'crypto';
+import { BadRequestException, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Bucket, Storage } from '@google-cloud/storage';
 import sharp from 'sharp';
@@ -460,6 +461,82 @@ export class FbGcsService implements OnModuleInit {
       this.logger.warn(`Failed avatar re-upload for ${safeKey}: ${(err as Error).message}`);
       return null;
     }
+  }
+
+  /**
+   * Uploads an image sent from the standalone Admin console directly to GCS under `fb-ingested/`.
+   */
+  async uploadAdminImage(input: {
+    dataUrl?: string;
+    base64?: string;
+    mimeType?: string;
+    fileName?: string;
+  }): Promise<{ imageUrl: string; fileName: string }> {
+    if (!this.bucket) {
+      throw new BadRequestException('GCS bucket is not initialized on the backend');
+    }
+
+    let rawBase64 = (input?.base64 || '').trim();
+    let mimeType = (input?.mimeType || '').trim().toLowerCase();
+
+    if (!rawBase64 && input?.dataUrl) {
+      const match = String(input.dataUrl).match(/^data:([^;]+);base64,(.+)$/i);
+      if (!match) {
+        throw new BadRequestException('Format dataUrl invalide');
+      }
+      mimeType = mimeType || match[1].toLowerCase();
+      rawBase64 = match[2];
+    }
+
+    if (!rawBase64) {
+      throw new BadRequestException('Contenu image requis');
+    }
+
+    if (mimeType && !mimeType.startsWith('image/')) {
+      throw new BadRequestException(`Type de fichier non supporté: ${mimeType}`);
+    }
+
+    const rawBuffer = Buffer.from(rawBase64, 'base64');
+    if (rawBuffer.length < 100) {
+      throw new BadRequestException('Image invalide ou vide');
+    }
+    if (rawBuffer.length > 8 * 1024 * 1024) {
+      throw new BadRequestException('Image trop volumineuse (max 8 Mo)');
+    }
+
+    let outputBuffer: Buffer;
+    try {
+      outputBuffer = await sharp(rawBuffer)
+        .rotate()
+        .resize({ width: 1920, height: 1920, fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 84, mozjpeg: true })
+        .toBuffer();
+    } catch (err) {
+      throw new BadRequestException(
+        `Impossible de décoder l'image : ${(err as Error).message}`,
+      );
+    }
+
+    const suffix = crypto.randomBytes(6).toString('hex');
+    const objectPath = `fb-ingested/admin_${Date.now()}_${suffix}.jpg`;
+    const file = this.bucket.file(objectPath);
+
+    await file.save(outputBuffer, {
+      contentType: 'image/jpeg',
+      resumable: false,
+      metadata: {
+        cacheControl: 'public, max-age=31536000',
+        metadata: {
+          source: 'admin-manual-upload',
+          originalName: String(input?.fileName || 'upload.jpg').slice(0, 120),
+        },
+      },
+    });
+
+    return {
+      imageUrl: `https://storage.googleapis.com/${this.bucketName}/${objectPath}`,
+      fileName: objectPath,
+    };
   }
 
   /**

@@ -36,11 +36,24 @@ export class FirebaseService implements OnModuleInit {
 
     try {
       // 1. Try full JSON string from environment variable (FIREBASE_SERVICE_ACCOUNT_JSON)
-      const jsonEnv = this.configService.get<string>(
-        'FIREBASE_SERVICE_ACCOUNT_JSON',
-      );
-      if (jsonEnv) {
-        const serviceAccount = JSON.parse(jsonEnv);
+      const rawJsonEnv = this.configService
+        .get<string>('FIREBASE_SERVICE_ACCOUNT_JSON')
+        ?.trim();
+      if (rawJsonEnv) {
+        let cleaned = rawJsonEnv;
+        if (
+          (cleaned.startsWith("'") && cleaned.endsWith("'")) ||
+          (cleaned.startsWith('"') && cleaned.endsWith('"'))
+        ) {
+          cleaned = cleaned.slice(1, -1);
+        }
+        const serviceAccount = JSON.parse(cleaned);
+        if (typeof serviceAccount.private_key === 'string') {
+          serviceAccount.private_key = serviceAccount.private_key.replace(
+            /\\n/g,
+            '\n',
+          );
+        }
         this.firebaseApp = initializeApp({
           credential: cert(serviceAccount),
           projectId: serviceAccount.project_id,

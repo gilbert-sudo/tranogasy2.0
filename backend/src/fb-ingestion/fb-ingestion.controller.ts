@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   Param,
   Patch,
   Post,
@@ -10,15 +11,24 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { FbAdminGuard } from './fb-admin.guard';
+import { ConfigService } from '@nestjs/config';
+import { FbAdminGuard, verifyOptionalAdminSecretHeader } from './fb-admin.guard';
+import { FbGcsService } from './fb-gcs.service';
 import { FbIngestionService } from './fb-ingestion.service';
 
 @Controller('api/fb-ingestion')
 export class FbIngestionAuthController {
-  constructor(private readonly fbIngestionService: FbIngestionService) {}
+  constructor(
+    private readonly fbIngestionService: FbIngestionService,
+    private readonly configService: ConfigService,
+  ) {}
 
   @Post('admin-login')
-  adminLogin(@Body() body: { identifier: string; password: string }) {
+  adminLogin(
+    @Headers('x-admin-secret') adminSecret: string | undefined,
+    @Body() body: { identifier: string; password: string },
+  ) {
+    verifyOptionalAdminSecretHeader(this.configService, adminSecret);
     return this.fbIngestionService.adminLogin(body?.identifier, body?.password);
   }
 }
@@ -26,7 +36,28 @@ export class FbIngestionAuthController {
 @Controller('api/fb-ingestion')
 @UseGuards(FbAdminGuard)
 export class FbIngestionController {
-  constructor(private readonly fbIngestionService: FbIngestionService) {}
+  constructor(
+    private readonly fbIngestionService: FbIngestionService,
+    private readonly fbGcsService: FbGcsService,
+  ) {}
+
+  @Get('admin-me')
+  getAdminMe(@Req() req: { adminUser?: Record<string, any> }) {
+    return { user: req.adminUser || null };
+  }
+
+  @Post('upload-image')
+  uploadAdminImage(
+    @Body()
+    body: {
+      dataUrl?: string;
+      base64?: string;
+      mimeType?: string;
+      fileName?: string;
+    },
+  ) {
+    return this.fbGcsService.uploadAdminImage(body);
+  }
 
   @Get('config')
   getConfig() {

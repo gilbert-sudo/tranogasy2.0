@@ -9,4 +9,14 @@ export class AppController {
   getHello(): string {
     return this.appService.getHello();
   }
+
+  @Get(['health', 'api/health'])
+  getHealth() {
+    return {
+      status: 'ok',
+      service: 'tranogasy-backend',
+      uptimeSec: Math.round(process.uptime()),
+      timestamp: new Date().toISOString(),
+    };
+  }
 }
