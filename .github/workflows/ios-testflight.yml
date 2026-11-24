@@ -36,7 +36,7 @@ jobs:
       - name: Install frontend dependencies, build local iOS bundle & sync Capacitor
         working-directory: frontend
         env:
-          NEXT_PUBLIC_API_URL: https://tranogasy2-api.onrender.com/api
+          NEXT_PUBLIC_API_URL: https://tranogasy-api.duckdns.org/api
           NEXT_PUBLIC_IMAGE_API_ORIGIN: https://tranogasy-ios.vercel.app
         run: |
           npm ci

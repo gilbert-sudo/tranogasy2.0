@@ -117,7 +117,7 @@ export class PaymentsService {
   private get apiPublicUrl(): string {
     return (
       this.configService.get<string>('API_PUBLIC_URL') ||
-      'https://tranogasy2-api.onrender.com'
+      'https://tranogasy-api.duckdns.org'
     );
   }
 

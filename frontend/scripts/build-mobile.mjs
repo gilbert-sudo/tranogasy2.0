@@ -63,7 +63,7 @@ try {
     NEXT_PUBLIC_PLATFORM: targetPlatform,
     CAP_STATIC_EXPORT: '1',
     NEXT_PUBLIC_API_URL:
-      process.env.NEXT_PUBLIC_API_URL || 'https://tranogasy2-api.onrender.com/api',
+      process.env.NEXT_PUBLIC_API_URL || 'https://tranogasy-api.duckdns.org/api',
     NEXT_PUBLIC_IMAGE_API_ORIGIN:
       process.env.NEXT_PUBLIC_IMAGE_API_ORIGIN || 'https://tranogasy-ios.vercel.app',
   };
