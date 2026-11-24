@@ -12,7 +12,7 @@ export default function Hero() {
       
       <div className="mt-8">
         <Link
-          href="/search?focus=1"
+          href="/search"
           className="flex items-center gap-2 rounded-full bg-brand-green px-8 py-3 text-lg font-bold text-white shadow-lg transition hover:bg-green-600 active:scale-95 cursor-pointer"
         >
           <Search className="h-5 w-5" />

@@ -298,12 +298,6 @@ export default function SearchEngineShell() {
         ══════════════════════════════════════════════════════════════════ */}
         <div className="fixed top-[calc(0.625rem+var(--ios-safe-top))] sm:top-[calc(1rem+var(--ios-safe-top))] inset-x-0 z-40 px-3 sm:px-5 pointer-events-none">
           <SearchTopOmnibox
-            autoFocus={
-              searchParams.get('focus') === '1' ||
-              searchParams.get('focus') === 'true' ||
-              searchParams.get('autoFocus') === '1' ||
-              searchParams.get('autoFocus') === 'true'
-            }
             filters={filters}
             activeFiltersCount={activeFiltersCount}
             totalResults={filteredProperties.length}

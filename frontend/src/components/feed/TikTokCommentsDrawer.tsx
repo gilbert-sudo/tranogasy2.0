@@ -117,13 +117,6 @@ export default function TikTokCommentsDrawer({
     };
   }, [isOpen, property?._id, currentUser?._id]);
 
-  // Focus input on open if logged in
-  useEffect(() => {
-    if (isOpen && isLoggedIn) {
-      setTimeout(() => inputRef.current?.focus(), 300);
-    }
-  }, [isOpen, isLoggedIn]);
-
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!isLoggedIn) {

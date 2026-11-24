@@ -39,8 +39,8 @@ export default function Header({ onSearchClick }: HeaderProps) {
     } else {
       const params = new URLSearchParams();
       if (opts?.openFilters) params.set('openFilters', '1');
-      params.set('focus', '1');
-      router.push(`/search?${params.toString()}`);
+      const qs = params.toString();
+      router.push(qs ? `/search?${qs}` : '/search');
     }
   };
 

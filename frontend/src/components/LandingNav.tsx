@@ -67,10 +67,6 @@ export default function LandingNav() {
         params.set('openFilters', '1');
       }
 
-      if (opts?.focusSearch) {
-        params.set('focus', '1');
-      }
-
       const qs = params.toString();
       router.push(qs ? `/search?${qs}` : '/search');
     },

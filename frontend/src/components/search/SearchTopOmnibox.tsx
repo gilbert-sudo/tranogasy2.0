@@ -69,7 +69,6 @@ interface SearchTopOmniboxProps {
 }
 
 function SearchTopOmniboxComponent({
-  autoFocus = false,
   filters,
   activeFiltersCount,
   totalResults,
@@ -116,25 +115,6 @@ function SearchTopOmniboxComponent({
   useEffect(() => {
     setInputText(filters.query || '');
   }, [filters.query]);
-
-  // Handle autoFocus request (e.g., when redirected from landing page / header search bar)
-  const prevAutoFocusRef = useRef(false);
-  useEffect(() => {
-    if (autoFocus && !prevAutoFocusRef.current) {
-      prevAutoFocusRef.current = true;
-      const timer = setTimeout(() => {
-        if (inputRef.current) {
-          inputRef.current.focus();
-          setIsInputFocused(true);
-          setIsDropdownOpen(true);
-          cityService.preloadLocalCities();
-        }
-      }, 120);
-      return () => clearTimeout(timer);
-    } else if (!autoFocus) {
-      prevAutoFocusRef.current = false;
-    }
-  }, [autoFocus]);
 
   // Lazily initialize Google Places services when needed
   const ensureGoogleServices = useCallback(() => {

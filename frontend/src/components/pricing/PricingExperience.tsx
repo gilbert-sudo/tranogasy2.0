@@ -1676,7 +1676,7 @@ export default function PricingExperience() {
                               hasInvalidOperatorPrefix(provider.id, rawSenderPhone)
                             ) {
                               setPhoneTouched(true);
-                              triggerPhoneShake(true);
+                              triggerPhoneShake(false);
                             }
                           }}
                           className={`relative aspect-square w-full flex flex-col items-center justify-center gap-1.5 p-2 rounded-3xl border transition-all cursor-pointer focus:outline-none overflow-hidden ${
@@ -1958,7 +1958,6 @@ export default function PricingExperience() {
                               type="text"
                               inputMode="numeric"
                               autoComplete="one-time-code"
-                              autoFocus
                               value={orangeTemporaryCode}
                               onBlur={() => {
                                 if (

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import {
@@ -78,27 +78,6 @@ export default function PhoneAuthFlow({
   const otpInputRefs = useRef<Array<HTMLInputElement | null>>([]);
   const phoneInputRef = useRef<HTMLInputElement | null>(null);
   const usernameInputRef = useRef<HTMLInputElement | null>(null);
-
-  useEffect(() => {
-    if (step === 'phone') {
-      const timer = setTimeout(() => {
-        phoneInputRef.current?.focus();
-      }, 150);
-      return () => clearTimeout(timer);
-    }
-    if (step === 'verify') {
-      const timer = setTimeout(() => {
-        otpInputRefs.current[0]?.focus();
-      }, 150);
-      return () => clearTimeout(timer);
-    }
-    if (step === 'welcome') {
-      const timer = setTimeout(() => {
-        usernameInputRef.current?.focus();
-      }, 150);
-      return () => clearTimeout(timer);
-    }
-  }, [step]);
 
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const numeric = e.target.value.replace(/\D/g, '').slice(0, 12);
@@ -190,7 +169,6 @@ export default function PhoneAuthFlow({
     if (res.success) {
       setOtpDigits(['', '', '', '', '']);
       setResendFeedback(true);
-      otpInputRefs.current[0]?.focus();
       setTimeout(() => setResendFeedback(false), 4000);
     }
   };
